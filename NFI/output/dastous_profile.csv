@@ -1,0 +1,18 @@
+section,metric,value,lo95,hi95,rank,qualifying_n,flag
+IDENTITY,player_name,Charle-Edouard D'Astous,,,,,player_id=8480426
+IDENTITY,es_toi_min,748.9,,,,347,qualifying D sample
+TWO_WAY,twoway_D_score,2.864,,,2,347,"off_rank=128, def_rank=1"
+TWO_WAY,z_offensive (z_P5_weighted),0.251,,,128,347,z-score from league-D offensive distribution
+TWO_WAY,z_defensive (z_P4_weighted),-2.613,,,1,347,z-score from league-D defensive distribution (sign-flipped so + = stifles shots)
+PILLARS,P4_weighted (defensive),1.433,,,1,347,"TNFI_rank_raw=9, rank_delta=8"
+PILLARS,P5_weighted (offensive),1.923,,,128,347,"TNFI_rank_raw=101, rank_delta=-27"
+BLOCKS,blocks_xG_prevented_per60,0.414,,,117,347,"directional, above league-D median (good) | blocks_xG_prevented_total=5.17"
+BLOCKS,TNFI_blocks_per60,3.766,2.851,4.947,105,347,"directional, above league-D median (good)"
+SHOTS_AGAINST,CNFI_SA_per60,5.608,4.478,6.986,1,347,"SIGNIFICANT, below league-D median (good) | league-D median=8.483"
+SHOTS_AGAINST,MNFI_SA_per60,5.368,4.263,6.722,28,347,"directional, below league-D median (good) | league-D median=6.268"
+SHOTS_AGAINST,FNFI_SA_per60,5.128,4.049,6.459,294,347,"directional, above league-D median (bad) | league-D median=4.582"
+SHOTS_AGAINST,TNFI_SA_per60,16.104,14.272,18.073,9,347,"SIGNIFICANT, below league-D median (good) | league-D median=19.41"
+SHOTS_FOR,CNFI_SF_per60,8.252,6.882,9.842,163,347,"directional, above league-D median (good) | league-D median=8.181"
+SHOTS_FOR,MNFI_SF_per60,6.009,4.838,7.423,198,347,"directional, below league-D median (bad) | league-D median=6.181"
+SHOTS_FOR,FNFI_SF_per60,5.608,4.478,6.986,24,347,"SIGNIFICANT, above league-D median (good) | league-D median=4.376"
+SHOTS_FOR,TNFI_SF_per60,19.869,17.9,21.936,101,347,"directional, above league-D median (good) | league-D median=18.64"

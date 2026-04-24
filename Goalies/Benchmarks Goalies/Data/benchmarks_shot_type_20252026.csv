@@ -1,0 +1,10 @@
+shot_type,total_shots,total_goals,num_goalies,league_sv_pct
+bat,165,32,50,0.806
+deflected,919,139,60,0.849
+poke,180,27,53,0.85
+tip-in,3657,436,60,0.881
+backhand,3829,418,60,0.891
+snap,12589,1315,60,0.896
+wrist,22669,1847,60,0.919
+wrap-around,357,26,60,0.927
+slap,4694,327,60,0.93

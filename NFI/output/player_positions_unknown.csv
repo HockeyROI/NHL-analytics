@@ -1,0 +1,5 @@
+player_id,first_name,last_name,reason
+# 0 players have unconfirmed positions.
+# All 1692 skaters/goalies appearing in 2021-22..2025-26 shift_data were matched:
+#   1520 from 2022+ PBP rosterSpots (pos_source=pbp_rosterSpots_2022plus)
+#   172 enriched via NHL player landing API (pos_source=api_landing_2021_22)

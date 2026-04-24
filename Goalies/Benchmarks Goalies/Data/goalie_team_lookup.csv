@@ -1,0 +1,169 @@
+goalie_id,goalie_name,season,goalie_team,team_full,games_played
+8480843,Lukas Dostal,20252026,ANA,Anaheim Ducks,55
+8476914,Joonas Korpisalo,20252026,BOS,Boston Bruins,31
+8480280,Jeremy Swayman,20252026,BOS,Boston Bruins,54
+8480045,Ukko-Pekka Luukkonen,20252026,BUF,Buffalo Sabres,35
+8479312,Alex Lyon,20252026,BUF,Buffalo Sabres,36
+8475883,Frederik Andersen,20252026,CAR,Carolina Hurricanes,35
+8483548,Brandon Bussi,20252026,CAR,Carolina Hurricanes,38
+8482982,Jet Greaves,20252026,CBJ,Columbus Blue Jackets,54
+8478007,Elvis Merzlikins,20252026,CBJ,Columbus Blue Jackets,30
+8482445,Devin Cooley,20252026,CGY,Calgary Flames,31
+8481692,Dustin Wolf,20252026,CGY,Calgary Flames,56
+8481519,Spencer Knight,20252026,CHI,Chicago Blackhawks,54
+8482821,Arvid Soderblom,20252026,CHI,Chicago Blackhawks,26
+8478406,Mackenzie Blackwood,20252026,COL,Colorado Avalanche,38
+8475809,Scott Wedgewood,20252026,COL,Colorado Avalanche,44
+8479193,Casey DeSmith,20252026,DAL,Dallas Stars,30
+8479979,Jake Oettinger,20252026,DAL,Dallas Stars,53
+8476434,John Gibson,20252026,DET,Detroit Red Wings,56
+8475660,Cam Talbot,20252026,DET,Detroit Red Wings,33
+8478971,Connor Ingram,20252026,EDM,Edmonton Oilers,31
+8477465,Tristan Jarry,20252026,EDM,Edmonton Oilers,19
+8475683,Sergei Bobrovsky,20252026,FLA,Florida Panthers,52
+8480193,Daniil Tarasov,20252026,FLA,Florida Panthers,32
+8476341,Anton Forsberg,20252026,LAK,Los Angeles Kings,35
+8475311,Darcy Kuemper,20252026,LAK,Los Angeles Kings,49
+8479406,Filip Gustavsson,20252026,MIN,Minnesota Wild,50
+8482661,Jesper Wallstedt,20252026,MIN,Minnesota Wild,34
+8482487,Jakub Dobes,20252026,MTL,Montréal Canadiens,42
+8478470,Samuel Montembeault,20252026,MTL,Montréal Canadiens,25
+8474596,Jake Allen,20252026,NJD,New Jersey Devils,37
+8474593,Jacob Markstrom,20252026,NJD,New Jersey Devils,44
+8481020,Justus Annunen,20252026,NSH,Nashville Predators,28
+8477424,Juuse Saros,20252026,NSH,Nashville Predators,58
+8479496,David Rittich,20252026,NYI,New York Islanders,29
+8478009,Ilya Sorokin,20252026,NYI,New York Islanders,55
+8471734,Jonathan Quick,20252026,NYR,New York Rangers,25
+8478048,Igor Shesterkin,20252026,NYR,New York Rangers,51
+8476999,Linus Ullmark,20252026,OTT,Ottawa Senators,49
+8481035,Samuel Ersson,20252026,PHI,Philadelphia Flyers,32
+8478435,Dan Vladar,20252026,PHI,Philadelphia Flyers,52
+8481668,Arturs Silovs,20252026,PIT,Pittsburgh Penguins,38
+8479973,Stuart Skinner,20252026,PIT,Pittsburgh Penguins,26
+8478916,Joey Daccord,20252026,SEA,Seattle Kraken,47
+8475831,Philipp Grubauer,20252026,SEA,Seattle Kraken,32
+8482137,Yaroslav Askarov,20252026,SJS,San Jose Sharks,46
+8477968,Alex Nedeljkovic,20252026,SJS,San Jose Sharks,39
+8476412,Jordan Binnington,20252026,STL,St. Louis Blues,40
+8480981,Joel Hofer,20252026,STL,St. Louis Blues,45
+8477992,Jonas Johansson,20252026,TBL,Tampa Bay Lightning,25
+8476883,Andrei Vasilevskiy,20252026,TBL,Tampa Bay Lightning,58
+8476932,Anthony Stolarz,20252026,TOR,Toronto Maple Leafs,26
+8479361,Joseph Woll,20252026,TOR,Toronto Maple Leafs,39
+8478872,Karel Vejmelka,20252026,UTA,Utah Mammoth,62
+8480947,Kevin Lankinen,20252026,VAN,Vancouver Canucks,45
+8478499,Adin Hill,20252026,VGK,Vegas Golden Knights,27
+8481033,Akira Schmid,20252026,VGK,Vegas Golden Knights,34
+8477480,Eric Comrie,20252026,WPG,Winnipeg Jets,23
+8476945,Connor Hellebuyck,20252026,WPG,Winnipeg Jets,57
+8479292,Charlie Lindgren,20252026,WSH,Washington Capitals,21
+8480313,Logan Thompson,20252026,WSH,Washington Capitals,58
+8480843,Lukas Dostal,20242025,ANA,Anaheim Ducks,54
+8475852,Petr Mrazek,20242025,CHI,Chicago Blackhawks,33
+8476914,Joonas Korpisalo,20242025,BOS,Boston Bruins,27
+8480280,Jeremy Swayman,20242025,BOS,Boston Bruins,58
+8480045,Ukko-Pekka Luukkonen,20242025,BUF,Buffalo Sabres,55
+8473503,James Reimer,20242025,BUF,Buffalo Sabres,22
+8475883,Frederik Andersen,20242025,CAR,Carolina Hurricanes,22
+8481611,Pyotr Kochetkov,20242025,CAR,Carolina Hurricanes,47
+8478007,Elvis Merzlikins,20242025,CBJ,Columbus Blue Jackets,53
+8478435,Dan Vladar,20242025,CGY,Calgary Flames,30
+8481692,Dustin Wolf,20242025,CGY,Calgary Flames,53
+8481519,Spencer Knight,20242025,FLA,Florida Panthers,23
+8482821,Arvid Soderblom,20242025,CHI,Chicago Blackhawks,36
+8478406,Mackenzie Blackwood,20242025,COL,Colorado Avalanche,37
+8475809,Scott Wedgewood,20242025,COL,Colorado Avalanche,19
+8479193,Casey DeSmith,20242025,DAL,Dallas Stars,27
+8479979,Jake Oettinger,20242025,DAL,Dallas Stars,58
+8476434,John Gibson,20242025,ANA,Anaheim Ducks,29
+8479312,Alex Lyon,20242025,DET,Detroit Red Wings,30
+8475660,Cam Talbot,20242025,DET,Detroit Red Wings,47
+8475717,Calvin Pickard,20242025,EDM,Edmonton Oilers,36
+8479973,Stuart Skinner,20242025,EDM,Edmonton Oilers,51
+8475683,Sergei Bobrovsky,20242025,FLA,Florida Panthers,54
+8477970,Vitek Vanecek,20242025,SJS,San Jose Sharks,18
+8475311,Darcy Kuemper,20242025,LAK,Los Angeles Kings,50
+8479496,David Rittich,20242025,LAK,Los Angeles Kings,34
+8470594,Marc-Andre Fleury,20242025,MIN,Minnesota Wild,26
+8479406,Filip Gustavsson,20242025,MIN,Minnesota Wild,58
+8478470,Samuel Montembeault,20242025,MTL,Montréal Canadiens,62
+8474596,Jake Allen,20242025,NJD,New Jersey Devils,31
+8474593,Jacob Markstrom,20242025,NJD,New Jersey Devils,49
+8481020,Justus Annunen,20242025,NSH,Nashville Predators,23
+8477424,Juuse Saros,20242025,NSH,Nashville Predators,58
+8478009,Ilya Sorokin,20242025,NYI,New York Islanders,61
+8471734,Jonathan Quick,20242025,NYR,New York Rangers,24
+8478048,Igor Shesterkin,20242025,NYR,New York Rangers,61
+8476341,Anton Forsberg,20242025,OTT,Ottawa Senators,30
+8476999,Linus Ullmark,20242025,OTT,Ottawa Senators,44
+8481035,Samuel Ersson,20242025,PHI,Philadelphia Flyers,47
+8478905,Ivan Fedotov,20242025,PHI,Philadelphia Flyers,26
+8477465,Tristan Jarry,20242025,PIT,Pittsburgh Penguins,36
+8477968,Alex Nedeljkovic,20242025,PIT,Pittsburgh Penguins,38
+8478916,Joey Daccord,20242025,SEA,Seattle Kraken,57
+8475831,Philipp Grubauer,20242025,SEA,Seattle Kraken,26
+8480382,Alexandar Georgiev,20242025,SJS,San Jose Sharks,31
+8476412,Jordan Binnington,20242025,STL,St. Louis Blues,56
+8480981,Joel Hofer,20242025,STL,St. Louis Blues,31
+8476883,Andrei Vasilevskiy,20242025,TBL,Tampa Bay Lightning,63
+8476932,Anthony Stolarz,20242025,TOR,Toronto Maple Leafs,34
+8479361,Joseph Woll,20242025,TOR,Toronto Maple Leafs,42
+8478971,Connor Ingram,20242025,UTA,Utah Hockey Club,22
+8478872,Karel Vejmelka,20242025,UTA,Utah Hockey Club,58
+8477967,Thatcher Demko,20242025,VAN,Vancouver Canucks,23
+8480947,Kevin Lankinen,20242025,VAN,Vancouver Canucks,51
+8478499,Adin Hill,20242025,VGK,Vegas Golden Knights,50
+8478492,Ilya Samsonov,20242025,VGK,Vegas Golden Knights,29
+8477480,Eric Comrie,20242025,WPG,Winnipeg Jets,20
+8476945,Connor Hellebuyck,20242025,WPG,Winnipeg Jets,63
+8479292,Charlie Lindgren,20242025,WSH,Washington Capitals,39
+8480313,Logan Thompson,20242025,WSH,Washington Capitals,43
+8480843,Lukas Dostal,20232024,ANA,Anaheim Ducks,44
+8476434,John Gibson,20232024,ANA,Anaheim Ducks,46
+8476914,Joonas Korpisalo,20232024,OTT,Ottawa Senators,55
+8480280,Jeremy Swayman,20232024,BOS,Boston Bruins,44
+8480045,Ukko-Pekka Luukkonen,20232024,BUF,Buffalo Sabres,54
+8481611,Pyotr Kochetkov,20232024,CAR,Carolina Hurricanes,42
+8478007,Elvis Merzlikins,20232024,CBJ,Columbus Blue Jackets,41
+8480193,Daniil Tarasov,20232024,CBJ,Columbus Blue Jackets,24
+8475852,Petr Mrazek,20232024,CHI,Chicago Blackhawks,56
+8482821,Arvid Soderblom,20232024,CHI,Chicago Blackhawks,32
+8480382,Alexandar Georgiev,20232024,COL,Colorado Avalanche,63
+8479979,Jake Oettinger,20232024,DAL,Dallas Stars,54
+8479312,Alex Lyon,20232024,DET,Detroit Red Wings,44
+8475717,Calvin Pickard,20232024,EDM,Edmonton Oilers,23
+8479973,Stuart Skinner,20232024,EDM,Edmonton Oilers,59
+8475683,Sergei Bobrovsky,20232024,FLA,Florida Panthers,58
+8475311,Darcy Kuemper,20232024,WSH,Washington Capitals,33
+8479496,David Rittich,20232024,LAK,Los Angeles Kings,24
+8470594,Marc-Andre Fleury,20232024,MIN,Minnesota Wild,40
+8479406,Filip Gustavsson,20232024,MIN,Minnesota Wild,45
+8478470,Samuel Montembeault,20232024,MTL,Montréal Canadiens,41
+8480051,Cayden Primeau,20232024,MTL,Montréal Canadiens,23
+8474596,Jake Allen,20232024,MTL,Montréal Canadiens,21
+8474593,Jacob Markstrom,20232024,CGY,Calgary Flames,48
+8477424,Juuse Saros,20232024,NSH,Nashville Predators,64
+8478009,Ilya Sorokin,20232024,NYI,New York Islanders,56
+8473575,Semyon Varlamov,20232024,NYI,New York Islanders,28
+8471734,Jonathan Quick,20232024,NYR,New York Rangers,27
+8478048,Igor Shesterkin,20232024,NYR,New York Rangers,55
+8476341,Anton Forsberg,20232024,OTT,Ottawa Senators,30
+8476999,Linus Ullmark,20232024,BOS,Boston Bruins,40
+8481035,Samuel Ersson,20232024,PHI,Philadelphia Flyers,51
+8477465,Tristan Jarry,20232024,PIT,Pittsburgh Penguins,51
+8477968,Alex Nedeljkovic,20232024,PIT,Pittsburgh Penguins,38
+8478916,Joey Daccord,20232024,SEA,Seattle Kraken,50
+8475831,Philipp Grubauer,20232024,SEA,Seattle Kraken,36
+8478406,Mackenzie Blackwood,20232024,SJS,San Jose Sharks,44
+8477970,Vitek Vanecek,20232024,NJD,New Jersey Devils,32
+8476412,Jordan Binnington,20232024,STL,St. Louis Blues,57
+8480981,Joel Hofer,20232024,STL,St. Louis Blues,30
+8477992,Jonas Johansson,20232024,TBL,Tampa Bay Lightning,26
+8476883,Andrei Vasilevskiy,20232024,TBL,Tampa Bay Lightning,52
+8479361,Joseph Woll,20232024,TOR,Toronto Maple Leafs,25
+8477967,Thatcher Demko,20232024,VAN,Vancouver Canucks,51
+8478499,Adin Hill,20232024,VGK,Vegas Golden Knights,35
+8476945,Connor Hellebuyck,20232024,WPG,Winnipeg Jets,60
+8479292,Charlie Lindgren,20232024,WSH,Washington Capitals,50
+8480313,Logan Thompson,20232024,VGK,Vegas Golden Knights,46

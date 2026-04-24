@@ -1,0 +1,1 @@
+[{"period": 2, "penalty_type": "boarding", "duration_minutes": 2, "penalized_team_id": 10}, {"period": 2, "penalty_type": "slashing", "duration_minutes": 2, "penalized_team_id": 15}, {"period": 3, "penalty_type": "cross-checking", "duration_minutes": 2, "penalized_team_id": 15}]

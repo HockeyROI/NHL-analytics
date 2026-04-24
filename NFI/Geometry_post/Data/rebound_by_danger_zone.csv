@@ -1,0 +1,7 @@
+danger_zone,shot_category,shots,goals,save_pct,sv_ci_lo,sv_ci_hi
+Low,Non-rebound,56036,1337,0.9761,0.9748,0.9774
+Low,Rebound,390,6,0.9846,0.9668,0.9929
+Medium,Non-rebound,47007,4383,0.9068,0.9041,0.9094
+Medium,Rebound,879,91,0.8965,0.8746,0.9149
+High,Non-rebound,36440,6066,0.8335,0.8297,0.8373
+High,Rebound,7363,1279,0.8263,0.8175,0.8348

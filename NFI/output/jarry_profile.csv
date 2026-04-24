@@ -1,0 +1,14 @@
+section,zone,shot_type,attempts,goals,save_pct,L_save_pct,delta_sv_pct,z_vs_league,signif,flag
+OVERALL,ALL,ALL,2374,334,85.93,,,,,"Tier=Qualified, meets_4000min=1"
+OVERALL,,toi_ES_min,,,9855.93,,,,,
+OVERALL,,NFI_GSAx_cumulative,,,0.67,,,,,rank 40/93 (cum_4000min rank 26)
+OVERALL,,NFI_GSAx_per60,,,0.004,,,,,rank 42/93 (per60_4000min rank 26)
+OVERALL,CNFI+MNFI,spatial_save_pct,,,82.54,,,,,"Wilson95 [80.72, 84.22], rank 61"
+ZONE_OVERALL,CNFI,ALL,1050,203,80.67,,,,,"Wilson95 [78.17, 82.94]"
+ZONE_OVERALL,FNFI,ALL,564,18,96.81,,,,,"Wilson95 [95.01, 97.97]"
+ZONE_OVERALL,MNFI,ALL,760,113,85.13,,,,,"Wilson95 [82.43, 87.48]"
+ZONE_SHOTTYPE,CNFI,backhand,255,43,83.14,83.22,-0.08,-0.03,False,neutral (directional)
+ZONE_SHOTTYPE,CNFI,tip-in,220,35,84.09,82.7,1.39,0.55,False,neutral (directional)
+ZONE_SHOTTYPE,CNFI,wrist,591,138,76.65,80.52,-3.87,-2.38,True,WEAKNESS (sig)
+ZONE_SHOTTYPE,MNFI,snap,213,45,78.87,80.73,-1.85,-0.69,False,neutral (directional)
+ZONE_SHOTTYPE,MNFI,wrist,538,60,88.85,85.42,3.43,2.25,True,STRENGTH (sig)

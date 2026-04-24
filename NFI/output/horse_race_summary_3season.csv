@@ -1,0 +1,23 @@
+rank,metric,R,p,var_explained,n,type
+1,MULTIVARIATE (all 7 pillars),0.8569479444762208,0.0,0.7343597795420199,96,multivariate
+2,TNFI_zone_adj_pct,0.7651,0.0,0.5854,96,univariate
+3,TNFI_pct,0.7651,0.0,0.5854,96,univariate
+4,HD_CF_pct,0.7354,0.0,0.5408,96,univariate
+5,MNFI_pct,0.7343,0.0,0.5392,96,univariate
+6,CNFI_pct,0.7084,0.0,0.5019,96,univariate
+7,P1_NF_F,0.6702,0.0,0.4491,96,univariate
+8,CF_pct,0.6422,0.0,0.4124,96,univariate
+9,CF_zone_adj_pct,0.6422,0.0,0.4124,96,univariate
+10,P5_OffD,0.626,0.0,0.3919,96,univariate
+11,P3_OffF,0.5646,0.0,0.3188,96,univariate
+12,TNFI_score_zone_adj_pct,0.4972,0.0,0.2473,96,univariate
+13,TNFI_score_adj_pct,0.4972,0.0,0.2473,96,univariate
+14,FNFI_pct,0.4931,0.0,0.2431,96,univariate
+15,HD_CF_score_zone_adj_pct,0.4489,4e-06,0.2015,96,univariate
+16,HD_CF_score_adj_pct,0.4489,4e-06,0.2015,96,univariate
+17,P4_DefD,0.397,6.2e-05,0.1576,96,univariate
+18,P6_SvPct,0.3618,0.000293,0.1309,96,univariate
+19,CF_score_adj_pct,-0.314,0.001838,0.0986,96,univariate
+20,CF_score_zone_adj_pct,-0.314,0.001838,0.0986,96,univariate
+21,P7_SvPct,0.235,0.021191,0.0552,96,univariate
+22,P2_DefF,-0.0816,0.429574,0.0067,96,univariate

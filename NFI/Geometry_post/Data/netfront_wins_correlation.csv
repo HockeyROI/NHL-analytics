@@ -1,0 +1,5 @@
+metric,pearson_r,p_value,n,significant,r_squared
+nf_attempt_rate,0.3089,7e-05,159,YES ***,0.0954
+nf_goal_rate,0.0996,0.21158,159,no,0.0099
+nf_goals_per60,0.3053,9e-05,159,YES ***,0.0932
+overall_es_goal_rate,0.5131,0.0,159,YES ***,0.2632

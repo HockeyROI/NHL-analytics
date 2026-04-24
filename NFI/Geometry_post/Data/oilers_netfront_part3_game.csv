@@ -1,0 +1,27 @@
+game_id,game_label,period,time_in_period,team,player_name,player_id,event_type,shot_type,nf_category,x_coord_norm,y_coord_norm,time_gap_secs,is_goal
+2024021282,EDM@WPG 2025-04-13,1,18:50,WPG,Nino Niederreiter,8475799,shot-on-goal,tip-in,tip-in,72,0,,0
+2024021282,EDM@WPG 2025-04-13,1,02:14,WPG,Brandon Tanev,8479293,missed-shot,tip-in,tip-in,82,7,,0
+2024021282,EDM@WPG 2025-04-13,1,04:47,EDM,Connor Brown,8477015,missed-shot,tip-in,tip-in,64,4,,0
+2024021282,EDM@WPG 2025-04-13,1,16:19,EDM,Connor Brown,8477015,missed-shot,tip-in,tip-in,71,8,,0
+2024021282,EDM@WPG 2025-04-13,2,18:20,EDM,Connor McDavid,8478402,shot-on-goal,deflected,deflected,85,3,,0
+2024021282,EDM@WPG 2025-04-13,2,18:21,EDM,Connor McDavid,8478402,shot-on-goal,backhand,rebound,82,0,1,0
+2024021282,EDM@WPG 2025-04-13,2,18:22,EDM,Connor Brown,8477015,shot-on-goal,wrist,rebound,85,5,1,0
+2024021282,EDM@WPG 2025-04-13,2,18:49,WPG,Morgan Barron,8480289,shot-on-goal,tip-in,tip-in,69,-2,,0
+2024021282,EDM@WPG 2025-04-13,2,18:50,WPG,Brandon Tanev,8479293,missed-shot,wrist,rebound,80,2,1,0
+2024021282,EDM@WPG 2025-04-13,2,02:14,EDM,Derek Ryan,8478585,missed-shot,tip-in,tip-in,53,24,,0
+2024021282,EDM@WPG 2025-04-13,2,06:40,EDM,Darnell Nurse,8477498,missed-shot,wrist,rebound,35,36,3,0
+2024021282,EDM@WPG 2025-04-13,2,07:42,EDM,Jeff Skinner,8475784,missed-shot,wrist,rebound,93,-19,1,0
+2024021282,EDM@WPG 2025-04-13,2,09:16,EDM,Viktor Arvidsson,8478042,shot-on-goal,wrist,rebound,84,10,1,0
+2024021282,EDM@WPG 2025-04-13,2,15:03,EDM,Corey Perry,8470621,missed-shot,tip-in,tip-in,84,-2,,0
+2024021282,EDM@WPG 2025-04-13,3,18:51,EDM,Kasperi Kapanen,8477953,shot-on-goal,tip-in,tip-in,10,-27,,0
+2024021282,EDM@WPG 2025-04-13,3,05:09,WPG,Morgan Barron,8480289,shot-on-goal,tip-in,tip-in,83,-6,,0
+2024020874,COL@EDM 2025-02-07,1,01:55,COL,Calvin de Haan,8475177,missed-shot,snap,rebound,36,17,2,0
+2024020874,COL@EDM 2025-02-07,1,00:46,EDM,Jeff Skinner,8475784,missed-shot,tip-in,tip-in,87,7,,0
+2024020874,COL@EDM 2025-02-07,1,12:22,EDM,Corey Perry,8470621,goal,backhand,rebound,86,7,2,1
+2024020874,COL@EDM 2025-02-07,1,13:04,EDM,Jeff Skinner,8475784,shot-on-goal,tip-in,tip-in,-2,-11,,0
+2024020874,COL@EDM 2025-02-07,1,14:08,COL,Nathan MacKinnon,8477492,shot-on-goal,snap,rebound,75,17,2,0
+2024020874,COL@EDM 2025-02-07,2,03:10,COL,Joel Kiviranta,8481641,missed-shot,tip-in,tip-in,76,-6,,0
+2024020874,COL@EDM 2025-02-07,3,05:01,EDM,Viktor Arvidsson,8478042,shot-on-goal,tip-in,tip-in,75,-2,,0
+2024020874,COL@EDM 2025-02-07,3,09:37,COL,Artturi Lehkonen,8477476,shot-on-goal,deflected,deflected,85,-1,,0
+2024020874,COL@EDM 2025-02-07,3,11:22,COL,Juuso Parssinen,8481704,shot-on-goal,tip-in,tip-in,83,0,,0
+2024020874,COL@EDM 2025-02-07,3,01:28,EDM,Zach Hyman,8475786,missed-shot,tip-in,tip-in,80,6,,0

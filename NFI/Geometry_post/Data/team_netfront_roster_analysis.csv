@@ -1,0 +1,160 @@
+season,team,n_elite_nf,elite_player_names,elite_reb_shots,elite_reb_goals,points_pct,points,gp,playoff_depth
+20242025,VAN,4,Brock Boeser; Dakota Joshua; Danton Heinen; J.T. Miller,38,8,0.5488,90,82,missed_playoffs
+20222023,BOS,3,Brad Marchand; David Pastrnak; Patrice Bergeron,39,6,0.8232,135,82,R1_exit
+20232024,VAN,3,Brock Boeser; Dakota Joshua; J.T. Miller,38,12,0.6646,109,82,R2_exit
+20232024,BOS,3,Brad Marchand; Danton Heinen; David Pastrnak,56,12,0.6646,109,82,R2_exit
+20212022,BOS,3,Brad Marchand; David Pastrnak; Patrice Bergeron,40,16,0.6524,107,82,R1_exit
+20202021,BOS,3,Brad Marchand; David Pastrnak; Patrice Bergeron,25,7,0.6518,73,56,R2_exit
+20222023,VAN,3,Brock Boeser; Dakota Joshua; J.T. Miller,37,11,0.5061,83,82,missed_playoffs
+20222023,WSH,3,Connor McMichael; Dylan Strome; Garnet Hathaway,26,7,0.4878,80,82,missed_playoffs
+20212022,MIN,2,Kevin Fiala; Marcus Foligno,23,5,0.689,113,82,R1_exit
+20232024,DAL,2,Jason Robertson; Roope Hintz,20,3,0.689,113,82,CF_exit
+20242025,WSH,2,Connor McMichael; Dylan Strome,35,10,0.6768,111,82,R2_exit
+20202021,TBL,2,Anthony Cirelli; Yanni Gourde,15,7,0.6696,75,56,Cup_winner
+20202021,MIN,2,Kevin Fiala; Marcus Foligno,11,5,0.6696,75,56,R1_exit
+20212022,STL,2,Dakota Joshua; Ryan O'Reilly,12,1,0.6646,109,82,R2_exit
+20222023,DAL,2,Jason Robertson; Roope Hintz,32,9,0.6585,108,82,CF_exit
+20242025,DAL,2,Jason Robertson; Roope Hintz,24,7,0.6463,106,82,CF_exit
+20242025,LAK,2,Kevin Fiala; Phillip Danault,22,5,0.6402,105,82,R1_exit
+20222023,LAK,2,Kevin Fiala; Phillip Danault,21,5,0.6341,104,82,R1_exit
+20212022,WSH,2,Connor McMichael; Garnet Hathaway,21,4,0.6098,100,82,R1_exit
+20232024,LAK,2,Kevin Fiala; Phillip Danault,33,7,0.6037,99,82,R1_exit
+20212022,DAL,2,Jason Robertson; Roope Hintz,35,10,0.5976,98,82,R1_exit
+20202021,STL,2,Dakota Joshua; Ryan O'Reilly,8,2,0.5625,63,56,R1_exit
+20212022,VAN,2,Brock Boeser; J.T. Miller,20,4,0.561,92,82,missed_playoffs
+20232024,WSH,2,Connor McMichael; Dylan Strome,29,6,0.5549,91,82,R1_exit
+20202021,DAL,2,Jason Robertson; Roope Hintz,7,2,0.5357,60,56,missed_playoffs
+20202021,MTL,2,Josh Anderson; Phillip Danault,13,4,0.5268,59,56,Final_loss
+20242025,BOS,2,Brad Marchand; David Pastrnak,24,3,0.4634,76,82,missed_playoffs
+20202021,VAN,2,Brock Boeser; J.T. Miller,11,2,0.4464,50,56,missed_playoffs
+20212022,SEA,2,Mason Appleton; Yanni Gourde,15,2,0.3659,60,82,missed_playoffs
+20242025,WPG,1,Mason Appleton,9,2,0.7073,116,82,R2_exit
+20202021,WSH,1,Garnet Hathaway,3,1,0.6875,77,56,R1_exit
+20212022,TBL,1,Anthony Cirelli,9,2,0.6707,110,82,Final_loss
+20232024,WPG,1,Mason Appleton,11,3,0.6707,110,82,R1_exit
+20242025,TOR,1,Max Domi,7,1,0.6585,108,82,R2_exit
+20212022,PIT,1,Danton Heinen,18,3,0.628,103,82,R1_exit
+20222023,MIN,1,Marcus Foligno,5,1,0.628,103,82,R1_exit
+20232024,TOR,1,Max Domi,10,2,0.622,102,82,R1_exit
+20242025,TBL,1,Anthony Cirelli,13,4,0.622,102,82,R1_exit
+20222023,SEA,1,Yanni Gourde,9,2,0.6098,100,82,R2_exit
+20212022,LAK,1,Phillip Danault,19,11,0.6037,99,82,R1_exit
+20232024,NSH,1,Ryan O'Reilly,13,4,0.6037,99,82,R1_exit
+20222023,TBL,1,Anthony Cirelli,9,1,0.5976,98,82,R1_exit
+20232024,TBL,1,Anthony Cirelli,8,1,0.5976,98,82,R1_exit
+20242025,MIN,1,Marcus Foligno,12,2,0.5915,97,82,R1_exit
+20222023,WPG,1,Mason Appleton,3,2,0.5793,95,82,R1_exit
+20232024,NYI,1,Kyle Palmieri,21,4,0.5732,94,82,R1_exit
+20222023,NYI,1,Kyle Palmieri,8,2,0.5671,93,82,R1_exit
+20202021,WPG,1,Mason Appleton,5,1,0.5625,63,56,R2_exit
+20222023,PIT,1,Danton Heinen,12,5,0.5549,91,82,missed_playoffs
+20242025,MTL,1,Josh Anderson,7,3,0.5549,91,82,R1_exit
+20232024,MIN,1,Marcus Foligno,2,1,0.5305,87,82,missed_playoffs
+20232024,PHI,1,Garnet Hathaway,13,3,0.5305,87,82,missed_playoffs
+20212022,NYI,1,Kyle Palmieri,7,0,0.5122,84,82,missed_playoffs
+20242025,NYI,1,Kyle Palmieri,16,4,0.5,82,82,missed_playoffs
+20212022,CBJ,1,Max Domi,6,2,0.4939,81,82,missed_playoffs
+20222023,STL,1,Ryan O'Reilly,11,3,0.4939,81,82,missed_playoffs
+20232024,SEA,1,Yanni Gourde,16,3,0.4939,81,82,missed_playoffs
+20202021,CHI,1,Dylan Strome,4,0,0.4911,55,56,missed_playoffs
+20232024,MTL,1,Josh Anderson,13,2,0.4634,76,82,missed_playoffs
+20242025,SEA,1,Yanni Gourde,8,1,0.4634,76,82,missed_playoffs
+20242025,PHI,1,Garnet Hathaway,12,2,0.4634,76,82,missed_playoffs
+20202021,CBJ,1,Max Domi,4,1,0.4286,48,56,missed_playoffs
+20212022,CHI,1,Dylan Strome,6,1,0.4146,68,82,missed_playoffs
+20222023,MTL,1,Josh Anderson,8,2,0.4146,68,82,missed_playoffs
+20242025,NSH,1,Ryan O'Reilly,17,4,0.4146,68,82,missed_playoffs
+20202021,NJD,1,Kyle Palmieri,8,3,0.4018,45,56,missed_playoffs
+20202021,ANA,1,Danton Heinen,6,0,0.3839,43,56,missed_playoffs
+20222023,CHI,1,Max Domi,5,1,0.3598,59,82,missed_playoffs
+20212022,MTL,1,Josh Anderson,9,3,0.3354,55,82,missed_playoffs
+20202021,BUF,1,Connor McMichael,0,0,0.3304,37,56,missed_playoffs
+20212022,FLA,0,,0,0,0.7439,122,82,R2_exit
+20202021,COL,0,,0,0,0.7321,82,56,R2_exit
+20202021,VGK,0,,0,0,0.7321,82,56,CF_exit
+20212022,COL,0,,0,0,0.7256,119,82,Cup_winner
+20202021,CAR,0,,0,0,0.7143,80,56,R2_exit
+20212022,CAR,0,,0,0,0.7073,116,82,R2_exit
+20202021,FLA,0,,0,0,0.7054,79,56,R1_exit
+20212022,TOR,0,,0,0,0.7012,115,82,R1_exit
+20232024,NYR,0,,0,0,0.6951,114,82,CF_exit
+20222023,CAR,0,,0,0,0.689,113,82,CF_exit
+20202021,PIT,0,,0,0,0.6875,77,56,R1_exit
+20202021,TOR,0,,0,0,0.6875,77,56,R1_exit
+20222023,NJD,0,,0,0,0.6829,112,82,R2_exit
+20212022,CGY,0,,0,0,0.6768,111,82,R2_exit
+20222023,TOR,0,,0,0,0.6768,111,82,R2_exit
+20222023,VGK,0,,0,0,0.6768,111,82,Cup_winner
+20232024,CAR,0,,0,0,0.6768,111,82,R2_exit
+20212022,NYR,0,,0,0,0.6707,110,82,CF_exit
+20232024,FLA,0,,0,0,0.6707,110,82,Cup_winner
+20242025,VGK,0,,0,0,0.6707,110,82,R2_exit
+20222023,EDM,0,,0,0,0.6646,109,82,R2_exit
+20222023,COL,0,,0,0,0.6605,107,81,R1_exit
+20222023,NYR,0,,0,0,0.6524,107,82,R1_exit
+20232024,COL,0,,0,0,0.6524,107,82,R2_exit
+20202021,EDM,0,,0,0,0.6429,72,56,R1_exit
+20212022,EDM,0,,0,0,0.6341,104,82,CF_exit
+20232024,EDM,0,,0,0,0.6341,104,82,Final_loss
+20202021,NYI,0,,0,0,0.6339,71,56,CF_exit
+20242025,COL,0,,0,0,0.622,102,82,R1_exit
+20242025,EDM,0,,0,0,0.6159,101,82,Final_loss
+20242025,CAR,0,,0,0,0.6037,99,82,CF_exit
+20232024,VGK,0,,0,0,0.5976,98,82,R1_exit
+20242025,FLA,0,,0,0,0.5976,98,82,Cup_winner
+20212022,NSH,0,,0,0,0.5915,97,82,R1_exit
+20242025,OTT,0,,0,0,0.5915,97,82,R1_exit
+20242025,STL,0,,0,0,0.5854,96,82,R1_exit
+20242025,CGY,0,,0,0,0.5854,96,82,missed_playoffs
+20212022,VGK,0,,0,0,0.5732,94,82,missed_playoffs
+20202021,NSH,0,,0,0,0.5714,64,56,R1_exit
+20222023,NSH,0,,0,0,0.5679,92,81,missed_playoffs
+20222023,CGY,0,,0,0,0.5671,93,82,missed_playoffs
+20222023,FLA,0,,0,0,0.561,92,82,Final_loss
+20232024,STL,0,,0,0,0.561,92,82,missed_playoffs
+20232024,DET,0,,0,0,0.5549,91,82,missed_playoffs
+20242025,NJD,0,,0,0,0.5549,91,82,R1_exit
+20222023,BUF,0,,0,0,0.5494,89,81,missed_playoffs
+20212022,WPG,0,,0,0,0.5427,89,82,missed_playoffs
+20242025,UTA,0,,0,0,0.5427,89,82,missed_playoffs
+20242025,CBJ,0,,0,0,0.5427,89,82,missed_playoffs
+20232024,PIT,0,,0,0,0.5366,88,82,missed_playoffs
+20202021,NYR,0,,0,0,0.5357,60,56,missed_playoffs
+20222023,OTT,0,,0,0,0.5244,86,82,missed_playoffs
+20242025,DET,0,,0,0,0.5244,86,82,missed_playoffs
+20242025,NYR,0,,0,0,0.5183,85,82,missed_playoffs
+20202021,PHI,0,,0,0,0.5179,58,56,missed_playoffs
+20232024,BUF,0,,0,0,0.5122,84,82,missed_playoffs
+20232024,NJD,0,,0,0,0.4939,81,82,missed_playoffs
+20232024,CGY,0,,0,0,0.4939,81,82,missed_playoffs
+20202021,CGY,0,,0,0,0.4911,55,56,missed_playoffs
+20222023,DET,0,,0,0,0.4878,80,82,missed_playoffs
+20242025,PIT,0,,0,0,0.4878,80,82,missed_playoffs
+20242025,ANA,0,,0,0,0.4878,80,82,missed_playoffs
+20202021,ARI,0,,0,0,0.4821,54,56,missed_playoffs
+20242025,BUF,0,,0,0,0.4817,79,82,missed_playoffs
+20232024,OTT,0,,0,0,0.4756,78,82,missed_playoffs
+20212022,SJS,0,,0,0,0.4695,77,82,missed_playoffs
+20232024,ARI,0,,0,0,0.4695,77,82,missed_playoffs
+20212022,ANA,0,,0,0,0.4634,76,82,missed_playoffs
+20212022,BUF,0,,0,0,0.4573,75,82,missed_playoffs
+20222023,PHI,0,,0,0,0.4573,75,82,missed_playoffs
+20202021,OTT,0,,0,0,0.4554,51,56,missed_playoffs
+20212022,DET,0,,0,0,0.4512,74,82,missed_playoffs
+20212022,OTT,0,,0,0,0.4451,73,82,missed_playoffs
+20202021,LAK,0,,0,0,0.4375,49,56,missed_playoffs
+20202021,SJS,0,,0,0,0.4375,49,56,missed_playoffs
+20202021,DET,0,,0,0,0.4286,48,56,missed_playoffs
+20222023,ARI,0,,0,0,0.4268,70,82,missed_playoffs
+20232024,CBJ,0,,0,0,0.4024,66,82,missed_playoffs
+20212022,NJD,0,,0,0,0.3841,63,82,missed_playoffs
+20212022,PHI,0,,0,0,0.372,61,82,missed_playoffs
+20242025,CHI,0,,0,0,0.372,61,82,missed_playoffs
+20222023,SJS,0,,0,0,0.3659,60,82,missed_playoffs
+20222023,CBJ,0,,0,0,0.3642,59,81,missed_playoffs
+20232024,ANA,0,,0,0,0.3598,59,82,missed_playoffs
+20222023,ANA,0,,0,0,0.3537,58,82,missed_playoffs
+20212022,ARI,0,,0,0,0.3476,57,82,missed_playoffs
+20232024,CHI,0,,0,0,0.3171,52,82,missed_playoffs
+20242025,SJS,0,,0,0,0.3171,52,82,missed_playoffs
+20232024,SJS,0,,0,0,0.2866,47,82,missed_playoffs

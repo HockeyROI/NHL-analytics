@@ -1,0 +1,7 @@
+playoff_depth,n_team_seasons,avg_nf_goal_rate,avg_nf_attempt_rate,avg_points_pct
+R1_exit,40,0.1027,0.1109,0.6254
+R2_exit,20,0.0977,0.1184,0.673
+CF_exit,10,0.0991,0.1215,0.6652
+Final_loss,5,0.1006,0.1117,0.6017
+Cup_winner,5,0.1119,0.1101,0.6681
+missed_playoffs,79,0.1009,0.1068,0.4642

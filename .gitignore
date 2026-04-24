@@ -1,0 +1,38 @@
+# Large data files (>90MB — GitHub rejects >100MB; also anything over 50MB to stay under GitHub's recommendation)
+Data/nhl_shot_events.csv
+Data/shift_data.csv
+**/shift_data.csv
+**/nhl_shot_events.csv
+NFI/output/shots_tagged.csv
+
+# Raw NHL API JSONs - ~1 GB, cached between GH Actions runs via actions/cache
+Zones/raw/
+Zones/raw/shifts/
+Zones/raw/pbp/
+
+# Intermediate artefacts that compute_pqr_roc_rol.py regenerates each run
+Zones/_player_meta.json
+Zones/_zone_time.json
+Zones/_overlap.pkl
+Zones/corsi_reference.csv
+
+# Pickles / logs / tmp
+*.pkl
+*.log
+*.tmp
+
+# Python
+__pycache__/
+*.pyc
+.Python
+.venv/
+venv/
+*.egg-info/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Streamlit
+.streamlit/secrets.toml

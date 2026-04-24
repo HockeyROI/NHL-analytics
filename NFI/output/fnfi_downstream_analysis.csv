@@ -1,0 +1,10 @@
+zone,metric,shots,events,pct,ci_lo_pct,ci_hi_pct
+FNFI,tip_or_deflection_within_2s,50541,61,0.121,0.094,0.155
+FNFI,any_rebound_within_2s,50541,854,1.69,1.581,1.806
+FNFI,CNFI_followup_within_2s,50541,479,0.948,0.867,1.036
+MNFI,tip_or_deflection_within_2s,69484,93,0.134,0.109,0.164
+MNFI,any_rebound_within_2s,69484,1529,2.201,2.094,2.312
+MNFI,CNFI_followup_within_2s,69484,1008,1.451,1.364,1.542
+Wide,tip_or_deflection_within_2s,277354,292,0.105,0.094,0.118
+Wide,any_rebound_within_2s,277354,3535,1.275,1.233,1.317
+Wide,CNFI_followup_within_2s,277354,2144,0.773,0.741,0.806

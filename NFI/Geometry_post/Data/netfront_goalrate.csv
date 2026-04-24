@@ -1,0 +1,7 @@
+component,shots,goals,goal_rate,multiplier_vs_baseline
+NET-FRONT (total),21348,3037,0.1423,1.78
+rebound,8632,1376,0.1594,2.0
+tip-in,10217,1298,0.127,1.59
+deflected,2243,313,0.1395,1.75
+bat,256,50,0.1953,2.45
+other (baseline),126767,10125,0.0799,1.0

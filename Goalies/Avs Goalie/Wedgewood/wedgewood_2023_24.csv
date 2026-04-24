@@ -1,0 +1,848 @@
+game_id,game_date,period,time,time_secs,shot_type,shooting_player_id,x_coord,y_coord,zone,is_goal,situation_code,is_rebound,is_rush,distance_ft,distance_band,danger_zone,lateral,situation,shoots
+2023021220,2024-04-06,1,03:04,184,wrist,8480025,-78,16,O,0,1551,False,False,19.4,18-20ft,High,Right,Even Strength,R
+2023021220,2024-04-06,1,03:17,197,deflected,8483466,-34,-41,O,0,1551,False,False,68.6,60ft+,Low,Left,Even Strength,L
+2023021220,2024-04-06,1,07:04,424,snap,8480798,-38,12,O,0,1551,False,False,52.4,52-54ft,Low,Center,Even Strength,L
+2023021220,2024-04-06,1,15:09,909,wrist,8477450,-63,8,O,0,1551,False,False,27.2,26-28ft,Medium,Center,Even Strength,L
+2023021220,2024-04-06,1,17:32,1052,deflected,8476278,-78,-7,O,0,1551,False,False,13.0,12-14ft,High,Center,Even Strength,R
+2023021220,2024-04-06,1,17:54,1074,wrist,8482117,-57,-19,O,0,1551,False,False,37.2,36-38ft,Medium,Left,Even Strength,L
+2023021220,2024-04-06,2,03:10,190,wrist,8484144,69,19,O,0,1551,False,False,27.6,26-28ft,Medium,Right,Even Strength,R
+2023021220,2024-04-06,2,04:48,288,wrist,8484144,71,-20,O,1,1451,False,False,26.9,26-28ft,Medium,Left,Power Play,R
+2023021220,2024-04-06,2,05:53,353,wrist,8476960,71,11,O,1,1551,False,False,21.1,20-22ft,Medium,Center,Even Strength,L
+2023021220,2024-04-06,2,06:13,373,wrist,8484144,60,-16,O,0,1551,False,False,33.1,32-34ft,Medium,Left,Even Strength,R
+2023021220,2024-04-06,2,08:51,531,wrist,8477495,69,17,O,1,1551,False,False,26.2,26-28ft,Medium,Right,Even Strength,R
+2023021220,2024-04-06,3,00:40,40,slap,8483466,-35,-14,O,0,1551,False,False,55.8,54-56ft,Low,Center,Even Strength,L
+2023021220,2024-04-06,3,01:16,76,slap,8482117,-48,-5,O,0,1551,False,False,41.3,40-42ft,Low,Center,Even Strength,L
+2023021220,2024-04-06,3,06:12,372,wrist,8474870,-60,15,O,0,1551,False,False,32.6,32-34ft,Medium,Center,Even Strength,R
+2023021220,2024-04-06,3,11:32,692,wrist,8473422,-54,-18,O,0,1551,False,False,39.4,38-40ft,Medium,Left,Even Strength,L
+2023021220,2024-04-06,3,11:57,717,wrist,8480798,-65,-17,O,0,1551,False,False,29.4,28-30ft,Medium,Left,Even Strength,L
+2023021220,2024-04-06,3,14:04,844,snap,8484144,-57,19,O,0,1551,False,False,37.2,36-38ft,Medium,Right,Even Strength,R
+2023021147,2024-03-26,1,00:40,40,wrist,8480188,49,15,O,0,1551,False,False,42.7,42-44ft,Low,Center,Even Strength,R
+2023021147,2024-03-26,1,02:22,142,wrist,8471709,48,32,O,0,1551,False,False,52.0,52-54ft,Low,Right,Even Strength,L
+2023021147,2024-03-26,1,02:58,178,wrist,8479983,31,27,O,0,1551,False,False,64.0,60ft+,Low,Right,Even Strength,L
+2023021147,2024-03-26,1,08:46,526,snap,8480188,55,-7,O,0,1551,False,False,34.7,34-36ft,Medium,Center,Even Strength,R
+2023021147,2024-03-26,1,10:15,615,snap,8481477,68,4,O,0,1551,False,False,21.4,20-22ft,Medium,Center,Even Strength,L
+2023021147,2024-03-26,1,13:19,799,slap,8480188,45,-8,O,0,1551,False,False,44.7,44-46ft,Low,Center,Even Strength,R
+2023021147,2024-03-26,1,13:26,806,slap,8479983,51,35,O,0,1551,False,False,51.7,50-52ft,Low,Right,Even Strength,L
+2023021147,2024-03-26,1,16:17,977,snap,8477335,47,-34,O,0,1551,False,False,54.0,54-56ft,Low,Left,Even Strength,R
+2023021147,2024-03-26,2,00:54,54,wrist,8482222,-82,8,O,1,1551,False,False,10.6,10-12ft,High,Center,Even Strength,L
+2023021147,2024-03-26,2,02:00,120,slap,8482667,-74,10,O,1,1451,False,False,18.0,18-20ft,High,Center,Power Play,L
+2023021147,2024-03-26,2,03:39,219,wrist,8482133,-79,-6,O,0,1551,False,False,11.7,10-12ft,High,Center,Even Strength,L
+2023021147,2024-03-26,2,07:46,466,wrist,8477846,-71,29,O,0,1551,False,False,34.1,34-36ft,Medium,Right,Even Strength,R
+2023021147,2024-03-26,2,08:58,538,snap,8480011,-66,-20,O,1,1551,False,False,30.5,30-32ft,Medium,Left,Even Strength,L
+2023021147,2024-03-26,2,09:56,596,snap,8477473,-31,0,O,0,1551,False,False,58.0,58-60ft,Low,Center,Even Strength,R
+2023021147,2024-03-26,2,13:13,793,backhand,8482667,-85,-7,O,0,1551,False,False,8.1,8-10ft,High,Center,Even Strength,L
+2023021147,2024-03-26,2,13:58,838,backhand,8481477,-83,-5,O,0,1551,False,False,7.8,6-8ft,High,Center,Even Strength,L
+2023021147,2024-03-26,2,18:17,1097,wrist,8479983,-74,14,O,0,1551,False,False,20.5,20-22ft,Medium,Center,Even Strength,L
+2023021147,2024-03-26,3,08:57,537,wrist,8480188,81,-20,O,0,1551,False,False,21.5,20-22ft,Medium,Left,Even Strength,R
+2023021147,2024-03-26,3,10:30,630,wrist,8477473,45,-40,O,0,1551,False,False,59.5,58-60ft,Low,Left,Even Strength,R
+2023021147,2024-03-26,3,15:25,925,wrist,8477473,82,6,O,0,1551,False,False,9.2,8-10ft,High,Center,Even Strength,R
+2023021068,2024-03-16,1,01:21,81,wrist,8479400,66,39,O,0,1551,False,False,45.3,44-46ft,Low,Right,Even Strength,L
+2023021068,2024-03-16,1,01:25,85,wrist,8482155,55,18,O,0,1551,False,False,38.5,38-40ft,Medium,Right,Even Strength,R
+2023021068,2024-03-16,1,03:02,182,backhand,8476479,81,-16,O,0,1551,False,False,17.9,16-18ft,High,Left,Even Strength,L
+2023021068,2024-03-16,1,03:03,183,snap,8479998,76,-14,O,0,1551,True,False,19.1,18-20ft,High,Center,Even Strength,L
+2023021068,2024-03-16,1,04:52,292,snap,8474563,33,-13,O,0,1551,False,False,57.5,56-58ft,Low,Center,Even Strength,R
+2023021068,2024-03-16,1,06:19,379,snap,8477942,47,38,O,0,1551,False,False,56.6,56-58ft,Low,Right,Even Strength,L
+2023021068,2024-03-16,1,06:38,398,snap,8477960,28,-34,O,0,1551,False,False,69.8,60ft+,Low,Left,Even Strength,L
+2023021068,2024-03-16,1,08:59,539,wrist,8476479,47,23,O,0,1551,False,False,47.9,46-48ft,Low,Right,Even Strength,L
+2023021068,2024-03-16,1,13:31,811,tip-in,8482124,80,5,O,0,1551,False,False,10.3,10-12ft,High,Center,Even Strength,L
+2023021068,2024-03-16,1,14:57,897,slap,8479675,53,28,O,0,1551,False,False,45.6,44-46ft,Low,Right,Even Strength,L
+2023021068,2024-03-16,1,14:58,898,deflected,8477942,46,21,O,0,1551,True,False,47.9,46-48ft,Low,Right,Even Strength,L
+2023021068,2024-03-16,1,19:01,1141,wrist,8479675,47,-14,O,0,1551,False,False,44.3,44-46ft,Low,Center,Even Strength,L
+2023021068,2024-03-16,2,00:44,44,wrist,8482124,-64,-38,O,0,1551,False,False,45.5,44-46ft,Low,Left,Even Strength,L
+2023021068,2024-03-16,2,00:48,48,tip-in,8482124,-55,-10,O,0,1551,False,False,35.4,34-36ft,Medium,Center,Even Strength,L
+2023021068,2024-03-16,2,02:46,166,wrist,8473453,-66,39,O,0,1551,False,False,45.3,44-46ft,Low,Right,Even Strength,R
+2023021068,2024-03-16,2,03:44,224,wrist,8478911,-27,39,O,0,1551,False,False,73.2,60ft+,Low,Right,Even Strength,R
+2023021068,2024-03-16,2,16:14,974,wrist,8482155,-49,26,O,0,1551,False,False,47.7,46-48ft,Low,Right,Even Strength,R
+2023021068,2024-03-16,2,17:35,1055,wrist,8481606,-29,27,O,0,1551,False,False,65.8,60ft+,Low,Right,Even Strength,R
+2023021068,2024-03-16,2,18:22,1102,backhand,8477960,-84,7,O,0,1551,False,False,8.6,8-10ft,High,Center,Even Strength,L
+2023021068,2024-03-16,3,00:42,42,backhand,8479675,94,-20,O,0,1551,False,False,20.6,20-22ft,Medium,Left,Even Strength,L
+2023021068,2024-03-16,3,00:43,43,snap,8478911,76,1,O,0,1551,True,False,13.0,12-14ft,High,Center,Even Strength,R
+2023021068,2024-03-16,3,01:11,71,wrist,8477942,47,-27,O,1,1551,False,False,49.9,48-50ft,Low,Left,Even Strength,L
+2023021068,2024-03-16,3,02:16,136,wrist,8481560,61,19,O,0,1551,False,False,33.8,32-34ft,Medium,Right,Even Strength,L
+2023021068,2024-03-16,3,03:55,235,wrist,8477960,65,8,O,0,1551,False,False,25.3,24-26ft,Medium,Center,Even Strength,L
+2023021068,2024-03-16,3,03:59,239,snap,8482124,71,2,O,0,1551,False,False,18.1,18-20ft,High,Center,Even Strength,L
+2023021068,2024-03-16,3,04:37,277,tip-in,8478882,78,-4,O,0,1551,False,False,11.7,10-12ft,High,Center,Even Strength,L
+2023021068,2024-03-16,3,06:26,386,snap,8476479,68,-3,O,0,1551,False,False,21.2,20-22ft,Medium,Center,Even Strength,L
+2023021068,2024-03-16,3,09:24,564,wrist,8477960,48,3,O,0,1551,False,False,41.1,40-42ft,Low,Center,Even Strength,L
+2023021053,2024-03-14,2,04:31,271,wrist,8479407,-86,7,O,0,1551,False,False,7.6,6-8ft,High,Center,Even Strength,L
+2023021053,2024-03-14,2,05:12,312,wrist,8477931,-54,-31,O,1,1551,False,False,46.8,46-48ft,Low,Left,Even Strength,L
+2023021053,2024-03-14,2,17:44,1064,snap,8478414,-35,1,O,0,1551,False,False,54.0,54-56ft,Low,Center,Even Strength,L
+2023021053,2024-03-14,2,19:46,1186,wrist,8475287,-58,18,O,0,1451,False,False,35.8,34-36ft,Medium,Right,Power Play,L
+2023021053,2024-03-14,3,06:48,408,deflected,8478414,80,-18,O,0,1551,False,False,20.1,20-22ft,Medium,Left,Even Strength,L
+2023021053,2024-03-14,3,07:19,439,snap,8481701,58,36,O,0,1551,False,False,47.5,46-48ft,Low,Right,Even Strength,L
+2023021053,2024-03-14,3,12:15,735,snap,8481701,51,41,O,0,1551,False,False,55.9,54-56ft,Low,Right,Even Strength,L
+2023021053,2024-03-14,3,12:16,736,snap,8477508,82,4,O,0,1551,True,False,8.1,8-10ft,High,Center,Even Strength,R
+2023021053,2024-03-14,3,14:25,865,snap,8482125,85,-12,O,1,1551,False,False,12.6,12-14ft,High,Center,Even Strength,R
+2023021053,2024-03-14,3,19:38,1178,tip-in,8482125,82,1,O,0,1551,False,False,7.1,6-8ft,High,Center,Even Strength,R
+2023021021,2024-03-09,1,00:26,26,tip-in,8477942,-78,-1,O,1,1551,False,False,11.0,10-12ft,High,Center,Even Strength,L
+2023021021,2024-03-09,1,02:51,171,wrist,8478882,-29,16,O,0,1551,False,False,62.1,60ft+,Low,Right,Even Strength,L
+2023021021,2024-03-09,1,05:39,339,wrist,8473453,-34,36,O,0,1551,False,False,65.7,60ft+,Low,Right,Even Strength,R
+2023021021,2024-03-09,1,11:06,666,snap,8479400,-70,-23,O,0,1560,False,False,29.8,28-30ft,Medium,Left,Penalty Shot,L
+2023021021,2024-03-09,1,12:38,758,wrist,8481606,-38,0,O,0,1451,False,False,51.0,50-52ft,Low,Center,Power Play,R
+2023021021,2024-03-09,1,16:57,1017,snap,8482155,-66,23,O,0,1451,False,False,32.5,32-34ft,Medium,Right,Power Play,R
+2023021021,2024-03-09,2,00:31,31,tip-in,8478882,76,1,O,0,1441,False,False,13.0,12-14ft,High,Center,Other,L
+2023021021,2024-03-09,2,01:31,91,snap,8482155,46,-25,O,0,1551,False,False,49.7,48-50ft,Low,Left,Even Strength,R
+2023021021,2024-03-09,2,03:28,208,wrist,8481606,-77,20,D,0,1551,False,False,23.3,22-24ft,Medium,Right,Even Strength,R
+2023021021,2024-03-09,2,04:27,267,wrist,8477942,51,37,O,0,1551,False,False,53.0,52-54ft,Low,Right,Even Strength,L
+2023021021,2024-03-09,2,04:49,289,backhand,8481560,76,5,O,0,1551,False,False,13.9,12-14ft,High,Center,Even Strength,L
+2023021021,2024-03-09,2,05:08,308,wrist,8481532,54,38,O,0,1551,False,False,51.7,50-52ft,Low,Right,Even Strength,L
+2023021021,2024-03-09,2,06:15,375,backhand,8482155,-77,32,D,0,1551,False,False,34.2,34-36ft,Medium,Right,Even Strength,R
+2023021021,2024-03-09,2,06:43,403,snap,8482124,53,-26,O,0,1551,False,False,44.4,44-46ft,Low,Left,Even Strength,L
+2023021021,2024-03-09,2,10:12,612,wrist,8481481,63,33,O,0,1551,False,True,42.0,42-44ft,Low,Right,Even Strength,L
+2023021021,2024-03-09,2,11:17,677,wrist,8481532,14,32,N,0,1551,False,False,81.5,60ft+,Low,Right,Even Strength,L
+2023021021,2024-03-09,2,16:29,989,snap,8479400,76,12,O,0,1551,False,False,17.7,16-18ft,High,Center,Even Strength,L
+2023021021,2024-03-09,2,18:52,1132,wrist,8477960,79,-5,O,0,1541,False,False,11.2,10-12ft,High,Center,Shorthanded,L
+2023021021,2024-03-09,3,00:34,34,wrist,8479421,-31,-21,O,0,1551,False,False,61.7,60ft+,Low,Left,Even Strength,L
+2023021021,2024-03-09,3,09:49,589,slap,8481606,-34,0,O,0,1451,False,False,55.0,54-56ft,Low,Center,Power Play,R
+2023021021,2024-03-09,3,10:39,639,wrist,8479400,-60,19,O,0,1451,False,False,34.7,34-36ft,Medium,Right,Power Play,L
+2023021021,2024-03-09,3,13:22,802,slap,8477942,-52,-35,O,0,1551,False,False,50.9,50-52ft,Low,Left,Even Strength,L
+2023021021,2024-03-09,3,17:13,1033,snap,8482155,-56,-25,O,0,1551,False,False,41.4,40-42ft,Low,Left,Even Strength,R
+2023021021,2024-03-09,3,18:42,1122,wrist,8478882,-37,-37,O,0,1551,False,False,63.8,60ft+,Low,Left,Even Strength,L
+2023021021,2024-03-09,3,19:53,1193,wrist,8473453,-28,40,O,0,1551,False,False,72.9,60ft+,Low,Right,Even Strength,R
+2023020924,2024-02-26,1,01:21,81,wrist,8478445,75,-1,O,0,1551,False,False,14.0,14-16ft,High,Center,Even Strength,R
+2023020924,2024-02-26,1,01:36,96,wrist,8476422,-1,33,N,0,1551,False,False,94.0,60ft+,Low,Right,Even Strength,L
+2023020924,2024-02-26,1,03:44,224,snap,8477500,39,20,O,0,1551,False,False,53.9,52-54ft,Low,Right,Even Strength,L
+2023020924,2024-02-26,1,06:04,364,snap,8477500,48,-26,O,0,1551,False,False,48.5,48-50ft,Low,Left,Even Strength,L
+2023020924,2024-02-26,1,08:24,504,wrist,8474709,31,40,O,0,1551,False,False,70.5,60ft+,Low,Right,Even Strength,L
+2023020924,2024-02-26,1,11:55,715,tip-in,8474709,3,-7,N,0,1551,False,False,86.3,60ft+,Low,Center,Even Strength,L
+2023020924,2024-02-26,1,12:44,764,backhand,8478445,72,36,O,0,1551,False,False,39.8,38-40ft,Medium,Right,Even Strength,R
+2023020924,2024-02-26,1,15:24,924,wrist,8478445,74,-28,O,0,1551,False,True,31.8,30-32ft,Medium,Left,Even Strength,R
+2023020924,2024-02-26,1,15:59,959,snap,8477506,50,-7,O,1,1551,False,False,39.6,38-40ft,Medium,Center,Even Strength,R
+2023020924,2024-02-26,1,19:46,1186,wrist,8475314,82,6,O,0,1551,False,False,9.2,8-10ft,High,Center,Even Strength,L
+2023020924,2024-02-26,2,00:35,35,wrist,8475754,-75,20,O,0,1541,False,False,24.4,24-26ft,Medium,Right,Shorthanded,L
+2023020924,2024-02-26,2,04:53,293,wrist,8478115,-63,-38,O,0,1551,False,False,46.0,46-48ft,Low,Left,Even Strength,L
+2023020924,2024-02-26,2,07:19,439,slap,8477506,-40,37,O,0,1551,False,False,61.4,60ft+,Low,Right,Even Strength,R
+2023020924,2024-02-26,2,07:40,460,deflected,8477500,-82,-3,O,0,1551,False,False,7.6,6-8ft,High,Center,Even Strength,L
+2023020924,2024-02-26,2,09:48,588,wrist,8477500,-74,-13,O,0,1551,False,False,19.8,18-20ft,High,Center,Even Strength,L
+2023020924,2024-02-26,2,12:08,728,snap,8474709,-66,23,O,0,1551,False,False,32.5,32-34ft,Medium,Right,Even Strength,L
+2023020924,2024-02-26,2,14:24,864,wrist,8475151,-52,32,O,0,1551,False,False,48.9,48-50ft,Low,Right,Even Strength,R
+2023020924,2024-02-26,2,14:26,866,backhand,8475314,-74,-3,O,0,1551,True,False,15.3,14-16ft,High,Center,Even Strength,L
+2023020924,2024-02-26,2,15:20,920,snap,8478115,-25,-24,O,0,1551,False,False,68.4,60ft+,Low,Left,Even Strength,L
+2023020924,2024-02-26,2,15:22,922,wrist,8478115,-73,-10,O,0,1551,True,False,18.9,18-20ft,High,Center,Even Strength,L
+2023020924,2024-02-26,2,15:24,924,slap,8481237,-69,0,O,1,1551,True,False,20.0,20-22ft,High,Center,Even Strength,L
+2023020924,2024-02-26,2,17:23,1043,wrist,8475754,-79,10,O,0,1551,False,False,14.1,14-16ft,High,Center,Even Strength,L
+2023020924,2024-02-26,2,18:51,1131,snap,8477500,-64,0,O,0,1551,False,False,25.0,24-26ft,Medium,Center,Even Strength,L
+2023020924,2024-02-26,3,04:42,282,wrist,8477500,67,25,O,0,1551,False,True,33.3,32-34ft,Medium,Right,Even Strength,L
+2023020924,2024-02-26,3,08:55,535,wrist,8475151,66,-11,O,0,1551,False,False,25.5,24-26ft,Medium,Center,Even Strength,R
+2023020924,2024-02-26,3,13:42,822,slap,8478115,46,-37,O,0,1541,False,False,56.7,56-58ft,Low,Left,Shorthanded,L
+2023020924,2024-02-26,3,16:21,981,tip-in,8478445,78,0,O,0,1551,False,False,11.0,10-12ft,High,Center,Even Strength,R
+2023020924,2024-02-26,4,02:54,174,snap,8477500,-62,2,O,1,1331,False,False,27.1,26-28ft,Medium,Center,Other,L
+2023020892,2024-02-22,2,09:18,558,snap,8482105,-35,-38,O,0,1551,False,False,66.0,60ft+,Low,Left,Even Strength,L
+2023020892,2024-02-22,2,09:46,586,wrist,8480801,-68,-11,O,0,1551,False,False,23.7,22-24ft,Medium,Center,Even Strength,L
+2023020892,2024-02-22,2,09:47,587,wrist,8480801,-81,-4,O,0,1551,True,False,8.9,8-10ft,High,Center,Even Strength,L
+2023020892,2024-02-22,2,12:41,761,wrist,8482105,-50,19,O,0,1551,False,False,43.4,42-44ft,Low,Right,Even Strength,L
+2023020892,2024-02-22,2,15:45,945,wrist,8473512,-76,-1,O,0,1551,False,False,13.0,12-14ft,High,Center,Even Strength,R
+2023020892,2024-02-22,2,16:21,981,wrist,8482116,-34,11,O,0,1551,False,False,56.1,56-58ft,Low,Center,Even Strength,L
+2023020892,2024-02-22,2,19:15,1155,wrist,8473512,-83,-32,O,0,1551,False,False,32.6,32-34ft,Medium,Left,Even Strength,R
+2023020892,2024-02-22,2,19:16,1156,wrist,8478472,-86,-6,O,0,1551,True,False,6.7,6-8ft,High,Center,Even Strength,L
+2023020892,2024-02-22,2,19:32,1172,snap,8481596,-67,8,O,0,1451,False,False,23.4,22-24ft,Medium,Center,Power Play,R
+2023020892,2024-02-22,2,19:43,1183,snap,8481596,-63,10,O,1,1451,False,False,27.9,26-28ft,Medium,Center,Power Play,R
+2023020892,2024-02-22,3,00:32,32,wrist,8473512,63,-16,O,0,1551,False,False,30.5,30-32ft,Medium,Left,Even Strength,R
+2023020892,2024-02-22,3,00:36,36,wrist,8479345,46,-15,O,0,1551,False,False,45.5,44-46ft,Low,Left,Even Strength,L
+2023020892,2024-02-22,3,02:32,152,wrist,8480355,72,-10,O,0,1551,False,False,19.7,18-20ft,High,Center,Even Strength,R
+2023020892,2024-02-22,3,05:13,313,snap,8479345,76,-20,O,0,1451,False,False,23.9,22-24ft,Medium,Left,Power Play,L
+2023020892,2024-02-22,3,05:55,355,snap,8482116,55,-3,O,0,1451,False,False,34.1,34-36ft,Medium,Center,Power Play,L
+2023020892,2024-02-22,3,07:35,455,snap,8480801,60,-6,O,0,1551,False,False,29.6,28-30ft,Medium,Center,Even Strength,L
+2023020892,2024-02-22,3,16:34,994,snap,8480801,61,24,O,0,1551,False,False,36.9,36-38ft,Medium,Right,Even Strength,L
+2023020892,2024-02-22,3,17:12,1032,wrist,8479345,64,21,O,0,1551,False,False,32.6,32-34ft,Medium,Right,Even Strength,L
+2023020892,2024-02-22,3,18:45,1125,snap,8482105,67,33,O,0,1551,False,False,39.7,38-40ft,Medium,Right,Even Strength,L
+2023020877,2024-02-20,1,04:20,260,snap,8476389,-63,-14,O,0,1551,False,False,29.5,28-30ft,Medium,Center,Even Strength,R
+2023020877,2024-02-20,1,04:23,263,wrist,8482109,-79,5,O,0,1551,True,False,11.2,10-12ft,High,Center,Even Strength,L
+2023020877,2024-02-20,1,07:46,466,wrist,8479323,-61,11,O,1,1551,False,False,30.1,30-32ft,Medium,Center,Even Strength,R
+2023020877,2024-02-20,1,07:55,475,slap,8476459,-50,-35,O,0,1551,False,False,52.4,52-54ft,Low,Left,Even Strength,R
+2023020877,2024-02-20,1,09:56,596,wrist,8477380,-76,-19,O,0,1551,False,False,23.0,22-24ft,Medium,Left,Even Strength,R
+2023020877,2024-02-20,1,13:02,782,slap,8476885,-30,15,O,0,1451,False,False,60.9,60ft+,Low,Center,Power Play,R
+2023020877,2024-02-20,2,01:21,81,wrist,8482073,34,-37,O,0,1551,False,False,66.3,60ft+,Low,Left,Even Strength,R
+2023020877,2024-02-20,2,02:54,174,wrist,8476624,55,17,O,0,1541,False,False,38.0,38-40ft,Medium,Right,Shorthanded,L
+2023020877,2024-02-20,2,04:00,240,snap,8478550,62,13,O,0,1551,False,False,30.0,30-32ft,Medium,Center,Even Strength,R
+2023020877,2024-02-20,2,04:09,249,snap,8482157,54,-21,O,0,1551,False,False,40.8,40-42ft,Low,Left,Even Strength,L
+2023020877,2024-02-20,2,05:04,304,wrist,8481554,47,-12,O,0,1551,False,False,43.7,42-44ft,Low,Center,Even Strength,L
+2023020877,2024-02-20,2,05:28,328,wrist,8476389,65,-13,O,0,1551,False,False,27.3,26-28ft,Medium,Center,Even Strength,R
+2023020877,2024-02-20,2,05:55,355,wrist,8476459,66,-16,O,0,1551,False,False,28.0,28-30ft,Medium,Left,Even Strength,R
+2023020877,2024-02-20,2,06:04,364,wrist,8476918,55,-23,O,0,1551,False,False,41.0,40-42ft,Low,Left,Even Strength,L
+2023020877,2024-02-20,2,06:45,405,tip-in,8475184,83,-6,O,0,1451,False,False,8.5,8-10ft,High,Center,Power Play,L
+2023020877,2024-02-20,2,08:23,503,snap,8481554,73,20,O,1,1441,False,False,25.6,24-26ft,Medium,Right,Other,L
+2023020877,2024-02-20,2,11:27,687,tip-in,8475184,77,0,O,0,1451,False,False,12.0,12-14ft,High,Center,Power Play,L
+2023020877,2024-02-20,2,12:10,730,slap,8476389,70,16,O,0,1451,False,False,24.8,24-26ft,Medium,Right,Power Play,R
+2023020877,2024-02-20,2,12:29,749,tip-in,8482109,70,10,O,0,1551,False,False,21.5,20-22ft,Medium,Center,Even Strength,L
+2023020877,2024-02-20,2,19:17,1157,wrist,8478550,57,-5,O,0,1551,False,False,32.4,32-34ft,Medium,Center,Even Strength,R
+2023020877,2024-02-20,3,04:52,292,wrist,8482109,-70,13,O,0,1551,False,False,23.0,22-24ft,Medium,Center,Even Strength,L
+2023020877,2024-02-20,3,06:56,416,snap,8476459,-54,19,O,0,1451,False,False,39.8,38-40ft,Medium,Right,Power Play,R
+2023020877,2024-02-20,3,07:45,465,tip-in,8481554,-76,-3,O,0,1451,False,False,13.3,12-14ft,High,Center,Power Play,L
+2023020877,2024-02-20,3,11:38,698,wrist,8476389,-65,16,O,0,1541,False,False,28.8,28-30ft,Medium,Right,Shorthanded,R
+2023020877,2024-02-20,3,16:24,984,snap,8476459,-43,-25,O,0,1551,False,False,52.4,52-54ft,Low,Left,Even Strength,R
+2023020847,2024-02-15,3,01:25,85,wrist,8479996,63,-30,O,0,1551,False,False,39.7,38-40ft,Medium,Left,Even Strength,R
+2023020847,2024-02-15,3,05:03,303,snap,8476887,68,27,O,0,1451,False,False,34.2,34-36ft,Medium,Right,Power Play,R
+2023020847,2024-02-15,3,11:14,674,wrist,8476873,8,-24,N,0,1551,False,False,84.5,60ft+,Low,Left,Even Strength,L
+2023020847,2024-02-15,3,15:04,904,wrist,8476873,14,41,N,0,1551,False,False,85.5,60ft+,Low,Right,Even Strength,L
+2023020847,2024-02-15,3,15:31,931,wrist,8475197,35,-38,O,0,1551,False,False,66.0,60ft+,Low,Left,Even Strength,R
+2023020847,2024-02-15,3,17:00,1020,snap,8479996,55,37,O,0,1551,False,False,50.2,50-52ft,Low,Right,Even Strength,R
+2023020847,2024-02-15,3,19:15,1155,wrist,8478495,80,20,O,0,1551,False,False,21.9,20-22ft,Medium,Right,Even Strength,L
+2023020792,2024-02-07,1,03:45,225,wrist,8477479,-57,-34,O,0,1551,False,False,46.7,46-48ft,Low,Left,Even Strength,L
+2023020792,2024-02-07,1,06:34,394,slap,8477939,-50,-22,O,1,1451,False,False,44.8,44-46ft,Low,Left,Power Play,R
+2023020792,2024-02-07,1,12:29,749,backhand,8482720,-86,3,O,0,1541,False,False,4.2,4-6ft,High,Center,Shorthanded,L
+2023020792,2024-02-07,1,13:22,802,wrist,8476931,56,-36,D,0,1551,False,False,48.8,48-50ft,Low,Left,Even Strength,L
+2023020792,2024-02-07,2,02:16,136,snap,8477503,60,36,O,0,1551,False,True,46.2,46-48ft,Low,Right,Even Strength,L
+2023020792,2024-02-07,2,02:21,141,wrist,8476853,34,25,O,0,1551,False,False,60.4,60ft+,Low,Right,Even Strength,L
+2023020792,2024-02-07,2,03:40,220,slap,8475166,62,7,O,1,1451,False,False,27.9,26-28ft,Medium,Center,Power Play,L
+2023020792,2024-02-07,2,05:56,356,backhand,8478483,74,13,O,0,1541,False,False,19.8,18-20ft,High,Center,Shorthanded,R
+2023020792,2024-02-07,2,06:11,371,wrist,8479318,77,0,O,0,1541,False,False,12.0,12-14ft,High,Center,Shorthanded,L
+2023020792,2024-02-07,2,08:36,516,tip-in,8479318,85,6,O,0,1551,False,False,7.2,6-8ft,High,Center,Even Strength,L
+2023020792,2024-02-07,2,10:20,620,wrist,8481122,32,25,O,0,1551,False,False,62.2,60ft+,Low,Right,Even Strength,L
+2023020792,2024-02-07,2,10:49,649,wrist,8477503,63,40,O,0,1551,False,False,47.7,46-48ft,Low,Right,Even Strength,L
+2023020792,2024-02-07,2,12:26,746,tip-in,8478483,72,-6,O,0,1451,False,False,18.0,18-20ft,High,Center,Power Play,R
+2023020792,2024-02-07,2,12:37,757,wrist,8479318,78,12,O,1,1451,False,False,16.3,16-18ft,High,Center,Power Play,L
+2023020792,2024-02-07,2,13:00,780,wrist,8477479,77,0,O,0,1551,False,False,12.0,12-14ft,High,Center,Even Strength,L
+2023020792,2024-02-07,2,14:11,851,wrist,8476853,45,24,O,0,1551,False,False,50.1,50-52ft,Low,Right,Even Strength,L
+2023020792,2024-02-07,3,02:17,137,backhand,8477503,-80,6,O,0,1551,False,False,10.8,10-12ft,High,Center,Even Strength,L
+2023020792,2024-02-07,3,03:00,180,wrist,8482259,-84,-7,O,0,1551,False,False,8.6,8-10ft,High,Center,Even Strength,L
+2023020792,2024-02-07,3,04:10,250,deflected,8477479,-75,-3,O,0,1551,False,False,14.3,14-16ft,High,Center,Even Strength,L
+2023020792,2024-02-07,3,05:12,312,wrist,8478483,-75,-2,O,0,1551,False,False,14.1,14-16ft,High,Center,Even Strength,R
+2023020792,2024-02-07,3,05:30,330,slap,8476931,-29,4,O,0,1551,False,False,60.1,60ft+,Low,Center,Even Strength,L
+2023020792,2024-02-07,3,06:49,409,wrist,8470966,62,-33,D,0,1551,False,True,42.6,42-44ft,Low,Left,Even Strength,L
+2023020792,2024-02-07,3,08:44,524,backhand,8476853,-64,39,O,0,1551,False,False,46.3,46-48ft,Low,Right,Even Strength,L
+2023020792,2024-02-07,3,08:57,537,snap,8479318,-53,-3,O,0,1551,False,False,36.1,36-38ft,Medium,Center,Even Strength,L
+2023020792,2024-02-07,3,09:18,558,wrist,8480043,-31,-11,O,0,1551,False,False,59.0,58-60ft,Low,Center,Even Strength,R
+2023020792,2024-02-07,3,10:52,652,wrist,8477939,-51,-27,O,0,1551,False,False,46.6,46-48ft,Low,Left,Even Strength,R
+2023020792,2024-02-07,3,11:27,687,wrap-around,8479318,-87,5,O,0,1551,False,False,5.4,4-6ft,High,Center,Even Strength,L
+2023020792,2024-02-07,3,11:37,697,wrist,8478483,-78,8,O,1,1551,False,False,13.6,12-14ft,High,Center,Even Strength,R
+2023020792,2024-02-07,3,11:57,717,wrist,8477939,-62,-18,O,1,1551,False,False,32.4,32-34ft,Medium,Left,Even Strength,R
+2023020792,2024-02-07,3,13:35,815,wrist,8477939,-61,-12,O,0,1551,False,False,30.5,30-32ft,Medium,Center,Even Strength,R
+2023020792,2024-02-07,3,15:35,935,wrist,8481582,-48,-36,O,0,1551,False,False,54.6,54-56ft,Low,Left,Even Strength,L
+2023020721,2024-01-21,1,01:45,105,wrist,8477392,66,24,O,0,1551,False,False,33.2,32-34ft,Medium,Right,Even Strength,R
+2023020721,2024-01-21,1,02:52,172,wrist,8481014,67,23,O,1,1551,False,False,31.8,30-32ft,Medium,Right,Even Strength,L
+2023020721,2024-01-21,1,06:23,383,slap,8481014,38,20,O,0,1541,False,False,54.8,54-56ft,Low,Right,Shorthanded,L
+2023020721,2024-01-21,1,08:44,524,wrist,8479328,54,-32,O,0,1551,False,False,47.4,46-48ft,Low,Left,Even Strength,R
+2023020721,2024-01-21,1,09:47,587,wrist,8474709,55,-6,O,0,1551,False,False,34.5,34-36ft,Medium,Center,Even Strength,L
+2023020721,2024-01-21,1,09:48,588,wrist,8474709,76,3,O,0,1551,True,False,13.3,12-14ft,High,Center,Even Strength,L
+2023020721,2024-01-21,1,11:03,663,tip-in,8475314,81,-1,O,0,1551,False,False,8.1,8-10ft,High,Center,Even Strength,L
+2023020721,2024-01-21,1,11:11,671,wrist,8478445,82,11,O,0,1551,False,False,13.0,12-14ft,High,Center,Even Strength,R
+2023020721,2024-01-21,1,13:23,803,wrist,8475151,39,-39,O,0,1551,False,False,63.4,60ft+,Low,Left,Even Strength,R
+2023020721,2024-01-21,1,14:50,890,wrist,8476419,78,-2,O,0,1541,False,False,11.2,10-12ft,High,Center,Shorthanded,R
+2023020721,2024-01-21,1,17:31,1051,wrist,8481237,51,-30,O,0,1551,False,False,48.4,48-50ft,Low,Left,Even Strength,L
+2023020721,2024-01-21,1,18:52,1132,wrist,8475754,54,0,O,0,1551,False,False,35.0,34-36ft,Medium,Center,Even Strength,L
+2023020721,2024-01-21,1,18:53,1133,wrist,8475151,73,9,O,0,1551,True,False,18.4,18-20ft,High,Center,Even Strength,R
+2023020721,2024-01-21,2,01:29,89,tip-in,8476419,-79,-3,O,0,1551,False,False,10.4,10-12ft,High,Center,Even Strength,R
+2023020721,2024-01-21,2,04:29,269,wrist,8479328,-66,15,O,0,1551,False,False,27.5,26-28ft,Medium,Center,Even Strength,R
+2023020721,2024-01-21,2,11:47,707,wrist,8476419,-38,-21,O,0,1551,False,False,55.2,54-56ft,Low,Left,Even Strength,R
+2023020721,2024-01-21,2,15:54,954,wrist,8477500,-64,-36,O,0,1551,False,False,43.8,42-44ft,Low,Left,Even Strength,L
+2023020721,2024-01-21,2,16:36,996,tip-in,8475314,-80,3,O,0,1551,False,False,9.5,8-10ft,High,Center,Even Strength,L
+2023020721,2024-01-21,3,00:26,26,backhand,8477500,84,5,O,0,1551,False,False,7.1,6-8ft,High,Center,Even Strength,L
+2023020721,2024-01-21,3,00:27,27,snap,8477500,82,4,O,0,1551,True,False,8.1,8-10ft,High,Center,Even Strength,L
+2023020721,2024-01-21,3,02:50,170,wrist,8480222,59,20,O,0,1551,False,False,36.1,36-38ft,Medium,Right,Even Strength,L
+2023020721,2024-01-21,3,05:23,323,deflected,8477392,81,0,O,1,1551,False,False,8.0,8-10ft,High,Center,Even Strength,R
+2023020721,2024-01-21,3,07:49,469,wrist,8476419,78,-4,O,0,1551,False,False,11.7,10-12ft,High,Center,Even Strength,R
+2023020721,2024-01-21,3,08:15,495,wrist,8475754,40,17,O,0,1551,False,False,51.9,50-52ft,Low,Right,Even Strength,L
+2023020721,2024-01-21,3,14:32,872,wrist,8476917,63,20,O,0,1551,False,False,32.8,32-34ft,Medium,Right,Even Strength,L
+2023020721,2024-01-21,3,16:25,985,backhand,8475314,79,2,O,0,1551,False,False,10.2,10-12ft,High,Center,Even Strength,L
+2023020721,2024-01-21,3,18:54,1134,slap,8478445,61,-16,O,0,1551,False,False,32.2,32-34ft,Medium,Left,Even Strength,R
+2023020721,2024-01-21,4,00:41,41,backhand,8477500,-80,2,O,1,1331,False,False,9.2,8-10ft,High,Center,Other,L
+2023020711,2024-01-20,1,00:12,12,wrist,8479407,56,-37,O,0,1551,False,False,49.6,48-50ft,Low,Left,Even Strength,L
+2023020711,2024-01-20,1,00:17,17,slap,8476525,37,-24,O,0,1551,False,False,57.3,56-58ft,Low,Left,Even Strength,R
+2023020711,2024-01-20,1,00:32,32,wrist,8478414,44,12,O,0,1551,False,False,46.6,46-48ft,Low,Center,Even Strength,L
+2023020711,2024-01-20,1,00:33,33,backhand,8480002,83,9,O,0,1551,True,False,10.8,10-12ft,High,Center,Even Strength,L
+2023020711,2024-01-20,1,04:58,298,snap,8475287,57,13,O,0,1551,False,False,34.5,34-36ft,Medium,Center,Even Strength,L
+2023020711,2024-01-20,1,06:04,364,snap,8479407,60,-18,O,0,1551,False,False,34.1,34-36ft,Medium,Left,Even Strength,L
+2023020711,2024-01-20,1,06:47,407,wrist,8479415,71,-34,O,0,1551,False,False,38.5,38-40ft,Medium,Left,Even Strength,R
+2023020711,2024-01-20,1,07:16,436,backhand,8482110,77,37,O,0,1551,False,False,38.9,38-40ft,Medium,Right,Even Strength,R
+2023020711,2024-01-20,1,07:57,477,wrist,8476525,62,-35,O,0,1551,False,False,44.2,44-46ft,Low,Left,Even Strength,R
+2023020711,2024-01-20,1,08:41,521,backhand,8475287,62,-38,O,0,1551,False,False,46.6,46-48ft,Low,Left,Even Strength,L
+2023020711,2024-01-20,1,13:13,793,tip-in,8475726,66,-22,O,0,1551,False,False,31.8,30-32ft,Medium,Left,Even Strength,R
+2023020711,2024-01-20,1,14:20,860,slap,8476525,37,-26,O,0,1551,False,False,58.1,58-60ft,Low,Left,Even Strength,R
+2023020711,2024-01-20,1,15:17,917,wrist,8478414,85,7,O,0,1551,False,False,8.1,8-10ft,High,Center,Even Strength,L
+2023020711,2024-01-20,1,16:25,985,wrist,8475726,81,22,O,0,1551,False,False,23.4,22-24ft,Medium,Right,Even Strength,R
+2023020711,2024-01-20,2,00:12,12,snap,8475726,-61,32,O,0,1551,False,False,42.5,42-44ft,Low,Right,Even Strength,R
+2023020711,2024-01-20,2,01:26,86,wrist,8475287,-86,5,O,0,1551,False,False,5.8,4-6ft,High,Center,Even Strength,L
+2023020711,2024-01-20,2,01:28,88,wrist,8475287,-89,5,O,0,1551,True,False,5.0,4-6ft,High,Center,Even Strength,L
+2023020711,2024-01-20,2,01:28,88,wrist,8475287,-85,6,O,0,1551,False,False,7.2,6-8ft,High,Center,Even Strength,L
+2023020711,2024-01-20,2,01:33,93,snap,8480860,-48,37,O,0,1551,False,False,55.2,54-56ft,Low,Right,Even Strength,L
+2023020711,2024-01-20,2,06:27,387,wrist,8475726,-64,13,O,0,1451,False,False,28.2,28-30ft,Medium,Center,Power Play,R
+2023020711,2024-01-20,2,07:03,423,slap,8482684,-39,13,O,0,1451,False,False,51.7,50-52ft,Low,Center,Power Play,L
+2023020711,2024-01-20,2,08:13,493,snap,8478507,-78,5,O,0,1551,False,False,12.1,12-14ft,High,Center,Even Strength,R
+2023020711,2024-01-20,3,00:43,43,wrist,8478414,34,37,O,0,1551,False,False,66.3,60ft+,Low,Right,Even Strength,L
+2023020711,2024-01-20,3,01:16,76,slap,8479415,51,-13,O,0,1551,False,False,40.2,40-42ft,Low,Center,Even Strength,R
+2023020711,2024-01-20,3,02:25,145,wrist,8475287,48,-2,O,0,1551,False,False,41.0,40-42ft,Low,Center,Even Strength,L
+2023020711,2024-01-20,3,07:55,475,slap,8482125,49,36,O,0,1551,False,False,53.8,52-54ft,Low,Right,Even Strength,R
+2023020711,2024-01-20,3,10:17,617,backhand,8479407,78,-15,O,0,1441,False,False,18.6,18-20ft,High,Left,Other,L
+2023020711,2024-01-20,3,11:58,718,wrist,8482125,84,20,O,0,1551,False,False,20.6,20-22ft,Medium,Right,Even Strength,R
+2023020711,2024-01-20,3,12:10,730,slap,8482125,73,25,O,0,1551,False,False,29.7,28-30ft,Medium,Right,Even Strength,R
+2023020711,2024-01-20,3,13:15,795,wrist,8479407,78,5,O,1,1551,False,False,12.1,12-14ft,High,Center,Even Strength,L
+2023020711,2024-01-20,3,19:00,1140,snap,8475726,53,-4,O,1,1551,False,False,36.2,36-38ft,Medium,Center,Even Strength,R
+2023020664,2024-01-13,1,07:00,420,wrist,8477034,-28,-30,O,0,1551,False,False,68.0,60ft+,Low,Left,Even Strength,L
+2023020664,2024-01-13,1,08:20,500,wrist,8481568,-50,-25,O,0,1551,False,False,46.3,46-48ft,Low,Left,Even Strength,L
+2023020664,2024-01-13,1,12:55,775,snap,8480252,-59,25,O,0,1451,False,False,39.1,38-40ft,Medium,Right,Power Play,R
+2023020664,2024-01-13,1,13:27,807,tip-in,8477450,-62,8,O,0,1551,False,False,28.2,28-30ft,Medium,Center,Even Strength,L
+2023020664,2024-01-13,1,13:52,832,wrist,8477034,-29,-27,O,0,1551,False,False,65.8,60ft+,Low,Left,Even Strength,L
+2023020664,2024-01-13,1,18:27,1107,wrist,8476473,-51,13,O,0,1551,False,False,40.2,40-42ft,Low,Center,Even Strength,R
+2023020664,2024-01-13,2,00:19,19,snap,8479390,46,-21,O,0,1551,False,False,47.9,46-48ft,Low,Left,Even Strength,R
+2023020664,2024-01-13,2,00:24,24,wrist,8476473,31,-40,O,0,1551,False,False,70.5,60ft+,Low,Left,Even Strength,R
+2023020664,2024-01-13,2,00:44,44,deflected,8479390,82,10,O,0,1551,False,False,12.2,12-14ft,High,Center,Even Strength,R
+2023020664,2024-01-13,2,01:43,103,wrist,8476473,-56,-22,D,0,1551,False,False,39.7,38-40ft,Medium,Left,Even Strength,R
+2023020664,2024-01-13,2,06:27,387,wrist,8483466,42,4,O,0,1551,False,False,47.2,46-48ft,Low,Center,Even Strength,L
+2023020664,2024-01-13,2,06:41,401,wrist,8476278,55,19,O,0,1551,False,False,38.9,38-40ft,Medium,Right,Even Strength,R
+2023020664,2024-01-13,2,08:18,498,wrist,8479514,87,9,O,0,1551,False,False,9.2,8-10ft,High,Center,Even Strength,L
+2023020664,2024-01-13,2,08:36,516,bat,8480798,59,7,O,0,1551,False,False,30.8,30-32ft,Medium,Center,Even Strength,L
+2023020636,2024-01-10,1,00:37,37,wrist,8481557,58,-24,O,0,1551,False,False,39.2,38-40ft,Medium,Left,Even Strength,L
+2023020636,2024-01-10,1,06:22,382,wrist,8474567,61,-14,O,0,1551,False,False,31.3,30-32ft,Medium,Center,Even Strength,R
+2023020636,2024-01-10,1,06:50,410,wrist,8477464,42,9,O,0,1551,False,False,47.9,46-48ft,Low,Center,Even Strength,L
+2023020636,2024-01-10,1,11:48,708,wrist,8474567,77,-28,O,0,1551,False,False,30.5,30-32ft,Medium,Left,Even Strength,R
+2023020636,2024-01-10,1,13:28,808,wrist,8481557,66,-22,O,0,1551,False,False,31.8,30-32ft,Medium,Left,Even Strength,L
+2023020636,2024-01-10,1,19:50,1190,tip-in,8475149,-16,-11,N,0,1551,False,False,73.8,60ft+,Low,Center,Even Strength,L
+2023020636,2024-01-10,2,01:29,89,wrist,8478493,-64,-29,O,0,1551,False,False,38.3,38-40ft,Medium,Left,Even Strength,L
+2023020636,2024-01-10,2,06:43,403,wrist,8477464,-41,-4,O,0,1551,False,False,48.2,48-50ft,Low,Center,Even Strength,L
+2023020636,2024-01-10,2,07:34,454,wrist,8482122,-30,40,O,0,1551,False,False,71.3,60ft+,Low,Right,Even Strength,R
+2023020636,2024-01-10,3,00:20,20,wrist,8482079,63,18,O,0,1551,False,False,31.6,30-32ft,Medium,Right,Even Strength,L
+2023020636,2024-01-10,3,04:02,242,wrist,8477451,80,-29,O,0,1551,False,True,30.4,30-32ft,Medium,Left,Even Strength,R
+2023020636,2024-01-10,3,04:22,262,deflected,8481557,80,-2,O,1,1551,False,False,9.2,8-10ft,High,Center,Even Strength,L
+2023020636,2024-01-10,3,05:03,303,backhand,8478136,77,-37,O,0,1551,False,False,38.9,38-40ft,Medium,Left,Even Strength,L
+2023020636,2024-01-10,3,09:40,580,wrist,8479520,76,-19,O,0,1551,False,False,23.0,22-24ft,Medium,Left,Even Strength,L
+2023020636,2024-01-10,3,09:51,591,wrist,8482122,39,17,O,0,1541,False,False,52.8,52-54ft,Low,Right,Shorthanded,R
+2023020636,2024-01-10,3,10:27,627,slap,8477451,64,10,O,0,1531,False,False,26.9,26-28ft,Medium,Center,Shorthanded,R
+2023020636,2024-01-10,3,11:03,663,snap,8477451,78,12,O,1,1531,False,False,16.3,16-18ft,High,Center,Shorthanded,R
+2023020636,2024-01-10,3,11:51,711,snap,8478493,85,-11,O,0,1541,False,False,11.7,10-12ft,High,Center,Shorthanded,L
+2023020636,2024-01-10,3,12:05,725,slap,8482079,44,-1,O,0,1541,False,False,45.0,44-46ft,Low,Center,Shorthanded,L
+2023020636,2024-01-10,3,13:57,837,tip-in,8477919,75,7,O,0,1551,False,False,15.7,14-16ft,High,Center,Even Strength,R
+2023020636,2024-01-10,3,14:47,887,wrist,8475692,64,-39,O,0,1551,False,False,46.3,46-48ft,Low,Left,Even Strength,L
+2023020636,2024-01-10,3,14:59,899,backhand,8481557,86,-15,O,0,1551,False,True,15.3,14-16ft,High,Left,Even Strength,L
+2023020636,2024-01-10,3,17:16,1036,slap,8477451,11,28,N,0,1551,False,False,82.9,60ft+,Low,Right,Even Strength,R
+2023020614,2024-01-06,1,01:04,64,wrist,8475158,49,-24,O,0,1551,False,False,46.6,46-48ft,Low,Left,Even Strength,L
+2023020614,2024-01-06,1,09:34,574,wrist,8478508,67,22,O,0,1551,False,False,31.1,30-32ft,Medium,Right,Even Strength,L
+2023020614,2024-01-06,1,11:26,686,wrist,8474679,72,-7,O,1,1551,False,False,18.4,18-20ft,High,Center,Even Strength,L
+2023020614,2024-01-06,1,11:32,692,wrist,8477446,80,8,O,0,1551,False,False,12.0,12-14ft,High,Center,Even Strength,R
+2023020614,2024-01-06,1,11:47,707,wrist,8478468,28,41,O,0,1551,False,False,73.5,60ft+,Low,Right,Even Strength,L
+2023020614,2024-01-06,1,12:58,778,wrist,8474600,31,-3,O,0,1541,False,False,58.1,58-60ft,Low,Center,Shorthanded,L
+2023020614,2024-01-06,1,16:22,982,wrist,8475158,80,-7,O,0,1551,False,False,11.4,10-12ft,High,Center,Even Strength,L
+2023020614,2024-01-06,1,17:47,1067,backhand,8481577,84,9,O,0,1551,False,False,10.3,10-12ft,High,Center,Even Strength,R
+2023020614,2024-01-06,1,18:08,1088,backhand,8482062,-50,-41,D,0,1551,False,False,56.6,56-58ft,Low,Left,Even Strength,L
+2023020614,2024-01-06,2,00:27,27,wrist,8482062,-67,23,O,0,1451,False,False,31.8,30-32ft,Medium,Right,Power Play,L
+2023020614,2024-01-06,2,00:28,28,wrist,8476925,-82,7,O,0,1451,True,False,9.9,8-10ft,High,Center,Power Play,R
+2023020614,2024-01-06,2,03:09,189,deflected,8481577,-81,-4,O,0,1551,False,False,8.9,8-10ft,High,Center,Even Strength,R
+2023020614,2024-01-06,2,05:50,350,wrist,8478495,-59,0,O,0,1551,False,False,30.0,30-32ft,Medium,Center,Even Strength,L
+2023020614,2024-01-06,2,07:22,442,wrist,8482146,-68,-16,O,1,1551,False,False,26.4,26-28ft,Medium,Left,Even Strength,R
+2023020614,2024-01-06,2,10:33,633,wrist,8476887,-46,15,O,0,1551,False,False,45.5,44-46ft,Low,Center,Even Strength,R
+2023020614,2024-01-06,2,11:17,677,wrist,8478495,-52,-16,O,0,1551,False,False,40.3,40-42ft,Low,Left,Even Strength,L
+2023020614,2024-01-06,2,14:37,877,wrist,8477446,-54,21,O,0,1551,False,False,40.8,40-42ft,Low,Right,Even Strength,R
+2023020614,2024-01-06,3,02:42,162,backhand,8476887,82,4,O,1,1551,False,False,8.1,8-10ft,High,Center,Even Strength,R
+2023020614,2024-01-06,3,07:30,450,wrap-around,8476887,87,-6,O,1,1551,False,False,6.3,6-8ft,High,Center,Even Strength,R
+2023020614,2024-01-06,3,14:02,842,wrist,8476887,70,27,O,0,1551,False,False,33.0,32-34ft,Medium,Right,Even Strength,R
+2023020614,2024-01-06,3,14:59,899,snap,8474151,-90,34,D,0,1551,False,False,34.0,34-36ft,Medium,Right,Even Strength,L
+2023020614,2024-01-06,3,16:12,972,snap,8474679,60,-20,O,0,1551,False,False,35.2,34-36ft,Medium,Left,Even Strength,L
+2023020593,2024-01-04,1,00:35,35,wrist,8478420,35,24,O,0,1551,False,False,59.1,58-60ft,Low,Right,Even Strength,L
+2023020593,2024-01-04,1,00:40,40,wrist,8477425,54,27,O,0,1551,False,False,44.2,44-46ft,Low,Right,Even Strength,L
+2023020593,2024-01-04,1,03:44,224,slap,8477494,62,28,O,0,1551,False,False,38.9,38-40ft,Medium,Right,Even Strength,L
+2023020593,2024-01-04,1,03:48,228,wrist,8477492,38,8,O,0,1551,False,False,51.6,50-52ft,Low,Center,Even Strength,R
+2023020593,2024-01-04,1,04:24,264,snap,8477492,59,-23,O,0,1551,False,False,37.8,36-38ft,Medium,Left,Even Strength,R
+2023020593,2024-01-04,1,08:08,488,tip-in,8478420,77,-9,O,0,1541,False,False,15.0,14-16ft,High,Center,Shorthanded,L
+2023020593,2024-01-04,1,08:27,507,deflected,8477501,82,3,O,0,1541,False,False,7.6,6-8ft,High,Center,Shorthanded,L
+2023020593,2024-01-04,1,09:09,549,snap,8480069,26,-17,O,0,1541,False,False,65.3,60ft+,Low,Left,Shorthanded,R
+2023020593,2024-01-04,1,10:06,606,snap,8471699,53,-16,O,0,1551,False,False,39.4,38-40ft,Medium,Left,Even Strength,L
+2023020593,2024-01-04,1,13:44,824,backhand,8477492,80,6,O,1,1551,False,False,10.8,10-12ft,High,Center,Even Strength,R
+2023020593,2024-01-04,1,14:39,879,snap,8477494,-70,21,D,0,1541,False,False,28.3,28-30ft,Medium,Right,Shorthanded,L
+2023020593,2024-01-04,1,16:07,967,slap,8478038,30,3,O,0,1541,False,False,59.1,58-60ft,Low,Center,Shorthanded,L
+2023020593,2024-01-04,2,01:16,76,snap,8477501,-70,-16,O,0,1551,False,False,24.8,24-26ft,Medium,Left,Even Strength,L
+2023020593,2024-01-04,2,06:18,378,snap,8477501,-61,15,O,0,1451,False,False,31.8,30-32ft,Medium,Center,Power Play,L
+2023020593,2024-01-04,2,07:04,424,tip-in,8481186,-76,-9,O,0,1551,False,False,15.8,14-16ft,High,Center,Even Strength,R
+2023020593,2024-01-04,2,13:29,809,snap,8477492,-79,-10,O,0,1551,False,False,14.1,14-16ft,High,Center,Even Strength,R
+2023020593,2024-01-04,2,19:02,1142,snap,8477492,-75,-22,O,0,1541,False,False,26.1,26-28ft,Medium,Left,Shorthanded,R
+2023020593,2024-01-04,2,19:46,1186,slap,8478038,-39,12,O,0,1541,False,False,51.4,50-52ft,Low,Center,Shorthanded,L
+2023020593,2024-01-04,2,19:48,1188,snap,8477494,-88,2,O,1,1541,True,False,2.2,2-4ft,High,Center,Shorthanded,L
+2023020593,2024-01-04,3,01:16,76,wrist,8477425,74,10,O,0,1551,False,False,18.0,18-20ft,High,Center,Even Strength,L
+2023020593,2024-01-04,3,05:59,359,backhand,8477425,82,2,O,0,1551,False,False,7.3,6-8ft,High,Center,Even Strength,L
+2023020593,2024-01-04,3,09:45,585,tip-in,8477494,77,10,O,1,1551,False,False,15.6,14-16ft,High,Center,Even Strength,L
+2023020593,2024-01-04,3,11:47,707,snap,8480069,56,5,O,0,1551,False,False,33.4,32-34ft,Medium,Center,Even Strength,R
+2023020593,2024-01-04,3,15:57,957,wrist,8476312,40,7,O,0,1551,False,False,49.5,48-50ft,Low,Center,Even Strength,R
+2023020593,2024-01-04,3,17:06,1026,snap,8479525,74,26,O,0,1551,False,False,30.0,30-32ft,Medium,Right,Even Strength,L
+2023020593,2024-01-04,3,17:24,1044,wrist,8479525,63,4,O,0,1551,False,False,26.3,26-28ft,Medium,Center,Even Strength,L
+2023020593,2024-01-04,3,17:26,1046,poke,8477501,77,4,O,0,1551,True,False,12.6,12-14ft,High,Center,Even Strength,L
+2023020593,2024-01-04,3,18:47,1127,tip-in,8481186,71,3,O,0,0651,False,False,18.2,18-20ft,High,Center,Penalty Shot,R
+2023020593,2024-01-04,3,18:51,1131,deflected,8478420,85,4,O,1,0651,False,False,5.7,4-6ft,High,Center,Penalty Shot,L
+2023020593,2024-01-04,3,19:26,1166,wrist,8480069,69,33,O,0,1551,False,False,38.6,38-40ft,Medium,Right,Even Strength,R
+2023020593,2024-01-04,3,19:31,1171,snap,8478420,75,13,O,0,1551,False,False,19.1,18-20ft,High,Center,Even Strength,L
+2023020593,2024-01-04,4,00:39,39,backhand,8477492,-66,0,O,0,1331,False,False,23.0,22-24ft,Medium,Center,Other,R
+2023020593,2024-01-04,4,00:41,41,backhand,8477501,-82,2,O,0,1331,True,False,7.3,6-8ft,High,Center,Other,L
+2023020593,2024-01-04,4,03:40,220,snap,8477492,-70,5,O,1,1331,False,False,19.6,18-20ft,High,Center,Other,R
+2023020577,2024-01-02,1,01:02,62,tip-in,8483515,76,2,O,0,1551,False,False,13.2,12-14ft,High,Center,Even Strength,L
+2023020577,2024-01-02,1,02:46,166,backhand,8479543,72,-26,O,0,1551,False,False,31.1,30-32ft,Medium,Left,Even Strength,L
+2023020577,2024-01-02,1,04:14,254,slap,8480018,61,12,O,1,1551,False,False,30.5,30-32ft,Medium,Center,Even Strength,R
+2023020577,2024-01-02,1,09:43,583,slap,8480192,27,-34,O,0,1551,False,False,70.7,60ft+,Low,Left,Even Strength,R
+2023020577,2024-01-02,1,09:46,586,snap,8482087,57,26,O,1,1551,True,False,41.2,40-42ft,Low,Right,Even Strength,L
+2023020577,2024-01-02,1,13:01,781,wrist,8479543,50,18,O,0,1551,False,True,43.0,42-44ft,Low,Right,Even Strength,L
+2023020577,2024-01-02,2,00:15,15,wrist,8480018,-59,-31,O,0,1551,False,False,43.1,42-44ft,Low,Left,Even Strength,R
+2023020577,2024-01-02,2,00:21,21,wrist,8482111,-73,16,O,0,1551,False,False,22.6,22-24ft,Medium,Right,Even Strength,R
+2023020577,2024-01-02,2,06:54,414,wrist,8480887,-59,21,O,1,1551,False,False,36.6,36-38ft,Medium,Right,Even Strength,L
+2023020577,2024-01-02,2,08:51,531,tip-in,8475848,-22,-4,N,0,1551,False,False,67.1,60ft+,Low,Center,Even Strength,R
+2023020577,2024-01-02,2,10:27,627,wrist,8481058,-52,-16,O,0,1551,False,False,40.3,40-42ft,Low,Left,Even Strength,R
+2023020577,2024-01-02,3,00:18,18,wrist,8476469,54,17,O,0,1551,False,False,38.9,38-40ft,Medium,Right,Even Strength,R
+2023020577,2024-01-02,3,01:50,110,wrist,8481540,83,14,O,0,1541,False,False,15.2,14-16ft,High,Center,Shorthanded,R
+2023020577,2024-01-02,3,02:37,157,tip-in,8476981,71,-6,O,0,1541,False,False,19.0,18-20ft,High,Center,Shorthanded,R
+2023020577,2024-01-02,3,06:07,367,wrist,8477497,60,-3,O,0,1541,False,False,29.2,28-30ft,Medium,Center,Shorthanded,L
+2023020577,2024-01-02,3,06:18,378,slap,8476875,34,-3,O,0,1541,False,False,55.1,54-56ft,Low,Center,Shorthanded,L
+2023020577,2024-01-02,3,06:45,405,snap,8481540,81,8,O,1,1541,False,False,11.3,10-12ft,High,Center,Shorthanded,R
+2023020577,2024-01-02,3,08:50,530,tip-in,8480192,50,-29,O,0,1551,False,False,48.6,48-50ft,Low,Left,Even Strength,R
+2023020572,2023-12-31,1,03:39,219,wrist,8473422,48,31,O,0,1551,False,False,51.4,50-52ft,Low,Right,Even Strength,L
+2023020572,2023-12-31,1,09:02,542,slap,8483466,30,-10,O,0,1551,False,False,59.8,58-60ft,Low,Center,Even Strength,L
+2023020572,2023-12-31,1,10:18,618,wrist,8476473,48,-28,O,0,1551,False,False,49.6,48-50ft,Low,Left,Even Strength,R
+2023020572,2023-12-31,1,13:45,825,wrist,8484144,56,10,O,0,1551,False,False,34.5,34-36ft,Medium,Center,Even Strength,R
+2023020572,2023-12-31,1,14:42,882,wrist,8474870,55,-15,O,0,1551,False,False,37.2,36-38ft,Medium,Left,Even Strength,R
+2023020572,2023-12-31,1,17:06,1026,wrist,8473422,79,32,O,0,1551,False,False,33.5,32-34ft,Medium,Right,Even Strength,L
+2023020572,2023-12-31,2,08:04,484,backhand,8477450,-82,9,O,0,1551,False,False,11.4,10-12ft,High,Center,Even Strength,L
+2023020572,2023-12-31,2,08:09,489,wrist,8478463,-76,12,O,0,1551,False,False,17.7,16-18ft,High,Center,Even Strength,L
+2023020572,2023-12-31,2,09:12,552,wrist,8482117,-61,-10,O,0,1551,False,False,29.7,28-30ft,Medium,Center,Even Strength,L
+2023020572,2023-12-31,2,09:30,570,wrist,8481568,-34,-15,O,0,1551,False,False,57.0,56-58ft,Low,Left,Even Strength,L
+2023020572,2023-12-31,2,09:42,582,wrap-around,8473422,-87,-4,O,0,1551,False,False,4.5,4-6ft,High,Center,Even Strength,L
+2023020572,2023-12-31,2,17:18,1038,wrist,8477987,-56,17,O,0,1551,False,False,37.1,36-38ft,Medium,Right,Even Strength,L
+2023020572,2023-12-31,2,17:37,1057,tip-in,8481147,-70,-5,O,0,1551,False,False,19.6,18-20ft,High,Center,Even Strength,R
+2023020572,2023-12-31,2,19:53,1193,wrist,8478463,-55,-27,O,0,1541,False,False,43.4,42-44ft,Low,Left,Shorthanded,L
+2023020572,2023-12-31,2,19:57,1197,slap,8482117,-50,1,O,0,1541,False,False,39.0,38-40ft,Medium,Center,Shorthanded,L
+2023020572,2023-12-31,3,00:39,39,snap,8480798,81,-15,O,1,1541,False,False,17.0,16-18ft,High,Left,Shorthanded,L
+2023020572,2023-12-31,3,02:46,166,wrist,8484144,77,15,O,0,1551,False,False,19.2,18-20ft,High,Center,Even Strength,R
+2023020572,2023-12-31,3,02:51,171,snap,8480798,76,8,O,0,1551,False,False,15.3,14-16ft,High,Center,Even Strength,L
+2023020572,2023-12-31,3,05:16,316,wrist,8482192,66,-32,O,0,1551,False,False,39.4,38-40ft,Medium,Left,Even Strength,L
+2023020572,2023-12-31,3,09:03,543,wrist,8481806,26,-37,O,0,1551,False,False,73.1,60ft+,Low,Left,Even Strength,R
+2023020572,2023-12-31,3,09:36,576,wrist,8478463,79,13,O,0,1551,False,False,16.4,16-18ft,High,Center,Even Strength,L
+2023020572,2023-12-31,3,10:42,642,wrist,8480252,54,-16,O,0,1551,False,False,38.5,38-40ft,Medium,Left,Even Strength,R
+2023020572,2023-12-31,3,10:48,648,bat,8480252,63,-9,O,0,1551,False,False,27.5,26-28ft,Medium,Center,Even Strength,R
+2023020572,2023-12-31,3,16:16,976,snap,8482117,45,1,O,0,1551,False,False,44.0,44-46ft,Low,Center,Even Strength,L
+2023020551,2023-12-29,1,02:19,139,slap,8474870,34,-1,O,0,1551,False,False,55.0,54-56ft,Low,Center,Even Strength,R
+2023020551,2023-12-29,1,02:21,141,wrist,8474870,49,-9,O,0,1551,True,False,41.0,40-42ft,Low,Center,Even Strength,R
+2023020551,2023-12-29,1,07:54,474,snap,8478463,52,3,O,0,1551,False,False,37.1,36-38ft,Medium,Center,Even Strength,L
+2023020551,2023-12-29,1,07:56,476,wrist,8474870,79,3,O,1,1551,True,False,10.4,10-12ft,High,Center,Even Strength,R
+2023020551,2023-12-29,1,10:48,648,slap,8476473,34,-36,O,0,1551,False,False,65.7,60ft+,Low,Left,Even Strength,R
+2023020551,2023-12-29,1,10:56,656,wrist,8480252,81,1,O,1,1551,False,False,8.1,8-10ft,High,Center,Even Strength,R
+2023020551,2023-12-29,1,15:20,920,wrist,8480798,65,-30,O,0,1541,False,False,38.4,38-40ft,Medium,Left,Shorthanded,L
+2023020551,2023-12-29,1,17:24,1044,wrist,8477987,53,-18,O,0,1551,False,False,40.2,40-42ft,Low,Left,Even Strength,L
+2023020551,2023-12-29,2,03:28,208,wrist,8480025,-51,15,O,0,1551,False,False,40.9,40-42ft,Low,Center,Even Strength,R
+2023020551,2023-12-29,2,04:10,250,snap,8480798,-67,9,O,0,1551,False,False,23.8,22-24ft,Medium,Center,Even Strength,L
+2023020551,2023-12-29,2,08:41,521,wrist,8484144,-84,34,O,0,1551,False,False,34.4,34-36ft,Medium,Right,Even Strength,R
+2023020551,2023-12-29,2,11:40,700,wrist,8476278,-14,24,N,0,1451,False,False,78.7,60ft+,Low,Right,Power Play,R
+2023020551,2023-12-29,2,14:03,843,wrist,8482117,-66,-34,O,0,1551,False,False,41.0,40-42ft,Low,Left,Even Strength,L
+2023020551,2023-12-29,2,16:19,979,wrist,8474870,-48,38,O,0,1551,False,False,55.9,54-56ft,Low,Right,Even Strength,R
+2023020551,2023-12-29,2,19:27,1167,wrist,8480252,-90,29,O,0,1551,False,False,29.0,28-30ft,Medium,Right,Even Strength,R
+2023020551,2023-12-29,3,00:03,3,wrist,8476473,-3,-30,N,0,1551,False,False,91.1,60ft+,Low,Left,Even Strength,R
+2023020551,2023-12-29,3,01:32,92,wrist,8483466,51,38,O,0,1551,False,False,53.7,52-54ft,Low,Right,Even Strength,L
+2023020551,2023-12-29,3,01:58,118,slap,8477987,43,30,O,0,1551,False,False,54.9,54-56ft,Low,Right,Even Strength,L
+2023020551,2023-12-29,3,02:46,166,wrist,8473422,54,-6,O,0,1551,False,False,35.5,34-36ft,Medium,Center,Even Strength,L
+2023020551,2023-12-29,3,02:47,167,wrist,8483466,84,-2,O,0,1551,True,False,5.4,4-6ft,High,Center,Even Strength,L
+2023020551,2023-12-29,3,07:03,423,snap,8484144,74,13,O,0,1541,False,False,19.8,18-20ft,High,Center,Shorthanded,R
+2023020551,2023-12-29,3,07:42,462,wrist,8484144,63,-17,O,0,1541,False,False,31.1,30-32ft,Medium,Left,Shorthanded,R
+2023020551,2023-12-29,3,08:13,493,wrist,8480252,63,-3,O,0,1541,False,False,26.2,26-28ft,Medium,Center,Shorthanded,R
+2023020551,2023-12-29,3,08:23,503,wrist,8481568,31,12,O,0,1541,False,False,59.2,58-60ft,Low,Center,Shorthanded,L
+2023020551,2023-12-29,3,08:52,532,wrist,8480252,60,-26,O,0,1541,False,False,38.9,38-40ft,Medium,Left,Shorthanded,R
+2023020551,2023-12-29,3,08:58,538,slap,8477450,54,6,O,1,1551,False,False,35.5,34-36ft,Medium,Center,Even Strength,L
+2023020551,2023-12-29,3,14:02,842,wrist,8480252,63,-23,O,0,1551,False,False,34.7,34-36ft,Medium,Left,Even Strength,R
+2023020551,2023-12-29,3,17:21,1041,wrist,8480798,49,22,O,0,1541,False,False,45.7,44-46ft,Low,Right,Shorthanded,L
+2023020551,2023-12-29,3,17:24,1044,wrist,8474870,86,6,O,1,1541,True,False,6.7,6-8ft,High,Center,Shorthanded,R
+2023020536,2023-12-27,1,01:26,86,snap,8475763,89,26,O,0,1551,False,False,26.0,26-28ft,Medium,Right,Even Strength,L
+2023020536,2023-12-27,1,02:08,128,wrist,8481059,43,-4,O,0,1551,False,False,46.2,46-48ft,Low,Center,Even Strength,L
+2023020536,2023-12-27,1,02:20,140,wrist,8479385,99,-16,O,0,1551,False,False,18.9,18-20ft,High,Left,Even Strength,R
+2023020536,2023-12-27,1,02:21,141,snap,8477402,85,-7,O,0,1551,True,False,8.1,8-10ft,High,Center,Even Strength,L
+2023020536,2023-12-27,1,05:36,336,slap,8479385,40,-14,O,0,1551,False,False,51.0,50-52ft,Low,Center,Even Strength,R
+2023020536,2023-12-27,1,06:52,412,wrist,8477953,3,-35,N,0,1551,False,False,92.8,60ft+,Low,Left,Even Strength,R
+2023020536,2023-12-27,1,13:58,838,snap,8476892,54,-14,O,0,1551,False,False,37.7,36-38ft,Medium,Center,Even Strength,R
+2023020536,2023-12-27,1,18:08,1088,slap,8482089,47,-32,O,1,1551,False,False,52.8,52-54ft,Low,Left,Even Strength,L
+2023020536,2023-12-27,2,00:17,17,wrist,8475181,-64,-15,O,0,1551,False,False,29.2,28-30ft,Medium,Left,Even Strength,L
+2023020536,2023-12-27,2,01:53,113,wrist,8475170,-42,-9,O,0,1551,False,False,47.9,46-48ft,Low,Center,Even Strength,L
+2023020536,2023-12-27,2,02:47,167,tip-in,8480281,-65,-12,O,0,1551,False,False,26.8,26-28ft,Medium,Center,Even Strength,L
+2023020536,2023-12-27,2,05:18,318,wrist,8475753,-37,38,O,0,1551,False,False,64.4,60ft+,Low,Right,Even Strength,R
+2023020536,2023-12-27,2,07:09,429,slap,8475753,-48,-20,O,0,1451,False,False,45.6,44-46ft,Low,Left,Power Play,R
+2023020536,2023-12-27,2,07:42,462,wrist,8475170,-60,21,O,0,1451,False,False,35.8,34-36ft,Medium,Right,Power Play,L
+2023020536,2023-12-27,2,07:53,473,slap,8476792,-31,-1,O,0,1451,False,False,58.0,58-60ft,Low,Center,Power Play,L
+2023020536,2023-12-27,2,10:00,600,wrist,8475170,-47,0,O,0,1551,False,False,42.0,42-44ft,Low,Center,Even Strength,L
+2023020536,2023-12-27,2,10:53,653,wrist,8474618,-51,-17,O,1,1551,False,False,41.6,40-42ft,Low,Left,Even Strength,L
+2023020536,2023-12-27,2,14:39,879,backhand,8479385,-66,2,O,0,1451,False,False,23.1,22-24ft,Medium,Center,Power Play,R
+2023020536,2023-12-27,2,15:01,901,wrist,8477402,-38,-38,O,0,1451,False,False,63.6,60ft+,Low,Left,Power Play,L
+2023020536,2023-12-27,2,15:26,926,backhand,8480023,-82,4,O,0,1451,False,False,8.1,8-10ft,High,Center,Power Play,R
+2023020536,2023-12-27,2,15:56,956,wrist,8477402,-57,12,O,0,1351,False,False,34.2,34-36ft,Medium,Center,Power Play,L
+2023020536,2023-12-27,2,16:19,979,snap,8479385,-57,-13,O,0,1351,False,False,34.5,34-36ft,Medium,Center,Power Play,R
+2023020536,2023-12-27,2,17:10,1030,slap,8476792,-53,-11,O,0,1351,False,False,37.6,36-38ft,Medium,Center,Power Play,L
+2023020536,2023-12-27,2,17:13,1033,poke,8475170,-83,3,O,0,1351,True,False,6.7,6-8ft,High,Center,Power Play,L
+2023020536,2023-12-27,2,17:17,1037,wrist,8479385,-76,7,O,0,1351,False,False,14.8,14-16ft,High,Center,Power Play,R
+2023020536,2023-12-27,3,03:48,228,wrist,8478104,77,-15,O,0,1551,False,False,19.2,18-20ft,High,Left,Even Strength,L
+2023020536,2023-12-27,3,05:51,351,wrist,8475763,49,-33,O,0,1551,False,False,51.9,50-52ft,Low,Left,Even Strength,L
+2023020536,2023-12-27,3,05:58,358,wrist,8475763,43,-1,O,0,1551,False,False,46.0,46-48ft,Low,Center,Even Strength,L
+2023020536,2023-12-27,3,14:12,852,wrist,8477402,28,-37,O,0,1551,False,False,71.3,60ft+,Low,Left,Even Strength,L
+2023020536,2023-12-27,3,17:09,1029,wrist,8477402,59,-8,O,0,1551,False,False,31.0,30-32ft,Medium,Center,Even Strength,L
+2023020515,2023-12-23,1,01:22,82,wrist,8476887,54,22,O,0,1551,False,False,41.3,40-42ft,Low,Right,Even Strength,R
+2023020515,2023-12-23,1,01:35,95,wrist,8482146,62,-37,O,0,1551,False,False,45.8,44-46ft,Low,Left,Even Strength,R
+2023020515,2023-12-23,1,01:38,98,slap,8474600,27,39,O,0,1551,True,False,73.2,60ft+,Low,Right,Even Strength,L
+2023020515,2023-12-23,1,03:48,228,wrist,8474600,62,17,O,0,1551,False,False,31.9,30-32ft,Medium,Right,Even Strength,L
+2023020515,2023-12-23,1,05:09,309,wrist,8474600,50,27,O,0,1551,False,False,47.4,46-48ft,Low,Right,Even Strength,L
+2023020515,2023-12-23,1,08:52,532,wrist,8476887,27,-24,O,0,1551,False,False,66.5,60ft+,Low,Left,Even Strength,R
+2023020515,2023-12-23,1,09:47,587,wrist,8482062,81,17,O,0,1551,False,False,18.8,18-20ft,High,Right,Even Strength,L
+2023020515,2023-12-23,1,12:43,763,wrist,8475158,89,19,O,0,1551,False,False,19.0,18-20ft,High,Right,Even Strength,L
+2023020515,2023-12-23,1,15:35,935,wrist,8482062,75,8,O,0,1551,False,True,16.1,16-18ft,High,Center,Even Strength,L
+2023020515,2023-12-23,1,16:00,960,wrist,8475197,31,-10,O,0,1551,False,False,58.9,58-60ft,Low,Center,Even Strength,R
+2023020515,2023-12-23,1,17:56,1076,tip-in,8482146,83,0,O,0,1551,False,False,6.0,6-8ft,High,Center,Even Strength,R
+2023020515,2023-12-23,1,19:32,1172,wrist,8482062,77,-14,O,0,1551,False,False,18.4,18-20ft,High,Center,Even Strength,L
+2023020515,2023-12-23,2,00:20,20,slap,8474151,-54,-18,O,0,1551,False,False,39.4,38-40ft,Medium,Left,Even Strength,L
+2023020515,2023-12-23,2,00:23,23,tip-in,8477446,-80,-2,O,1,1551,True,False,9.2,8-10ft,High,Center,Even Strength,R
+2023020515,2023-12-23,2,01:41,101,wrist,8481704,49,3,D,0,1551,False,False,40.1,40-42ft,Low,Center,Even Strength,L
+2023020515,2023-12-23,2,06:31,391,wrist,8476925,-78,5,O,0,1451,False,False,12.1,12-14ft,High,Center,Power Play,R
+2023020515,2023-12-23,2,06:33,393,wrist,8476925,-75,5,O,1,1451,True,False,14.9,14-16ft,High,Center,Power Play,R
+2023020515,2023-12-23,2,09:18,558,wrist,8478438,-58,34,O,0,1551,False,False,46.0,46-48ft,Low,Right,Even Strength,L
+2023020515,2023-12-23,2,12:25,745,wrist,8475158,-63,23,O,0,1551,False,False,34.7,34-36ft,Medium,Right,Even Strength,L
+2023020515,2023-12-23,3,02:28,148,wrist,8474600,46,39,O,0,1551,False,False,58.1,58-60ft,Low,Right,Even Strength,L
+2023020515,2023-12-23,3,12:04,724,wrist,8476925,82,-13,O,0,1451,False,False,14.8,14-16ft,High,Center,Power Play,R
+2023020505,2023-12-21,1,00:16,16,snap,8476927,69,-9,O,0,1551,False,False,21.9,20-22ft,Medium,Center,Even Strength,L
+2023020505,2023-12-21,1,02:51,171,wrist,8478057,68,9,O,1,1551,False,False,22.8,22-24ft,Medium,Center,Even Strength,L
+2023020505,2023-12-21,1,04:24,264,snap,8482496,60,13,O,0,1551,False,False,31.8,30-32ft,Medium,Center,Even Strength,L
+2023020505,2023-12-21,1,07:10,430,snap,8476468,82,-8,O,0,1551,False,False,10.6,10-12ft,High,Center,Even Strength,L
+2023020505,2023-12-21,1,13:32,812,wrist,8478856,53,38,O,0,1551,False,False,52.3,52-54ft,Low,Right,Even Strength,R
+2023020505,2023-12-21,1,19:59,1199,slap,8478444,39,-6,O,0,1551,False,False,50.4,50-52ft,Low,Center,Even Strength,R
+2023020505,2023-12-21,2,01:35,95,wrist,8480012,-82,-32,O,0,1551,False,False,32.8,32-34ft,Medium,Left,Even Strength,L
+2023020505,2023-12-21,2,08:39,519,snap,8476468,-37,-4,O,0,1551,False,False,52.2,52-54ft,Low,Center,Even Strength,L
+2023020505,2023-12-21,2,12:26,746,wrist,8478444,-61,22,O,1,1551,False,False,35.6,34-36ft,Medium,Right,Even Strength,R
+2023020505,2023-12-21,2,12:49,769,snap,8478444,-61,15,O,0,1551,False,False,31.8,30-32ft,Medium,Center,Even Strength,R
+2023020505,2023-12-21,2,14:18,858,slap,8480800,-43,0,O,0,1551,False,False,46.0,46-48ft,Low,Center,Even Strength,L
+2023020505,2023-12-21,3,05:52,352,wrist,8478057,51,17,O,0,1551,False,False,41.6,40-42ft,Low,Right,Even Strength,L
+2023020505,2023-12-21,3,05:56,356,slap,8477507,31,33,O,0,1551,False,False,66.7,60ft+,Low,Right,Even Strength,L
+2023020505,2023-12-21,3,08:41,521,slap,8478454,35,-31,O,0,1551,False,False,62.3,60ft+,Low,Left,Even Strength,R
+2023020505,2023-12-21,3,09:55,595,wrist,8478444,59,-31,O,0,1551,False,False,43.1,42-44ft,Low,Left,Even Strength,R
+2023020505,2023-12-21,3,12:56,776,wrist,8474013,-53,12,D,0,1551,False,False,37.9,36-38ft,Medium,Center,Even Strength,L
+2023020505,2023-12-21,3,15:04,904,snap,8478856,83,4,O,1,1551,False,False,7.2,6-8ft,High,Center,Even Strength,R
+2023020505,2023-12-21,3,16:39,999,wrist,8481624,47,37,O,0,1551,False,False,56.0,56-58ft,Low,Right,Even Strength,L
+2023020505,2023-12-21,3,19:51,1191,slap,8479425,29,-36,O,0,1551,False,False,70.0,60ft+,Low,Left,Even Strength,R
+2023020505,2023-12-21,4,04:22,262,snap,8480012,-78,-9,O,0,1331,False,False,14.2,14-16ft,High,Center,Other,L
+2023020482,2023-12-18,1,00:43,43,wrist,8478407,-24,-2,N,0,1551,False,False,65.0,60ft+,Low,Center,Even Strength,L
+2023020482,2023-12-18,1,00:57,57,wrist,8477416,80,-30,O,0,1551,False,False,31.3,30-32ft,Medium,Left,Even Strength,R
+2023020482,2023-12-18,1,00:59,59,wrist,8480009,84,-8,O,0,1551,True,False,9.4,8-10ft,High,Center,Even Strength,L
+2023020482,2023-12-18,1,01:51,111,wrist,8479977,86,-8,O,0,1551,False,False,8.5,8-10ft,High,Center,Even Strength,R
+2023020482,2023-12-18,1,03:07,187,wrist,8477416,49,-18,O,0,1551,False,False,43.9,42-44ft,Low,Left,Even Strength,R
+2023020482,2023-12-18,1,03:09,189,slap,8480009,72,18,O,0,1551,True,False,24.8,24-26ft,Medium,Right,Even Strength,L
+2023020482,2023-12-18,1,06:42,402,backhand,8474586,67,-10,O,0,1541,False,False,24.2,24-26ft,Medium,Center,Shorthanded,R
+2023020482,2023-12-18,1,07:10,430,wrist,8475193,67,-17,O,0,1541,False,False,27.8,26-28ft,Medium,Left,Shorthanded,L
+2023020482,2023-12-18,1,12:14,734,slap,8476467,33,34,O,0,1551,False,False,65.5,60ft+,Low,Right,Even Strength,L
+2023020482,2023-12-18,1,14:25,865,wrist,8477416,6,-41,N,0,1551,False,False,92.6,60ft+,Low,Left,Even Strength,R
+2023020482,2023-12-18,1,16:17,977,tip-in,8477416,81,2,O,0,1551,False,False,8.2,8-10ft,High,Center,Even Strength,R
+2023020482,2023-12-18,1,19:09,1149,wrist,8476826,55,40,O,0,1551,False,False,52.5,52-54ft,Low,Right,Even Strength,L
+2023020482,2023-12-18,1,19:50,1190,wrist,8479293,68,15,O,0,1551,False,False,25.8,24-26ft,Medium,Center,Even Strength,L
+2023020482,2023-12-18,2,00:30,30,wrist,8482665,-57,-21,O,0,1551,False,True,38.3,38-40ft,Medium,Left,Even Strength,L
+2023020482,2023-12-18,2,00:32,32,snap,8475193,-77,4,O,1,1551,True,True,12.6,12-14ft,High,Center,Even Strength,L
+2023020482,2023-12-18,2,00:59,59,wrist,8476826,-45,-23,O,0,1551,False,False,49.6,48-50ft,Low,Left,Even Strength,L
+2023020482,2023-12-18,2,03:58,238,snap,8474586,-45,35,O,0,1551,False,False,56.2,56-58ft,Low,Right,Even Strength,R
+2023020482,2023-12-18,2,04:00,240,snap,8475193,-84,5,O,0,1551,True,False,7.1,6-8ft,High,Center,Even Strength,L
+2023020482,2023-12-18,2,04:01,241,snap,8475193,-87,7,O,0,1551,True,False,7.3,6-8ft,High,Center,Even Strength,L
+2023020482,2023-12-18,2,07:33,453,wrist,8474586,-62,27,O,0,1551,False,False,38.2,38-40ft,Medium,Right,Even Strength,R
+2023020482,2023-12-18,2,08:31,511,wrist,8476467,-72,12,O,0,1551,False,False,20.8,20-22ft,Medium,Center,Even Strength,L
+2023020482,2023-12-18,2,10:30,630,wrist,8482665,-86,-12,O,0,1551,False,False,12.4,12-14ft,High,Center,Even Strength,L
+2023020482,2023-12-18,2,11:34,694,tip-in,8476826,-70,-15,O,0,1551,False,False,24.2,24-26ft,Medium,Left,Even Strength,L
+2023020482,2023-12-18,2,13:48,828,wrist,8482665,-68,-6,O,1,1551,False,False,21.8,20-22ft,Medium,Center,Even Strength,L
+2023020482,2023-12-18,2,15:11,911,wrist,8479977,-76,-14,O,0,1541,False,False,19.1,18-20ft,High,Center,Shorthanded,R
+2023020482,2023-12-18,2,17:23,1043,backhand,8481789,-79,7,O,0,1551,False,False,12.2,12-14ft,High,Center,Even Strength,L
+2023020482,2023-12-18,2,17:26,1046,snap,8479293,-85,-14,O,0,1551,False,False,14.6,14-16ft,High,Center,Even Strength,L
+2023020482,2023-12-18,3,02:20,140,snap,8477416,59,-25,O,0,1551,False,False,39.1,38-40ft,Medium,Left,Even Strength,R
+2023020482,2023-12-18,3,04:57,297,wrist,8476457,47,-39,O,0,1551,False,False,57.3,56-58ft,Low,Left,Even Strength,R
+2023020482,2023-12-18,3,07:08,428,deflected,8476826,81,1,O,0,1541,False,False,8.1,8-10ft,High,Center,Shorthanded,L
+2023020482,2023-12-18,3,12:06,726,wrist,8476826,33,-36,O,0,1551,False,False,66.6,60ft+,Low,Left,Even Strength,L
+2023020482,2023-12-18,3,12:21,741,wrist,8482858,27,41,O,0,1551,False,False,74.3,60ft+,Low,Right,Even Strength,L
+2023020482,2023-12-18,3,13:26,806,wrist,8482858,53,-24,O,0,1441,False,False,43.3,42-44ft,Low,Left,Other,L
+2023020482,2023-12-18,3,13:42,822,backhand,8475208,79,-10,O,0,1441,False,False,14.1,14-16ft,High,Center,Other,L
+2023020482,2023-12-18,3,18:07,1087,wrist,8481789,51,38,O,0,1551,False,False,53.7,52-54ft,Low,Right,Even Strength,L
+2023020482,2023-12-18,3,19:18,1158,tip-in,8480009,68,0,O,0,0651,False,False,21.0,20-22ft,Medium,Center,Penalty Shot,L
+2023020482,2023-12-18,3,19:38,1178,wrist,8480009,84,0,O,1,0651,False,False,5.0,4-6ft,High,Center,Penalty Shot,L
+2023020482,2023-12-18,4,01:39,99,wrap-around,8482665,-89,4,O,0,1331,False,False,4.0,4-6ft,High,Center,Other,L
+2023020469,2023-12-16,1,05:43,343,wrist,8475753,52,-40,O,0,1551,False,False,54.5,54-56ft,Low,Left,Even Strength,R
+2023020469,2023-12-16,1,09:14,554,tip-in,8482089,82,7,O,0,1551,False,False,9.9,8-10ft,High,Center,Even Strength,L
+2023020469,2023-12-16,1,12:53,773,snap,8476438,63,16,O,1,1451,False,False,30.5,30-32ft,Medium,Right,Power Play,L
+2023020469,2023-12-16,1,13:52,832,wrist,8482089,45,-20,O,0,1551,False,False,48.3,48-50ft,Low,Left,Even Strength,L
+2023020469,2023-12-16,1,16:43,1003,wrist,8475170,63,-16,O,0,1551,False,False,30.5,30-32ft,Medium,Left,Even Strength,L
+2023020469,2023-12-16,1,17:54,1074,wrist,8479385,59,-17,O,0,1551,False,False,34.5,34-36ft,Medium,Left,Even Strength,R
+2023020469,2023-12-16,1,18:31,1111,wrist,8479385,66,-22,O,0,1551,False,False,31.8,30-32ft,Medium,Left,Even Strength,R
+2023020469,2023-12-16,1,18:34,1114,wrist,8479385,88,-27,O,0,1551,False,False,27.0,26-28ft,Medium,Left,Even Strength,R
+2023020469,2023-12-16,1,19:35,1175,wrist,8475753,48,-33,O,0,1551,False,False,52.6,52-54ft,Low,Left,Even Strength,R
+2023020469,2023-12-16,2,01:36,96,snap,8479385,-67,-2,O,1,1551,False,False,22.1,22-24ft,Medium,Center,Even Strength,R
+2023020469,2023-12-16,2,01:58,118,snap,8476438,-75,-4,O,0,1551,False,False,14.6,14-16ft,High,Center,Even Strength,L
+2023020469,2023-12-16,2,04:34,274,wrist,8479385,-41,2,O,0,1551,False,False,48.0,48-50ft,Low,Center,Even Strength,R
+2023020469,2023-12-16,2,10:16,616,wrist,8475181,-55,14,O,0,1541,False,False,36.8,36-38ft,Medium,Center,Shorthanded,L
+2023020469,2023-12-16,2,11:22,682,wrist,8477953,-34,-26,O,0,1551,False,False,60.8,60ft+,Low,Left,Even Strength,R
+2023020469,2023-12-16,2,14:31,871,wrist,8477402,-78,-2,O,0,1551,False,False,11.2,10-12ft,High,Center,Even Strength,L
+2023020469,2023-12-16,2,14:32,872,backhand,8477402,-78,1,O,0,1551,True,False,11.0,10-12ft,High,Center,Even Strength,L
+2023020469,2023-12-16,2,14:55,895,wrist,8479385,-64,6,O,0,1551,False,False,25.7,24-26ft,Medium,Center,Even Strength,R
+2023020469,2023-12-16,2,15:12,912,wrist,8479385,-54,2,O,0,1551,False,False,35.1,34-36ft,Medium,Center,Even Strength,R
+2023020469,2023-12-16,2,16:46,1006,wrist,8475763,-84,10,O,1,1551,False,False,11.2,10-12ft,High,Center,Even Strength,L
+2023020469,2023-12-16,2,17:29,1049,wrist,8480023,-65,-13,O,0,1551,False,False,27.3,26-28ft,Medium,Center,Even Strength,R
+2023020469,2023-12-16,2,17:48,1068,tip-in,8479385,-80,-10,O,0,1551,False,False,13.5,12-14ft,High,Center,Even Strength,R
+2023020469,2023-12-16,2,18:48,1128,slap,8475753,-32,13,O,0,1551,False,False,58.5,58-60ft,Low,Center,Even Strength,R
+2023020469,2023-12-16,2,19:02,1142,slap,8476792,-32,-28,O,0,1551,False,False,63.5,60ft+,Low,Left,Even Strength,L
+2023020469,2023-12-16,2,19:05,1145,wrist,8475763,-79,14,O,0,1551,True,False,17.2,16-18ft,High,Center,Even Strength,L
+2023020469,2023-12-16,2,19:07,1147,snap,8475763,-80,14,O,0,1551,True,False,16.6,16-18ft,High,Center,Even Strength,L
+2023020469,2023-12-16,3,02:26,146,wrist,8480023,82,18,O,0,1551,False,False,19.3,18-20ft,High,Right,Even Strength,R
+2023020469,2023-12-16,3,03:19,199,wrist,8477953,67,-24,O,0,1551,False,False,32.6,32-34ft,Medium,Left,Even Strength,R
+2023020469,2023-12-16,3,05:35,335,wrist,8475181,29,9,O,0,1551,False,False,60.7,60ft+,Low,Center,Even Strength,L
+2023020469,2023-12-16,3,09:13,553,snap,8477953,54,-17,O,0,1551,False,False,38.9,38-40ft,Medium,Left,Even Strength,R
+2023020469,2023-12-16,3,09:46,586,snap,8475763,70,32,O,0,1551,False,False,37.2,36-38ft,Medium,Right,Even Strength,L
+2023020469,2023-12-16,3,13:26,806,wrist,8479385,62,-16,O,0,1551,False,False,31.4,30-32ft,Medium,Left,Even Strength,R
+2023020469,2023-12-16,3,18:51,1131,slap,8475753,45,-18,O,0,1551,False,False,47.5,46-48ft,Low,Left,Even Strength,R
+2023020469,2023-12-16,3,19:18,1158,backhand,8477953,82,12,O,0,1551,False,False,13.9,12-14ft,High,Center,Even Strength,R
+2023020469,2023-12-16,4,00:37,37,wrist,8476892,-87,7,O,1,1331,False,False,7.3,6-8ft,High,Center,Other,R
+2023020458,2023-12-15,1,13:18,798,snap,8473512,87,-7,O,0,1441,False,False,7.3,6-8ft,High,Center,Other,R
+2023020458,2023-12-15,1,13:18,798,backhand,8473512,86,-4,O,0,1441,False,False,5.0,4-6ft,High,Center,Other,R
+2023020458,2023-12-15,1,13:20,800,snap,8480064,87,-2,O,1,1441,True,False,2.8,2-4ft,High,Center,Other,L
+2023020458,2023-12-15,1,18:10,1090,wrist,8480801,49,-26,O,0,1551,False,False,47.7,46-48ft,Low,Left,Even Strength,L
+2023020458,2023-12-15,2,01:30,90,wrist,8480448,-86,9,O,0,1551,False,False,9.5,8-10ft,High,Center,Even Strength,L
+2023020458,2023-12-15,2,04:50,290,wrist,8482116,-57,22,O,0,1551,False,False,38.8,38-40ft,Medium,Right,Even Strength,L
+2023020458,2023-12-15,2,04:54,294,snap,8480208,-83,-7,O,1,1551,False,False,9.2,8-10ft,High,Center,Even Strength,R
+2023020458,2023-12-15,2,08:40,520,wrist,8480208,-50,19,O,0,1551,False,False,43.4,42-44ft,Low,Right,Even Strength,R
+2023020458,2023-12-15,2,10:10,610,wrist,8482116,-75,30,O,0,1541,False,False,33.1,32-34ft,Medium,Right,Shorthanded,L
+2023020458,2023-12-15,2,11:28,688,wrist,8480448,-34,-26,O,0,1541,False,False,60.8,60ft+,Low,Left,Shorthanded,L
+2023020458,2023-12-15,2,12:51,771,wrist,8480801,-52,10,O,0,1551,False,False,38.3,38-40ft,Medium,Center,Even Strength,L
+2023020458,2023-12-15,2,13:50,830,wrist,8479772,-72,-22,O,0,1551,False,False,27.8,26-28ft,Medium,Left,Even Strength,R
+2023020458,2023-12-15,2,15:39,939,wrist,8480064,-79,-17,O,0,1551,False,False,19.7,18-20ft,High,Left,Even Strength,L
+2023020458,2023-12-15,2,17:02,1022,wrist,8480801,-27,22,O,0,1551,False,False,65.8,60ft+,Low,Right,Even Strength,L
+2023020458,2023-12-15,3,02:22,142,wrist,8482105,80,17,O,0,1551,False,False,19.2,18-20ft,High,Right,Even Strength,L
+2023020458,2023-12-15,3,03:49,229,wrist,8479772,43,-36,O,0,1551,False,False,58.4,58-60ft,Low,Left,Even Strength,R
+2023020458,2023-12-15,3,04:12,252,wrist,8473512,65,18,O,0,1551,False,False,30.0,30-32ft,Medium,Right,Even Strength,R
+2023020458,2023-12-15,3,04:35,275,wrist,8480801,56,-12,O,0,1551,False,False,35.1,34-36ft,Medium,Center,Even Strength,L
+2023020458,2023-12-15,3,07:14,434,wrist,8480208,80,16,O,0,1551,False,False,18.4,18-20ft,High,Right,Even Strength,R
+2023020458,2023-12-15,3,10:41,641,wrist,8480208,51,25,O,0,1551,False,False,45.5,44-46ft,Low,Right,Even Strength,R
+2023020458,2023-12-15,3,10:57,657,wrist,8482116,59,7,O,0,1551,False,False,30.8,30-32ft,Medium,Center,Even Strength,L
+2023020458,2023-12-15,3,12:46,766,wrist,8479772,46,-36,O,0,1551,False,False,56.1,56-58ft,Low,Left,Even Strength,R
+2023020458,2023-12-15,3,12:58,778,slap,8482245,31,-24,O,0,1551,False,False,62.8,60ft+,Low,Left,Even Strength,R
+2023020458,2023-12-15,3,13:56,836,wrist,8477330,46,-33,O,0,1551,False,False,54.2,54-56ft,Low,Left,Even Strength,L
+2023020458,2023-12-15,3,15:15,915,backhand,8482116,75,-20,O,0,1551,False,False,24.4,24-26ft,Medium,Left,Even Strength,L
+2023020458,2023-12-15,3,18:39,1119,tip-in,8480801,82,-5,O,0,0651,False,False,8.6,8-10ft,High,Center,Penalty Shot,L
+2023020458,2023-12-15,3,19:21,1161,slap,8479345,31,6,O,0,0651,False,False,58.3,58-60ft,Low,Center,Penalty Shot,L
+2023020396,2023-12-07,1,03:24,204,wrist,8478440,-73,8,O,0,1551,False,False,17.9,16-18ft,High,Center,Even Strength,L
+2023020396,2023-12-07,1,07:11,431,wrist,8481656,-98,-15,O,1,1551,False,False,17.5,16-18ft,High,Left,Even Strength,L
+2023020396,2023-12-07,1,10:03,603,wrist,8478440,-55,27,O,0,1451,False,False,43.4,42-44ft,Low,Right,Power Play,L
+2023020396,2023-12-07,1,10:18,618,slap,8474590,-42,3,O,0,1451,False,False,47.1,46-48ft,Low,Center,Power Play,R
+2023020396,2023-12-07,1,10:19,619,backhand,8476880,-78,0,O,0,1451,True,False,11.0,10-12ft,High,Center,Power Play,R
+2023020396,2023-12-07,1,19:17,1157,wrist,8481656,-73,21,O,0,1551,False,False,26.4,26-28ft,Medium,Right,Even Strength,L
+2023020396,2023-12-07,2,01:50,110,wrist,8475324,77,-17,O,0,1551,False,False,20.8,20-22ft,Medium,Left,Even Strength,R
+2023020396,2023-12-07,2,02:44,164,snap,8477511,68,-14,O,0,1551,False,False,25.2,24-26ft,Medium,Center,Even Strength,L
+2023020396,2023-12-07,2,04:13,253,wrist,8476880,84,-20,O,0,1551,False,False,20.6,20-22ft,Medium,Left,Even Strength,R
+2023020396,2023-12-07,2,04:18,258,wrist,8480873,50,20,O,0,1551,False,False,43.8,42-44ft,Low,Right,Even Strength,L
+2023020396,2023-12-07,2,04:31,271,wrist,8478440,71,-4,O,1,1551,False,False,18.4,18-20ft,High,Center,Even Strength,L
+2023020396,2023-12-07,2,05:17,317,slap,8480796,38,-5,O,0,1551,False,False,51.2,50-52ft,Low,Center,Even Strength,L
+2023020396,2023-12-07,2,07:14,434,wrist,8475744,81,-1,O,1,1551,False,False,8.1,8-10ft,High,Center,Even Strength,L
+2023020396,2023-12-07,2,09:15,555,wrist,8477845,33,-6,O,0,1551,False,False,56.3,56-58ft,Low,Center,Even Strength,R
+2023020396,2023-12-07,2,09:16,556,wrist,8471214,82,-6,O,0,1551,True,False,9.2,8-10ft,High,Center,Even Strength,R
+2023020396,2023-12-07,2,15:08,908,backhand,8481656,81,-14,O,0,1551,False,False,16.1,16-18ft,High,Center,Even Strength,L
+2023020396,2023-12-07,2,15:53,953,wrist,8482148,72,-26,O,0,1551,False,False,31.1,30-32ft,Medium,Left,Even Strength,L
+2023020396,2023-12-07,2,17:34,1054,snap,8474590,55,17,O,0,1551,False,False,38.0,38-40ft,Medium,Right,Even Strength,R
+2023020396,2023-12-07,2,17:39,1059,wrist,8474590,59,-22,O,0,1551,False,False,37.2,36-38ft,Medium,Left,Even Strength,R
+2023020396,2023-12-07,3,07:49,469,wrist,8471214,-60,-19,O,0,1551,False,False,34.7,34-36ft,Medium,Left,Even Strength,R
+2023020396,2023-12-07,3,07:51,471,backhand,8478440,-79,-11,O,0,1551,False,False,14.9,14-16ft,High,Center,Even Strength,L
+2023020396,2023-12-07,3,07:57,477,wrist,8478440,-61,26,O,0,1451,False,False,38.2,38-40ft,Medium,Right,Power Play,L
+2023020396,2023-12-07,3,08:26,506,backhand,8481580,-74,4,O,0,1451,False,False,15.5,14-16ft,High,Center,Power Play,L
+2023020396,2023-12-07,3,09:08,548,wrist,8478440,-66,-15,O,1,1451,False,False,27.5,26-28ft,Medium,Left,Power Play,L
+2023020396,2023-12-07,3,14:43,883,wrist,8475324,-55,22,O,0,1551,False,False,40.5,40-42ft,Low,Right,Even Strength,R
+2023020396,2023-12-07,4,00:39,39,wrist,8475744,54,-12,O,0,1331,False,False,37.0,36-38ft,Medium,Center,Other,L
+2023020396,2023-12-07,4,04:11,251,slap,8471214,55,21,O,0,1341,False,False,40.0,40-42ft,Medium,Right,Power Play,R
+2023020396,2023-12-07,5,00:00,0,wrist,8475744,-73,5,O,0,1010,False,False,16.8,16-18ft,High,Center,Penalty Shot,L
+2023020396,2023-12-07,5,00:00,0,wrist,8478440,-74,8,O,0,1010,False,False,17.0,16-18ft,High,Center,Penalty Shot,L
+2023020396,2023-12-07,5,00:00,0,wrist,8471214,-76,-2,O,0,1010,False,False,13.2,12-14ft,High,Center,Penalty Shot,R
+2023020351,2023-11-30,1,04:42,282,wrist,8476399,-66,-1,O,0,1551,False,False,23.0,22-24ft,Medium,Center,Even Strength,L
+2023020351,2023-11-30,1,05:45,345,wrist,8482074,-86,6,O,0,1551,False,False,6.7,6-8ft,High,Center,Even Strength,L
+2023020351,2023-11-30,1,06:08,368,slap,8477496,-33,19,O,0,1551,False,False,59.1,58-60ft,Low,Right,Even Strength,R
+2023020351,2023-11-30,1,07:28,448,wrist,8478502,-75,-14,O,0,1551,False,False,19.8,18-20ft,High,Center,Even Strength,L
+2023020351,2023-11-30,1,08:02,482,wrist,8475690,-83,10,O,1,1551,False,False,11.7,10-12ft,High,Center,Even Strength,R
+2023020351,2023-11-30,1,10:32,632,slap,8477496,-29,7,O,0,1551,False,False,60.4,60ft+,Low,Center,Even Strength,R
+2023020351,2023-11-30,1,14:10,850,snap,8482074,-87,-23,O,0,1551,False,False,23.1,22-24ft,Medium,Left,Even Strength,L
+2023020351,2023-11-30,1,15:29,929,wrist,8474150,-69,6,O,0,1551,False,True,20.9,20-22ft,Medium,Center,Even Strength,L
+2023020351,2023-11-30,1,15:30,930,bat,8478396,-75,-1,O,1,1551,True,True,14.0,14-16ft,High,Center,Even Strength,L
+2023020351,2023-11-30,1,17:22,1042,wrist,8478421,-67,22,O,0,1551,False,False,31.1,30-32ft,Medium,Right,Even Strength,L
+2023020351,2023-11-30,2,02:18,138,wrist,8478396,35,-2,O,0,1451,False,False,54.0,54-56ft,Low,Center,Power Play,L
+2023020351,2023-11-30,2,02:24,144,tip-in,8476456,78,-6,O,0,1451,False,False,12.5,12-14ft,High,Center,Power Play,L
+2023020351,2023-11-30,2,02:34,154,slap,8478396,58,11,O,0,1451,False,False,32.9,32-34ft,Medium,Center,Power Play,L
+2023020351,2023-11-30,2,03:08,188,wrist,8477496,63,19,O,0,1451,False,False,32.2,32-34ft,Medium,Right,Power Play,R
+2023020351,2023-11-30,2,04:03,243,snap,8478421,57,-23,O,0,1551,False,False,39.4,38-40ft,Medium,Left,Even Strength,L
+2023020351,2023-11-30,2,08:50,530,wrist,8478397,36,-38,O,0,1551,False,False,65.2,60ft+,Low,Left,Even Strength,R
+2023020351,2023-11-30,2,09:43,583,backhand,8481028,79,-11,O,0,1551,False,False,14.9,14-16ft,High,Center,Even Strength,L
+2023020351,2023-11-30,2,11:29,689,wrap-around,8478396,88,-6,O,0,1551,False,False,6.1,6-8ft,High,Center,Even Strength,L
+2023020351,2023-11-30,2,11:30,690,backhand,8476456,81,0,O,0,1551,True,False,8.0,8-10ft,High,Center,Even Strength,L
+2023020351,2023-11-30,2,12:27,747,wrap-around,8480008,90,-6,O,0,1551,False,False,6.1,6-8ft,High,Center,Even Strength,L
+2023020351,2023-11-30,2,13:58,838,slap,8478397,36,-35,O,0,1551,False,False,63.5,60ft+,Low,Left,Even Strength,R
+2023020351,2023-11-30,3,02:22,142,wrist,8478421,-24,5,N,0,1551,False,False,65.2,60ft+,Low,Center,Even Strength,L
+2023020351,2023-11-30,3,04:04,244,wrist,8477851,-40,20,O,0,1551,False,False,52.9,52-54ft,Low,Right,Even Strength,L
+2023020351,2023-11-30,3,04:10,250,wrist,8475690,-52,36,O,0,1551,False,False,51.6,50-52ft,Low,Right,Even Strength,R
+2023020351,2023-11-30,3,05:03,303,backhand,8482074,-86,-11,O,0,1551,False,False,11.4,10-12ft,High,Center,Even Strength,L
+2023020351,2023-11-30,3,05:13,313,backhand,8475172,-87,-7,O,0,1551,False,False,7.3,6-8ft,High,Center,Even Strength,L
+2023020351,2023-11-30,3,09:55,595,wrist,8477496,-60,-29,O,0,1551,False,False,41.0,40-42ft,Low,Left,Even Strength,R
+2023020351,2023-11-30,3,11:44,704,wrist,8482074,-60,-25,O,0,1551,False,False,38.3,38-40ft,Medium,Left,Even Strength,L
+2023020351,2023-11-30,3,13:03,783,snap,8477496,-43,20,O,0,1451,False,False,50.2,50-52ft,Low,Right,Power Play,R
+2023020351,2023-11-30,3,13:56,836,wrist,8474150,-77,35,O,0,1551,False,False,37.0,36-38ft,Medium,Right,Even Strength,L
+2023020351,2023-11-30,3,14:46,886,wrist,8474150,-61,27,O,0,1551,False,False,38.9,38-40ft,Medium,Right,Even Strength,L
+2023020351,2023-11-30,3,16:05,965,wrist,8478396,-54,-28,O,0,1551,False,False,44.8,44-46ft,Low,Left,Even Strength,L
+2023020351,2023-11-30,3,16:48,1008,backhand,8476399,-83,8,O,0,1551,False,False,10.0,10-12ft,High,Center,Even Strength,L
+2023020351,2023-11-30,3,17:19,1039,wrist,8477346,-31,28,O,1,1551,False,False,64.4,60ft+,Low,Right,Even Strength,R
+2023020351,2023-11-30,4,01:00,60,wrist,8476456,59,18,O,0,1331,False,False,35.0,34-36ft,Medium,Right,Other,L
+2023020351,2023-11-30,4,01:01,61,deflected,8475172,83,-4,O,1,1331,True,False,7.2,6-8ft,High,Center,Other,L
+2023020274,2023-11-20,1,01:18,78,wrist,8482109,68,-19,O,0,1551,False,False,28.3,28-30ft,Medium,Left,Even Strength,L
+2023020274,2023-11-20,1,04:21,261,wrist,8482109,49,-20,O,0,1551,False,False,44.7,44-46ft,Low,Left,Even Strength,L
+2023020274,2023-11-20,1,06:37,397,snap,8476389,50,19,O,0,1551,False,False,43.4,42-44ft,Low,Right,Even Strength,R
+2023020274,2023-11-20,1,06:55,415,wrist,8478550,59,-17,O,0,1551,False,False,34.5,34-36ft,Medium,Left,Even Strength,R
+2023020274,2023-11-20,1,07:56,476,wrist,8476918,86,-10,O,0,1551,False,False,10.4,10-12ft,High,Center,Even Strength,L
+2023020274,2023-11-20,1,08:24,504,wrist,8476885,56,-35,O,0,1551,False,False,48.1,48-50ft,Low,Left,Even Strength,R
+2023020274,2023-11-20,1,09:02,542,backhand,8482109,74,-5,O,0,1551,False,False,15.8,14-16ft,High,Center,Even Strength,L
+2023020274,2023-11-20,1,09:06,546,wrist,8476979,38,-9,O,0,1551,False,False,51.8,50-52ft,Low,Center,Even Strength,L
+2023020274,2023-11-20,1,11:10,670,wrist,8475184,50,35,O,0,1541,False,False,52.4,52-54ft,Low,Right,Shorthanded,L
+2023020274,2023-11-20,1,11:15,675,wrist,8480817,38,27,O,0,1541,False,False,57.7,56-58ft,Low,Right,Shorthanded,L
+2023020274,2023-11-20,1,12:02,722,wrist,8480817,41,-5,O,0,1541,False,False,48.3,48-50ft,Low,Center,Shorthanded,L
+2023020274,2023-11-20,1,15:40,940,wrist,8471218,-3,7,N,0,1551,False,False,86.3,60ft+,Low,Center,Even Strength,R
+2023020274,2023-11-20,1,16:25,985,wrap-around,8476389,86,5,O,1,1541,False,False,5.8,4-6ft,High,Center,Shorthanded,R
+2023020274,2023-11-20,1,16:58,1018,deflected,8475752,60,6,O,0,1551,False,False,29.6,28-30ft,Medium,Center,Even Strength,R
+2023020274,2023-11-20,1,17:53,1073,wrist,8479324,40,35,O,0,1551,False,False,60.2,60ft+,Low,Right,Even Strength,L
+2023020274,2023-11-20,1,18:46,1126,wrist,8481708,54,34,O,0,1551,False,False,48.8,48-50ft,Low,Right,Even Strength,L
+2023020274,2023-11-20,2,00:41,41,wrist,8478550,-58,20,O,0,1551,False,False,36.9,36-38ft,Medium,Right,Even Strength,R
+2023020274,2023-11-20,2,04:59,299,slap,8476885,-30,0,O,0,1551,False,False,59.0,58-60ft,Low,Center,Even Strength,R
+2023020274,2023-11-20,2,05:27,327,tip-in,8471218,-73,5,O,0,1551,False,False,16.8,16-18ft,High,Center,Even Strength,R
+2023020274,2023-11-20,2,05:36,336,wrist,8476459,-84,-8,O,0,1551,False,False,9.4,8-10ft,High,Center,Even Strength,R
+2023020274,2023-11-20,2,06:41,401,wrist,8482157,-55,-27,O,0,1551,False,False,43.4,42-44ft,Low,Left,Even Strength,L
+2023020274,2023-11-20,2,13:38,818,wrist,8481554,-88,9,O,1,1551,False,False,9.1,8-10ft,High,Center,Even Strength,L
+2023020274,2023-11-20,2,17:48,1068,wrist,8476918,-83,4,O,0,1551,False,False,7.2,6-8ft,High,Center,Even Strength,L
+2023020274,2023-11-20,3,00:12,12,wrist,8475184,79,5,O,0,1551,False,False,11.2,10-12ft,High,Center,Even Strength,L
+2023020274,2023-11-20,3,02:09,129,wrist,8476459,56,-16,O,0,1551,False,False,36.7,36-38ft,Medium,Left,Even Strength,R
+2023020274,2023-11-20,3,02:14,134,wrist,8476979,28,-19,O,0,1551,False,False,63.9,60ft+,Low,Left,Even Strength,L
+2023020274,2023-11-20,3,03:05,185,wrist,8476885,67,-9,O,0,1551,False,False,23.8,22-24ft,Medium,Center,Even Strength,R
+2023020274,2023-11-20,3,04:45,285,wrist,8481554,5,-35,N,0,1551,False,False,91.0,60ft+,Low,Left,Even Strength,L
+2023020274,2023-11-20,3,05:13,313,wrist,8479324,42,40,O,0,1551,False,False,61.7,60ft+,Low,Right,Even Strength,L
+2023020274,2023-11-20,3,15:52,952,slap,8476885,33,-33,O,0,1551,False,False,65.0,60ft+,Low,Left,Even Strength,R
+2023020274,2023-11-20,3,18:48,1128,wrist,8479324,38,19,O,0,1551,False,False,54.4,54-56ft,Low,Right,Even Strength,L
+2023020274,2023-11-20,3,19:42,1182,deflected,8482073,85,-10,O,0,1551,False,False,10.8,10-12ft,High,Center,Even Strength,R
+2023020274,2023-11-20,3,19:44,1184,backhand,8476624,88,0,O,1,1551,True,False,1.0,0-2ft,High,Center,Even Strength,L
+2023020211,2023-11-11,1,00:19,19,wrist,8478891,-80,32,O,0,1551,False,False,33.2,32-34ft,Medium,Right,Even Strength,R
+2023020211,2023-11-11,1,08:38,518,backhand,8482149,-76,3,O,0,1551,False,False,13.3,12-14ft,High,Center,Even Strength,L
+2023020211,2023-11-11,1,09:02,542,wrist,8475799,-70,-28,O,0,1551,False,False,33.8,32-34ft,Medium,Left,Even Strength,L
+2023020211,2023-11-11,1,10:38,638,wrist,8478891,-56,-28,O,0,1551,False,False,43.3,42-44ft,Low,Left,Even Strength,R
+2023020211,2023-11-11,1,13:15,795,slap,8477504,-38,1,O,0,1451,False,False,51.0,50-52ft,Low,Center,Power Play,L
+2023020211,2023-11-11,1,13:43,823,wrist,8478891,-76,25,O,0,1551,False,False,28.2,28-30ft,Medium,Right,Even Strength,R
+2023020211,2023-11-11,1,14:04,844,wrist,8475455,-51,-10,O,0,1551,False,False,39.3,38-40ft,Medium,Center,Even Strength,L
+2023020211,2023-11-11,1,17:16,1036,wrist,8482149,-64,13,O,0,1551,False,False,28.2,28-30ft,Medium,Center,Even Strength,L
+2023020211,2023-11-11,1,18:09,1089,wrist,8475799,-40,8,O,0,1551,False,False,49.6,48-50ft,Low,Center,Even Strength,L
+2023020211,2023-11-11,1,19:11,1151,wrist,8476460,-64,23,O,0,1551,False,False,34.0,34-36ft,Medium,Right,Even Strength,R
+2023020211,2023-11-11,2,04:14,254,wrist,8477940,36,-36,O,0,1551,False,False,64.1,60ft+,Low,Left,Even Strength,L
+2023020211,2023-11-11,2,08:26,506,tip-in,8477940,54,-41,O,0,1551,False,False,53.9,52-54ft,Low,Left,Even Strength,L
+2023020211,2023-11-11,2,08:28,508,wrist,8482149,80,8,O,1,1551,True,False,12.0,12-14ft,High,Center,Even Strength,L
+2023020211,2023-11-11,2,09:02,542,wrist,8477504,46,35,O,0,1551,False,False,55.4,54-56ft,Low,Right,Even Strength,L
+2023020211,2023-11-11,2,16:38,998,wrist,8480289,64,30,O,0,1551,False,False,39.1,38-40ft,Medium,Right,Even Strength,L
+2023020211,2023-11-11,2,17:40,1060,wrist,8478398,74,-3,O,0,1551,False,False,15.3,14-16ft,High,Center,Even Strength,L
+2023020211,2023-11-11,2,19:47,1187,wrist,8477940,-71,-37,D,0,1551,False,False,41.1,40-42ft,Low,Left,Even Strength,L
+2023020211,2023-11-11,3,05:21,321,wrist,8477940,-77,-27,O,0,1551,False,False,29.5,28-30ft,Medium,Left,Even Strength,L
+2023020211,2023-11-11,3,06:05,365,wrist,8480049,-72,-20,O,0,1551,False,False,26.2,26-28ft,Medium,Left,Even Strength,L
+2023020211,2023-11-11,3,06:40,400,wrist,8475799,-37,-40,O,0,1551,False,False,65.6,60ft+,Low,Left,Even Strength,L
+2023020211,2023-11-11,3,06:51,411,wrist,8475799,-74,40,O,0,1551,False,False,42.7,42-44ft,Low,Right,Even Strength,L
+2023020211,2023-11-11,3,07:28,448,wrist,8480145,-60,-3,O,0,1551,False,False,29.2,28-30ft,Medium,Center,Even Strength,R
+2023020211,2023-11-11,3,07:37,457,tip-in,8476460,-81,-6,O,0,1551,False,False,10.0,10-12ft,High,Center,Even Strength,R
+2023020211,2023-11-11,3,10:05,605,wrist,8475455,-30,-18,O,1,1551,False,False,61.7,60ft+,Low,Left,Even Strength,L
+2023020211,2023-11-11,3,11:20,680,tip-in,8476480,-78,-5,O,0,1541,False,False,12.1,12-14ft,High,Center,Shorthanded,L
+2023020211,2023-11-11,3,11:36,696,slap,8476331,65,1,D,0,1541,False,False,24.0,24-26ft,Medium,Center,Shorthanded,R
+2023020211,2023-11-11,3,12:41,761,slap,8477504,-36,-22,O,0,1551,False,False,57.4,56-58ft,Low,Left,Even Strength,L
+2023020211,2023-11-11,3,16:14,974,wrist,8475799,-62,-34,O,0,1551,False,False,43.4,42-44ft,Low,Left,Even Strength,L
+2023020211,2023-11-11,3,16:27,987,wrist,8476460,-56,12,O,0,1551,False,False,35.1,34-36ft,Medium,Center,Even Strength,R
+2023020211,2023-11-11,3,17:15,1035,wrist,8477504,-69,-26,O,0,1551,False,False,32.8,32-34ft,Medium,Left,Even Strength,L
+2023020211,2023-11-11,3,18:26,1106,tip-in,8476460,-8,3,N,0,1551,False,False,81.1,60ft+,Low,Center,Even Strength,R
+2023020211,2023-11-11,3,19:15,1155,backhand,8480113,-83,25,O,0,1560,False,False,25.7,24-26ft,Medium,Right,Penalty Shot,L
+2023020211,2023-11-11,3,19:45,1185,wrist,8478398,-79,27,O,0,1560,False,False,28.8,28-30ft,Medium,Right,Penalty Shot,L
+2023020152,2023-11-02,1,03:00,180,backhand,8482077,79,0,O,0,1551,False,False,10.0,10-12ft,High,Center,Even Strength,L
+2023020152,2023-11-02,1,07:48,468,backhand,8476454,87,-3,O,0,1551,False,False,3.6,2-4ft,High,Center,Even Strength,L
+2023020152,2023-11-02,1,08:52,532,snap,8480803,34,-19,O,0,1551,False,False,58.2,58-60ft,Low,Left,Even Strength,R
+2023020152,2023-11-02,1,08:55,535,wrist,8477015,84,3,O,0,1551,True,False,5.8,4-6ft,High,Center,Even Strength,R
+2023020152,2023-11-02,1,12:43,763,wrist,8476879,-11,-36,N,0,1551,False,False,85.9,60ft+,Low,Left,Even Strength,R
+2023020152,2023-11-02,1,13:23,803,wrist,8475786,81,20,O,0,1551,False,True,21.5,20-22ft,Medium,Right,Even Strength,R
+2023020152,2023-11-02,1,13:49,829,wrist,8475218,63,20,O,0,1551,False,False,32.8,32-34ft,Medium,Right,Even Strength,L
+2023020152,2023-11-02,1,13:58,838,snap,8475169,83,-18,O,0,1551,False,False,19.0,18-20ft,High,Left,Even Strength,L
+2023020152,2023-11-02,1,15:29,929,backhand,8474040,80,-11,O,0,1551,False,False,14.2,14-16ft,High,Center,Even Strength,R
+2023020152,2023-11-02,1,17:00,1020,snap,8475169,63,15,O,1,1551,False,False,30.0,30-32ft,Medium,Center,Even Strength,L
+2023020152,2023-11-02,1,17:43,1063,tip-in,8477015,61,-7,O,0,1551,False,False,28.9,28-30ft,Medium,Center,Even Strength,R
+2023020152,2023-11-02,1,17:45,1065,wrist,8477498,91,25,O,0,1551,True,False,25.1,24-26ft,Medium,Right,Even Strength,L
+2023020152,2023-11-02,1,19:06,1146,snap,8477934,65,-5,O,0,1551,False,False,24.5,24-26ft,Medium,Center,Even Strength,L
+2023020152,2023-11-02,2,02:26,146,wrist,8477498,-33,-28,O,0,1551,False,False,62.6,60ft+,Low,Left,Even Strength,L
+2023020152,2023-11-02,2,02:58,178,wrist,8481598,-33,11,O,0,1551,False,False,57.1,56-58ft,Low,Center,Even Strength,L
+2023020152,2023-11-02,2,07:13,433,wrist,8478402,-65,8,O,0,1451,False,False,25.3,24-26ft,Medium,Center,Power Play,L
+2023020152,2023-11-02,2,10:11,611,wrist,8478402,-29,-38,O,0,1551,False,False,71.0,60ft+,Low,Left,Even Strength,L
+2023020152,2023-11-02,2,13:24,804,slap,8480803,-61,24,O,0,1451,False,False,36.9,36-38ft,Medium,Right,Power Play,R
+2023020152,2023-11-02,2,16:29,989,wrist,8479576,82,-26,D,0,1551,False,False,26.9,26-28ft,Medium,Left,Even Strength,R
+2023020152,2023-11-02,2,17:02,1022,slap,8475218,-68,-31,O,0,1551,False,False,37.4,36-38ft,Medium,Left,Even Strength,L
+2023020152,2023-11-02,2,18:33,1113,wrist,8478402,-68,20,O,0,1451,False,False,29.0,28-30ft,Medium,Right,Power Play,L
+2023020152,2023-11-02,2,19:32,1172,slap,8474040,-73,29,O,0,1451,False,False,33.1,32-34ft,Medium,Right,Power Play,R
+2023020152,2023-11-02,2,19:36,1176,slap,8480802,-80,6,O,0,1451,False,False,10.8,10-12ft,High,Center,Power Play,L
+2023020152,2023-11-02,2,19:36,1176,slap,8480802,-83,2,O,0,1451,False,False,6.3,6-8ft,High,Center,Power Play,L
+2023020152,2023-11-02,3,00:26,26,wrist,8475218,28,24,O,0,1551,False,False,65.6,60ft+,Low,Right,Even Strength,L
+2023020152,2023-11-02,3,03:10,190,snap,8477934,70,5,O,0,1551,False,False,19.6,18-20ft,High,Center,Even Strength,L
+2023020152,2023-11-02,3,03:13,193,slap,8475169,55,26,O,0,1551,False,False,42.8,42-44ft,Low,Right,Even Strength,L
+2023020152,2023-11-02,3,04:50,290,snap,8480803,55,-9,O,0,1551,False,False,35.2,34-36ft,Medium,Center,Even Strength,R
+2023020152,2023-11-02,3,05:18,318,snap,8477934,47,-4,O,0,1551,False,False,42.2,42-44ft,Low,Center,Even Strength,L
+2023020152,2023-11-02,3,07:28,448,backhand,8477998,75,8,O,0,1541,False,False,16.1,16-18ft,High,Center,Shorthanded,L
+2023020152,2023-11-02,3,07:33,453,wrist,8482077,83,-4,O,0,1541,False,False,7.2,6-8ft,High,Center,Shorthanded,L
+2023020152,2023-11-02,3,07:49,469,slap,8476967,-25,-18,D,0,1541,False,False,66.5,60ft+,Low,Left,Shorthanded,L
+2023020152,2023-11-02,3,09:39,579,slap,8480803,35,-6,O,0,1451,False,False,54.3,54-56ft,Low,Center,Power Play,R
+2023020152,2023-11-02,3,10:08,608,wrist,8474040,95,-18,O,0,1551,False,False,19.0,18-20ft,High,Left,Even Strength,R
+2023020152,2023-11-02,3,10:32,632,slap,8476879,35,-26,O,0,1551,False,False,59.9,58-60ft,Low,Left,Even Strength,R
+2023020152,2023-11-02,3,10:35,635,poke,8474040,90,1,O,1,1551,True,False,1.4,0-2ft,High,Center,Even Strength,R
+2023020152,2023-11-02,3,12:13,733,tip-in,8475169,81,-1,O,0,1551,False,False,8.1,8-10ft,High,Center,Even Strength,L
+2023020152,2023-11-02,3,12:42,762,snap,8476967,76,14,O,0,1551,False,False,19.1,18-20ft,High,Center,Even Strength,L
+2023020152,2023-11-02,3,13:36,816,backhand,8474040,84,0,O,1,1551,False,False,5.0,4-6ft,High,Center,Even Strength,R
+2023020152,2023-11-02,3,14:21,861,snap,8480802,79,7,O,0,1551,False,False,12.2,12-14ft,High,Center,Even Strength,L
+2023020152,2023-11-02,3,14:45,885,wrist,8477498,60,40,O,0,1551,False,False,49.4,48-50ft,Low,Right,Even Strength,L
+2023020152,2023-11-02,3,16:52,1012,tip-in,8475169,81,0,O,0,1551,False,False,8.0,8-10ft,High,Center,Even Strength,L
+2023020152,2023-11-02,3,17:13,1033,wrist,8477998,63,-22,O,0,1551,False,False,34.1,34-36ft,Medium,Left,Even Strength,L
+2023020152,2023-11-02,3,17:43,1063,snap,8478402,55,27,O,0,1551,False,False,43.4,42-44ft,Low,Right,Even Strength,L
+2023020152,2023-11-02,3,17:54,1074,wrist,8475218,29,-20,O,0,1551,False,False,63.2,60ft+,Low,Left,Even Strength,L
+2023020152,2023-11-02,3,17:59,1079,snap,8476454,28,-2,O,0,1551,False,False,61.0,60ft+,Low,Center,Even Strength,L
+2023020152,2023-11-02,3,19:11,1151,tip-in,8476454,64,-5,O,0,1560,False,False,25.5,24-26ft,Medium,Center,Penalty Shot,L
+2023020152,2023-11-02,3,19:18,1158,snap,8478402,64,-11,O,0,1560,False,False,27.3,26-28ft,Medium,Center,Penalty Shot,L
+2023020152,2023-11-02,3,19:59,1199,wrist,8475169,27,-34,O,0,1560,False,False,70.7,60ft+,Low,Left,Penalty Shot,L
+2023020108,2023-10-26,1,02:49,169,wrist,8471817,75,-41,O,0,1551,False,False,43.3,42-44ft,Low,Left,Even Strength,R
+2023020108,2023-10-26,1,04:14,254,wrist,8475714,76,-29,O,0,1551,False,False,31.8,30-32ft,Medium,Left,Even Strength,R
+2023020108,2023-10-26,1,05:59,359,snap,8479393,81,34,O,0,1551,False,False,34.9,34-36ft,Medium,Right,Even Strength,L
+2023020108,2023-10-26,1,08:02,482,wrist,8475714,-79,32,D,0,1451,False,False,33.5,32-34ft,Medium,Right,Power Play,R
+2023020108,2023-10-26,1,09:49,589,wrist,8476853,84,6,O,1,1441,False,False,7.8,6-8ft,High,Center,Other,L
+2023020108,2023-10-26,1,12:38,758,wrist,8475906,32,-16,O,0,1551,False,False,59.2,58-60ft,Low,Left,Even Strength,R
+2023020108,2023-10-26,1,13:59,839,snap,8482720,60,14,O,0,1551,False,False,32.2,32-34ft,Medium,Center,Even Strength,L
+2023020108,2023-10-26,1,18:03,1083,wrist,8475906,57,-38,O,0,1551,False,False,49.7,48-50ft,Low,Left,Even Strength,R
+2023020108,2023-10-26,2,04:36,276,wrap-around,8479318,-90,8,O,0,1541,False,False,8.1,8-10ft,High,Center,Shorthanded,L
+2023020108,2023-10-26,2,04:49,289,tip-in,8475166,-81,0,O,0,1541,False,False,8.0,8-10ft,High,Center,Shorthanded,L
+2023020108,2023-10-26,2,05:04,304,wrist,8476853,-62,-30,O,0,1541,False,False,40.4,40-42ft,Low,Left,Shorthanded,L
+2023020108,2023-10-26,2,05:05,305,snap,8477939,-73,-2,O,0,1541,True,False,16.1,16-18ft,High,Center,Shorthanded,R
+2023020108,2023-10-26,2,07:56,476,snap,8479318,-10,12,N,0,1551,False,False,79.9,60ft+,Low,Center,Even Strength,L
+2023020108,2023-10-26,2,12:28,748,snap,8477939,-54,-1,O,0,1551,False,False,35.0,34-36ft,Medium,Center,Even Strength,R
+2023020108,2023-10-26,2,12:42,762,wrist,8477939,-67,41,O,0,1551,False,False,46.5,46-48ft,Low,Right,Even Strength,R
+2023020108,2023-10-26,2,13:15,795,wrist,8479393,-74,-5,O,0,1551,False,False,15.8,14-16ft,High,Center,Even Strength,L
+2023020108,2023-10-26,2,15:16,916,snap,8475166,-70,-24,O,0,1551,False,False,30.6,30-32ft,Medium,Left,Even Strength,L
+2023020108,2023-10-26,2,18:07,1087,snap,8478483,-74,-12,O,1,1551,False,False,19.2,18-20ft,High,Center,Even Strength,R
+2023020108,2023-10-26,3,05:08,308,tip-in,8477479,81,1,O,1,1541,False,False,8.1,8-10ft,High,Center,Shorthanded,L
+2023020108,2023-10-26,3,07:53,473,snap,8477503,45,16,O,0,1551,False,False,46.8,46-48ft,Low,Right,Even Strength,L
+2023020108,2023-10-26,3,07:58,478,wrist,8470966,35,36,O,0,1551,False,False,64.9,60ft+,Low,Right,Even Strength,L
+2023020108,2023-10-26,3,13:46,826,wrist,8477479,85,13,O,0,1551,False,False,13.6,12-14ft,High,Center,Even Strength,L
+2023020108,2023-10-26,3,14:48,888,between-legs,8479318,81,-1,O,0,1551,False,False,8.1,8-10ft,High,Center,Even Strength,L
+2023020072,2023-10-21,1,00:39,39,wrist,8482159,43,-7,O,0,1551,False,False,46.5,46-48ft,Low,Center,Even Strength,R
+2023020072,2023-10-21,1,06:04,364,wrist,8480015,71,31,O,0,1551,False,False,35.8,34-36ft,Medium,Right,Even Strength,R
+2023020072,2023-10-21,1,07:03,423,wrist,8478439,67,-23,O,0,1551,False,False,31.8,30-32ft,Medium,Left,Even Strength,R
+2023020072,2023-10-21,1,07:22,442,wrist,8480797,63,-29,O,0,1551,False,False,38.9,38-40ft,Medium,Left,Even Strength,L
+2023020072,2023-10-21,1,09:04,544,backhand,8476872,80,37,O,0,1551,False,False,38.1,38-40ft,Medium,Right,Even Strength,L
+2023020072,2023-10-21,1,09:44,584,wrist,8476872,22,11,N,0,1551,False,False,67.9,60ft+,Low,Center,Even Strength,L
+2023020072,2023-10-21,1,10:09,609,wrist,8480220,62,-28,O,0,1551,False,False,38.9,38-40ft,Medium,Left,Even Strength,L
+2023020072,2023-10-21,1,10:12,612,tip-in,8480797,84,5,O,1,1551,True,False,7.1,6-8ft,High,Center,Even Strength,L
+2023020072,2023-10-21,1,10:16,616,wrist,8474715,34,-34,O,0,1551,False,False,64.7,60ft+,Low,Left,Even Strength,R
+2023020072,2023-10-21,1,10:22,622,wrist,8480015,77,-31,O,0,1551,False,False,33.2,32-34ft,Medium,Left,Even Strength,R
+2023020072,2023-10-21,1,10:24,624,wrap-around,8480015,87,5,O,0,1551,True,False,5.4,4-6ft,High,Center,Even Strength,R
+2023020072,2023-10-21,1,11:23,683,wrist,8475235,61,-31,O,0,1551,False,True,41.8,40-42ft,Low,Left,Even Strength,L
+2023020072,2023-10-21,1,11:30,690,wrist,8481546,44,4,O,0,1551,False,False,45.2,44-46ft,Low,Center,Even Strength,L
+2023020072,2023-10-21,1,11:46,706,snap,8477948,91,-8,O,0,1551,False,False,8.2,8-10ft,High,Center,Even Strength,L
+2023020072,2023-10-21,1,16:36,996,wrist,8478439,65,3,O,1,1451,False,False,24.2,24-26ft,Medium,Center,Power Play,R
+2023020072,2023-10-21,2,00:39,39,wrist,8476872,-28,-37,O,0,1551,False,False,71.3,60ft+,Low,Left,Even Strength,L
+2023020072,2023-10-21,2,02:27,147,wrist,8480068,-86,-18,O,0,1551,False,True,18.2,18-20ft,High,Left,Even Strength,L
+2023020072,2023-10-21,2,03:18,198,snap,8474715,-66,17,O,0,1551,False,False,28.6,28-30ft,Medium,Right,Even Strength,R
+2023020072,2023-10-21,2,03:23,203,wrist,8480336,-32,8,O,0,1551,False,False,57.6,56-58ft,Low,Center,Even Strength,R
+2023020072,2023-10-21,2,05:58,358,snap,8480015,-31,35,O,0,1551,False,False,67.7,60ft+,Low,Right,Even Strength,R
+2023020072,2023-10-21,2,09:10,550,backhand,8480797,-78,0,O,0,1551,False,False,11.0,10-12ft,High,Center,Even Strength,L
+2023020072,2023-10-21,2,09:25,565,wrist,8480336,-60,27,O,0,1551,False,True,39.6,38-40ft,Medium,Right,Even Strength,R
+2023020072,2023-10-21,2,10:58,658,backhand,8476461,-83,24,O,0,1551,False,False,24.7,24-26ft,Medium,Right,Even Strength,L
+2023020072,2023-10-21,2,11:27,687,wrist,8481546,-31,-16,O,0,1551,False,False,60.2,60ft+,Low,Left,Even Strength,L
+2023020072,2023-10-21,2,16:16,976,wrist,8482159,-48,37,O,0,1551,False,False,55.2,54-56ft,Low,Right,Even Strength,R
+2023020072,2023-10-21,2,17:36,1056,wrist,8481553,-54,-7,O,0,1551,False,False,35.7,34-36ft,Medium,Center,Even Strength,R
+2023020072,2023-10-21,2,18:10,1090,wrist,8481553,-73,19,O,0,1541,False,False,24.8,24-26ft,Medium,Right,Shorthanded,R
+2023020072,2023-10-21,2,18:53,1133,slap,8480015,-58,-24,O,0,1541,False,False,39.2,38-40ft,Medium,Left,Shorthanded,R
+2023020072,2023-10-21,2,19:11,1151,wrist,8480015,-73,-24,O,0,1541,False,False,28.8,28-30ft,Medium,Left,Shorthanded,R
+2023020072,2023-10-21,3,02:28,148,wrist,8476872,42,16,O,0,1551,False,False,49.6,48-50ft,Low,Right,Even Strength,L
+2023020072,2023-10-21,3,03:58,238,wrist,8480015,84,-27,O,0,1551,False,True,27.5,26-28ft,Medium,Left,Even Strength,R
+2023020072,2023-10-21,3,04:37,277,wrist,8478439,63,-37,O,0,1551,False,True,45.2,44-46ft,Low,Left,Even Strength,R
+2023020072,2023-10-21,3,11:58,718,slap,8478439,82,15,O,1,1451,False,False,16.6,16-18ft,High,Center,Power Play,R
+2023020072,2023-10-21,3,12:45,765,wrist,8480336,70,-14,O,1,1451,False,False,23.6,22-24ft,Medium,Center,Power Play,R
+2023020072,2023-10-21,3,12:54,774,wrist,8481178,-66,29,D,0,1451,False,False,37.0,36-38ft,Medium,Right,Power Play,L
+2023020072,2023-10-21,3,18:09,1089,wrap-around,8481553,90,-4,O,0,1551,False,False,4.1,4-6ft,High,Center,Even Strength,R
+2023020072,2023-10-21,3,18:10,1090,backhand,8480220,85,-6,O,0,1551,True,False,7.2,6-8ft,High,Center,Even Strength,L
+2023020072,2023-10-21,3,18:28,1108,wrist,8480336,48,-21,O,0,1551,False,False,46.1,46-48ft,Low,Left,Even Strength,R
+2023020072,2023-10-21,3,19:56,1196,wrist,8476461,19,23,N,0,1551,False,False,73.7,60ft+,Low,Right,Even Strength,L
+2023020072,2023-10-21,4,01:04,64,wrist,8481546,-70,-22,O,0,1331,False,False,29.1,28-30ft,Medium,Left,Other,L

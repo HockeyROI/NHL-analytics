@@ -1,0 +1,9 @@
+archetype,g_high,n,mean_points,playoff_rate,contender_rate,mean_goal_diff_per_game
+A_HighF_HighD,False,26,100.962,0.615,0.538,0.358
+A_HighF_HighD,True,38,101.421,0.658,0.421,0.387
+B_HighF_LowD,False,9,88.222,0.333,0.0,-0.111
+B_HighF_LowD,True,7,90.714,0.429,0.143,0.042
+C_LowF_HighD,False,3,82.333,0.0,0.0,-0.232
+C_LowF_HighD,True,13,94.692,0.308,0.231,0.145
+D_LowF_LowD,False,30,74.867,0.1,0.033,-0.629
+D_LowF_LowD,True,34,86.529,0.294,0.176,-0.166

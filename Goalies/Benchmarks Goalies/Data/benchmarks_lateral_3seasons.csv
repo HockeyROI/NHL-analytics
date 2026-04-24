@@ -1,0 +1,4 @@
+lateral,total_shots,total_goals,num_goalies,league_sv_pct
+Center,73101,10361,72,0.858
+Left,39757,1526,72,0.962
+Right,35257,1275,72,0.964

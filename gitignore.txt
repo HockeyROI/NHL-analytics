@@ -1,0 +1,51 @@
+# Raw data — too large for GitHub
+Zones/raw/
+Data/nhl_shot_events.csv
+
+# Large intermediate files
+Zones/_zone_time.json
+Zones/_overlap.pkl
+Zones/_player_meta.json
+
+# Specific large CSVs
+Zones/corsi_reference.csv
+
+# Word documents — keep local
+*.docx
+*.doc
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Mac system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Environment files — never push API keys
+.env
+.env.local
+*.env
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Archive — old scrapped work
+Player_Ranking_Archive/
+
+# Sloan documents — keep local
+Sloan/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Raw data — too large for GitHub
+Zones/raw/
+Data/nhl_shot_events.csv
+Data/shift_data.csv

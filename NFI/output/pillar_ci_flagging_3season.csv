@@ -1,0 +1,8 @@
+pillar,players,ci_clear,ci_clear_pct,below_50pct
+P1_NF_F,529,513,97.0,False
+P2_DefF,529,529,100.0,False
+P3_OffF,529,490,92.6,False
+P4_DefD,299,299,100.0,False
+P5_OffD,299,299,100.0,False
+P6_Goalie_FM,8,0,0.0,True
+P7_Goalie_CNFI,30,0,0.0,True

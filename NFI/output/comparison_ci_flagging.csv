@@ -1,0 +1,8 @@
+pillar,players_3s,ci_clear_3s,ci_clear_pct_3s,below_50pct_3s,players_5s,ci_clear_5s,ci_clear_pct_5s,below_50pct_5s
+P1_NF_F,529,513,97.0,False,620,606,97.7,False
+P2_DefF,529,529,100.0,False,620,620,100.0,False
+P3_OffF,529,490,92.6,False,620,578,93.2,False
+P4_DefD,299,299,100.0,False,355,355,100.0,False
+P5_OffD,299,299,100.0,False,355,355,100.0,False
+P6_Goalie_FM,8,0,0.0,True,33,11,33.3,True
+P7_Goalie_CNFI,30,0,0.0,True,54,3,5.6,True

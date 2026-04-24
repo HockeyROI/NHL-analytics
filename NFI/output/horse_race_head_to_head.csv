@@ -1,0 +1,11 @@
+slot,metric,R,var_explained
+Best_TNFI_variant,TNFI_pct,0.7453,0.5555
+HD_CF%,HD_CF_pct,0.7169,0.5139
+P1_NF_F,P1_NF_F,0.6672,0.4451
+Best_Corsi_variant,CF_pct,0.6522,0.4254
+P5_OffD,P5_OffD,0.6079,0.3696
+P3_OffF,P3_OffF,0.5329,0.284
+P6_SvPct,P6_SvPct,0.3463,0.1199
+P4_DefD,P4_DefD,0.3063,0.0938
+P7_SvPct,P7_SvPct,0.2608,0.068
+P2_DefF,P2_DefF,-0.0839,0.007

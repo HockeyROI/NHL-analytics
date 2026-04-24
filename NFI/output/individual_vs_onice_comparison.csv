@@ -1,0 +1,9 @@
+id,metric,type,n,pearson_r,R2,p,model_type
+07,Individual CNFI+MNFI + suppression,individual+sup,160,,0.492,,two-variable
+08,On-ice CNFI+MNFI + suppression,on-ice+sup,160,,0.4482,,two-variable
+03,Individual F CNFI+MNFI shots taken /gp,individual,160,0.6168,0.3805,3.793241570858585e-18,univariate
+06,On-ice F CNFI+MNFI SF /60 (team avg),on-ice,160,0.5992,0.359,5.750190084884961e-17,univariate
+01,Individual F CNFI shots taken /gp,individual,160,0.5906,0.3488,2.037468914855389e-16,univariate
+05,On-ice F MNFI SF /60 (team avg),on-ice,160,0.5819,0.3386,7.085967875045579e-16,univariate
+04,On-ice F CNFI SF /60 (team avg),on-ice,160,0.5459,0.298,8.295042594785954e-14,univariate
+02,Individual F MNFI shots taken /gp,individual,160,0.4308,0.1856,1.2935915300952616e-08,univariate

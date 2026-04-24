@@ -1,0 +1,5 @@
+archetype,n,mean_points,mean_wins,mean_goal_diff_per_game,mean_TNFI_pct,playoff_rate,contender_rate,cup_rate
+A_HighF_HighD,64,101.234,46.219,0.375,0.527,0.641,0.469,0.016
+B_HighF_LowD,16,89.312,40.125,-0.044,0.504,0.375,0.062,0.125
+C_LowF_HighD,16,92.375,41.688,0.075,0.507,0.25,0.188,0.062
+D_LowF_LowD,64,81.062,35.797,-0.383,0.468,0.203,0.109,0.0
