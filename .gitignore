@@ -36,3 +36,17 @@ venv/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local working folders — not for repo
+Brand/
+2026 posts/
+Sloan/
+Player_Ranking_Archive/
+
+# Word docs — keep local
+*.docx
+*.doc
+
+# Stray gitignore drafts
+gitignore.txt
+gitignore_alternate.txt
