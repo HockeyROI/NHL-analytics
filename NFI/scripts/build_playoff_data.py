@@ -127,8 +127,11 @@ print("[4/6] processing playoff games (faceoffs + shot attribution) ...")
 # faceoff_zone in {O, D, N}
 tnzi_buckets = defaultdict(lambda: {"shifts":0, "oz_sec":0.0, "dz_sec":0.0, "nz_sec":0.0, "total_sec":0.0})
 
-# NFI counters: (player_id) -> {toi_sec, cf_fen, ca_fen, cf_cm, ca_cm, faceoff_oz, faceoff_dz}
-nfi = defaultdict(lambda: {"toi_sec":0.0, "cf_fen":0, "ca_fen":0, "cf_cm":0, "ca_cm":0, "fo_oz":0, "fo_dz":0})
+# NFI counters keyed by (player_id, season) so we can emit per-season rows
+# AND pooled rows for the playoff CSVs.
+nfi = defaultdict(lambda: {"toi_sec":0.0, "cf_fen":0, "ca_fen":0,
+                            "cf_cm":0, "ca_cm":0, "fo_oz":0, "fo_dz":0,
+                            "team": ""})
 
 # Track GP per player-season
 player_season_gp = defaultdict(int)
@@ -157,9 +160,14 @@ for gi, gid in enumerate(gids):
 
     pids, teams, starts, ends = shifts_by_game[gid]
 
-    # --- NFI per-player TOI from shifts ---
+    # --- NFI per-(player, season) TOI from shifts ---
     for i in range(len(pids)):
-        nfi[int(pids[i])]["toi_sec"] += float(ends[i] - starts[i])
+        rec = nfi[(int(pids[i]), season)]
+        rec["toi_sec"] += float(ends[i] - starts[i])
+        if not rec["team"]:
+            rec["team"] = teams[i]
+        else:
+            rec["team"] = teams[i]  # most recent
 
     # --- NFI on-ice shot attribution from this game's shots ---
     shots = shots_by_game.get(gid)
@@ -175,7 +183,7 @@ for gi, gid in enumerate(gids):
             pid_i = int(pids[i]); team_i = teams[i]
             is_own = (sl_team == team_i)
             f_arr = shot_fen[a:b]; c_arr = shot_cm[a:b]
-            r = nfi[pid_i]
+            r = nfi[(pid_i, season)]
             r["cf_fen"] += int((f_arr & is_own).sum())
             r["ca_fen"] += int((f_arr & ~is_own).sum())
             r["cf_cm"]  += int((c_arr & is_own).sum())
@@ -203,8 +211,8 @@ for gi, gid in enumerate(gids):
             zone_p = fo_zone_home if team_i == home_id else FLIP[fo_zone_home]
             if zone_p not in ("O","D","N"):
                 continue
-            # OZ/DZ faceoff exposure for NFI's per-player oz_ratio
-            r = nfi[pid_i]
+            # OZ/DZ faceoff exposure for NFI's per-(player, season) oz_ratio
+            r = nfi[(pid_i, season)]
             if zone_p == "O": r["fo_oz"] += 1
             elif zone_p == "D": r["fo_dz"] += 1
             # TNZI: count this faceoff shift, attribute time per zone of subsequent events
@@ -284,42 +292,11 @@ for gi, gid in enumerate(gids):
 # ------------------------------------------------------------------
 # 5. Build TNZI playoff CSVs (forwards + defense)
 # ------------------------------------------------------------------
-print("[5/6] computing TNZI scores ...")
-# Per-player aggregated stats: shifts in O/D/N, OZ% / DZ% / NZ% (eventful share)
-# Aggregate buckets across seasons (pooled within playoffs)
-agg = defaultdict(lambda: {"O":{"shifts":0,"oz_sec":0.0,"dz_sec":0.0,"total_sec":0.0},
-                            "D":{"shifts":0,"oz_sec":0.0,"dz_sec":0.0,"total_sec":0.0},
-                            "N":{"shifts":0,"oz_sec":0.0,"dz_sec":0.0,"total_sec":0.0}})
-for (pid, season, zone), b in tnzi_buckets.items():
-    a = agg[pid][zone]
-    a["shifts"] += b["shifts"]
-    a["oz_sec"] += b["oz_sec"]
-    a["dz_sec"] += b["dz_sec"]
-    a["total_sec"] += b["total_sec"]
+print("[5/6] computing TNZI scores (per-season + pooled) ...")
 
-tnzi_rows = []
-for pid, b in agg.items():
-    pos = pos_map.get(int(pid))
-    if pos not in ("F","D"): continue
-    name = name_map.get(int(pid), "")
-    # Player team = most recent team in playoff shifts
-    p_shifts = sd[sd["player_id"] == pid]
-    if p_shifts.empty: continue
-    team = p_shifts.sort_values("game_id")["team_abbrev"].iloc[-1]
-    gp = sum(g for (p, _), g in player_season_gp.items() if p == pid)
-    # OZI = OZ event time / total event time in OZ-faceoff shifts
-    ozi  = (b["O"]["oz_sec"] / b["O"]["total_sec"]) if b["O"]["total_sec"] > 0 else None
-    dzi  = (b["D"]["oz_sec"] / b["D"]["total_sec"]) if b["D"]["total_sec"] > 0 else None
-    nzi  = (b["N"]["oz_sec"] / b["N"]["total_sec"]) if b["N"]["total_sec"] > 0 else None
-    tnzi = (nzi - (1 - nzi)) if nzi is not None else None  # OZ-share minus DZ-share at neutral faceoff
-    tnzi_rows.append({
-        "player_name": name, "team": team, "pos": pos, "GP": gp,
-        "shifts_O": b["O"]["shifts"], "shifts_D": b["D"]["shifts"], "shifts_N": b["N"]["shifts"],
-        "OZI_raw_pct": ozi, "DZI_raw_pct": dzi, "NZI_raw_pct": nzi,
-        "TNZI_raw":  tnzi,
-    })
-tnzi_df = pd.DataFrame(tnzi_rows)
-# Apply 0-10 normalization within position group, only on players with min shifts
+# Tag each shift row with its season once for downstream filtering.
+sd["season"] = sd["game_id"].map(g2s)
+
 MIN_SHIFTS = 30
 def norm_010(series):
     s = series.dropna()
@@ -328,48 +305,115 @@ def norm_010(series):
     span = hi - lo if hi > lo else 1.0
     return ((series - lo) / span * 10.0).round(1)
 
+# Two passes:
+#   1) per-season aggregation — group buckets by (pid, season, zone)
+#   2) pooled aggregation — group buckets by (pid, zone) ignoring season
+def aggregate_tnzi_rows(group_keys, season_label):
+    """group_keys: dict mapping pid -> {zone -> {shifts/oz_sec/dz_sec/total_sec}}.
+    season_label: int season (e.g. 20242025) or "all_playoffs"."""
+    rows = []
+    for pid, b in group_keys.items():
+        pos = pos_map.get(int(pid))
+        if pos not in ("F","D"): continue
+        name = name_map.get(int(pid), "")
+        # Player team for this season slice
+        if season_label == "all_playoffs":
+            p_shifts = sd[sd["player_id"] == pid]
+        else:
+            p_shifts = sd[(sd["player_id"] == pid) & (sd["season"] == str(season_label))]
+        if p_shifts.empty: continue
+        team = p_shifts.sort_values("game_id")["team_abbrev"].iloc[-1]
+        if season_label == "all_playoffs":
+            gp = sum(g for (p, _), g in player_season_gp.items() if p == pid)
+        else:
+            gp = player_season_gp.get((pid, str(season_label)), 0)
+        ozi  = (b["O"]["oz_sec"] / b["O"]["total_sec"]) if b["O"]["total_sec"] > 0 else None
+        dzi  = (b["D"]["oz_sec"] / b["D"]["total_sec"]) if b["D"]["total_sec"] > 0 else None
+        nzi  = (b["N"]["oz_sec"] / b["N"]["total_sec"]) if b["N"]["total_sec"] > 0 else None
+        tnzi = (nzi - (1 - nzi)) if nzi is not None else None
+        rows.append({
+            "player_name": name, "team": team, "pos": pos, "GP": gp,
+            "season": season_label,
+            "shifts_O": b["O"]["shifts"], "shifts_D": b["D"]["shifts"], "shifts_N": b["N"]["shifts"],
+            "OZI_raw_pct": ozi, "DZI_raw_pct": dzi, "NZI_raw_pct": nzi,
+            "TNZI_raw":  tnzi,
+        })
+    return rows
+
+# Pooled-by-player: regroup buckets to ignore season
+pooled = defaultdict(lambda: {"O":{"shifts":0,"oz_sec":0.0,"dz_sec":0.0,"total_sec":0.0},
+                               "D":{"shifts":0,"oz_sec":0.0,"dz_sec":0.0,"total_sec":0.0},
+                               "N":{"shifts":0,"oz_sec":0.0,"dz_sec":0.0,"total_sec":0.0}})
+# Per-(pid, season) regroup
+per_season = defaultdict(lambda: defaultdict(lambda: {
+    "O":{"shifts":0,"oz_sec":0.0,"dz_sec":0.0,"total_sec":0.0},
+    "D":{"shifts":0,"oz_sec":0.0,"dz_sec":0.0,"total_sec":0.0},
+    "N":{"shifts":0,"oz_sec":0.0,"dz_sec":0.0,"total_sec":0.0}}))
+for (pid, season, zone), b in tnzi_buckets.items():
+    for tgt in (pooled[pid][zone], per_season[season][pid][zone]):
+        tgt["shifts"] += b["shifts"]
+        tgt["oz_sec"] += b["oz_sec"]
+        tgt["dz_sec"] += b["dz_sec"]
+        tgt["total_sec"] += b["total_sec"]
+
+all_rows = aggregate_tnzi_rows(pooled, "all_playoffs")
+for season_lbl, group in per_season.items():
+    all_rows.extend(aggregate_tnzi_rows(group, int(season_lbl)))
+
+tnzi_df = pd.DataFrame(all_rows)
+# Normalize 0-10 WITHIN each (season_label, pos_group) so per-season scores
+# are comparable to that season's other players, and the pooled score is
+# normalized over the pooled population.
 for col in ["OZI_raw_pct", "DZI_raw_pct", "NZI_raw_pct", "TNZI_raw"]:
     out_col = col.replace("_raw_pct","").replace("_raw","")
-    # Only score players with reasonable sample
-    ok = (tnzi_df["shifts_O"] >= MIN_SHIFTS) | (tnzi_df["shifts_D"] >= MIN_SHIFTS) | (tnzi_df["shifts_N"] >= MIN_SHIFTS)
-    tnzi_df.loc[ok, out_col] = norm_010(tnzi_df.loc[ok, col])
+    tnzi_df[out_col] = np.nan
+    for (season_lbl, pos_grp), idx in tnzi_df.groupby(["season","pos"]).groups.items():
+        ok = ((tnzi_df.loc[idx, "shifts_O"] >= MIN_SHIFTS) |
+              (tnzi_df.loc[idx, "shifts_D"] >= MIN_SHIFTS) |
+              (tnzi_df.loc[idx, "shifts_N"] >= MIN_SHIFTS))
+        ok_idx = idx[ok]
+        if len(ok_idx) == 0: continue
+        tnzi_df.loc[ok_idx, out_col] = norm_010(tnzi_df.loc[ok_idx, col])
 
-# Keep only meaningfully-sampled players
+# Drop tiny-sample rows
 tnzi_df = tnzi_df[(tnzi_df["shifts_O"] + tnzi_df["shifts_D"] + tnzi_df["shifts_N"]) >= MIN_SHIFTS]
-tnzi_cols = ["player_name","team","pos","GP","OZI","DZI","NZI","TNZI",
+tnzi_cols = ["player_name","team","pos","GP","season","OZI","DZI","NZI","TNZI",
              "shifts_O","shifts_D","shifts_N"]
 tnzi_df = tnzi_df[[c for c in tnzi_cols if c in tnzi_df.columns]].copy()
-fwd = tnzi_df[tnzi_df["pos"] == "F"].sort_values("TNZI", ascending=False, na_position="last")
-dfn = tnzi_df[tnzi_df["pos"] == "D"].sort_values("TNZI", ascending=False, na_position="last")
+
+fwd = tnzi_df[tnzi_df["pos"] == "F"].sort_values(["season","TNZI"], ascending=[True, False], na_position="last")
+dfn = tnzi_df[tnzi_df["pos"] == "D"].sort_values(["season","TNZI"], ascending=[True, False], na_position="last")
 fwd.to_csv(OUT_TNZI / "tnzi_adjusted_forwards_playoffs.csv", index=False)
 dfn.to_csv(OUT_TNZI / "tnzi_adjusted_defense_playoffs.csv", index=False)
-print(f"    TNZI playoff: {len(fwd)} forwards, {len(dfn)} defensemen")
+print(f"    TNZI playoff: {len(fwd)} forward rows, {len(dfn)} defenseman rows "
+      f"(across pooled + per-season views)")
+for s_lbl, sub in tnzi_df.groupby("season"):
+    print(f"      season={s_lbl}: {len(sub)} rows")
 
 # ------------------------------------------------------------------
 # 6. Build NFI playoff player_fully_adjusted_playoffs.csv (raw + ZA)
 # ------------------------------------------------------------------
-print("[6/6] computing NFI playoff (raw + ZA) ...")
-nfi_rows = []
-for pid, r in nfi.items():
+print("[6/6] computing NFI playoff (per-season + pooled, raw + ZA) ...")
+
+# Build per-season records from the per-(pid, season) accumulator,
+# AND build pooled records by aggregating across seasons.
+def _make_row(pid, r, season_label, team_override=None):
     pos = pos_map.get(int(pid))
-    if pos not in ("F","D"): continue
-    if r["toi_sec"] < 60*30:  # 30 min minimum playoff ES TOI
-        continue
+    if pos not in ("F","D"): return None
+    if r["toi_sec"] < 60*30:  # ≥ 30 min ES TOI
+        return None
     fo_total = r["fo_oz"] + r["fo_dz"]
     oz_ratio = (r["fo_oz"] / fo_total) if fo_total > 0 else 0.5
     nfi_pct = (r["cf_cm"] / (r["cf_cm"] + r["ca_cm"])) if (r["cf_cm"] + r["ca_cm"]) > 0 else None
-    cf_pct  = None  # no Corsi attribution computed for playoffs (not asked for)
     ff_pct  = (r["cf_fen"] / (r["cf_fen"] + r["ca_fen"])) if (r["cf_fen"] + r["ca_fen"]) > 0 else None
-    if nfi_pct is None: continue
+    if nfi_pct is None: return None
     nfi_za = nfi_pct - NFI_ZA_FACTOR * (oz_ratio - 0.5)
-    # Player team = most recent
-    p_shifts = sd[sd["player_id"] == pid]
-    team = p_shifts.sort_values("game_id")["team_abbrev"].iloc[-1] if not p_shifts.empty else ""
-    nfi_rows.append({
+    team = team_override if team_override else r.get("team", "")
+    return {
         "player_id": int(pid),
         "player_name": name_map.get(int(pid), ""),
         "position": pos, "team": team,
-        "season": "playoffs",
+        "season": season_label,
         "toi_sec": r["toi_sec"], "toi_min": r["toi_sec"] / 60,
         "oz_ratio": oz_ratio,
         "NFI_pct": nfi_pct, "NFI_pct_ZA": nfi_za, "NFI_pct_3A": np.nan,
@@ -377,11 +421,37 @@ for pid, r in nfi.items():
         "RelNFI_F_pct": np.nan, "RelNFI_A_pct": np.nan, "RelNFI_pct": np.nan,
         "NFI_pct_3A_MOM": np.nan,
         "FF_pct": ff_pct, "FF_pct_ZA": np.nan, "FF_pct_3A": np.nan,
-        "CF_pct": cf_pct, "CF_pct_ZA": np.nan, "CF_pct_3A": np.nan,
-    })
-nfi_df = pd.DataFrame(nfi_rows).sort_values("NFI_pct_ZA", ascending=False).reset_index(drop=True)
+        "CF_pct": None, "CF_pct_ZA": np.nan, "CF_pct_3A": np.nan,
+    }
+
+# Per-season rows
+nfi_rows = []
+for (pid, season), r in nfi.items():
+    row = _make_row(pid, r, int(season))
+    if row is not None:
+        nfi_rows.append(row)
+
+# Pooled rows: sum counters across seasons per player, use most-recent team
+pooled_nfi = defaultdict(lambda: {"toi_sec":0.0, "cf_fen":0, "ca_fen":0,
+                                    "cf_cm":0, "ca_cm":0, "fo_oz":0, "fo_dz":0,
+                                    "team":""})
+for (pid, season), r in nfi.items():
+    p = pooled_nfi[pid]
+    p["toi_sec"] += r["toi_sec"]
+    for k in ("cf_fen","ca_fen","cf_cm","ca_cm","fo_oz","fo_dz"):
+        p[k] += r[k]
+    if r["team"]: p["team"] = r["team"]
+for pid, r in pooled_nfi.items():
+    row = _make_row(pid, r, "all_playoffs")
+    if row is not None:
+        nfi_rows.append(row)
+
+nfi_df = pd.DataFrame(nfi_rows).sort_values(["season","NFI_pct_ZA"],
+                                             ascending=[True, False]).reset_index(drop=True)
 nfi_df.to_csv(OUT_NFI / "player_fully_adjusted_playoffs.csv", index=False)
-print(f"    NFI playoff: {len(nfi_df)} players (≥30 min ES TOI)")
+print(f"    NFI playoff: {len(nfi_df)} player-rows (≥30 min ES TOI, ≥1 row per season + pooled)")
+for s_lbl, sub in nfi_df.groupby("season"):
+    print(f"      season={s_lbl}: {len(sub)} rows")
 
 print("\n[done]")
 print(f"    TNZI fwd:   {len(fwd):>4}")

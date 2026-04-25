@@ -658,6 +658,12 @@ def render_tnzi_table() -> None:
         if data.empty:
             st.caption("🏒 TNZI playoff data coming soon — populates automatically as games are played")
             return
+        # Per-year playoff filter: match the dropdown label to the season
+        # column written by build_playoff_data.py ('all_playoffs' or
+        # int year like 20242025).
+        target_key = PLAYOFF_SEASON_LABEL_TO_KEY.get(season)
+        if target_key is not None and "season" in data.columns:
+            data = data[data["season"].astype(str) == target_key]
     else:
         data = load_combined_regular()
         if data.empty:
@@ -887,11 +893,20 @@ def _filter_nfi(df: pd.DataFrame, season_opt: str) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
+PLAYOFF_SEASON_LABEL_TO_KEY = {
+    "All Playoffs (2022–2025)": "all_playoffs",
+    "2022-23 Playoffs": "20222023",
+    "2023-24 Playoffs": "20232024",
+    "2024-25 Playoffs": "20242025",
+    "2025-26 Playoffs": "20252026",
+}
+
+
 def _filter_nfi_playoffs(df: pd.DataFrame, season_opt: str) -> pd.DataFrame:
-    """Filter the NFI playoff table by sidebar widgets. Per-year breakdown
-    isn't available in the current playoff CSV (it's pooled), so any season
-    option falls through to the full pooled view; once per-year data lands,
-    this filter will branch on `season` column values."""
+    """Filter the NFI playoff table by sidebar widgets.
+    The playoff CSV contains both per-season rows (season=20222023, etc.)
+    and pooled rows (season='all_playoffs'). The dropdown maps to the
+    matching season key so we never mix pooled and per-season rows."""
     if df.empty:
         return df
     out = df.copy()
@@ -900,17 +915,10 @@ def _filter_nfi_playoffs(df: pd.DataFrame, season_opt: str) -> pd.DataFrame:
         out = out[out["position"] == "F"]
     elif position == "Defensemen":
         out = out[out["position"] == "D"]
-    # Per-year filter (only applies once data column has per-year values)
-    if season_opt != "All Playoffs (2022–2025)" and "season" in out.columns:
-        season_label_to_key = {
-            "2022-23 Playoffs": "20222023",
-            "2023-24 Playoffs": "20232024",
-            "2024-25 Playoffs": "20242025",
-            "2025-26 Playoffs": "20252026",
-        }
-        key = season_label_to_key.get(season_opt)
-        if key is not None:
-            out = out[out["season"].astype(str) == key]
+    if "season" in out.columns:
+        target_key = PLAYOFF_SEASON_LABEL_TO_KEY.get(season_opt)
+        if target_key is not None:
+            out = out[out["season"].astype(str) == target_key]
     teams = st.session_state.get("nfi_teams", [])
     if teams:
         out = out[out["team"].isin(teams)]
