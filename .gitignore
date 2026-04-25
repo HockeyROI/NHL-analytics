@@ -50,3 +50,5 @@ Player_Ranking_Archive/
 # Stray gitignore drafts
 gitignore.txt
 gitignore_alternate.txt
+Referees/Ref Cache/
+gitignore.txt
