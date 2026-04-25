@@ -33,13 +33,12 @@ jobs:
         run: |
           git config user.email "hockeyroi-bot@noreply.github.com"
           git config user.name "HockeyROI Bot"
-          git add Zones/adjusted_rankings/
-          git add Zones/output/
-          git add NFI/output/fully_adjusted/current_season_*.csv
-          git add NFI/processed_game_ids.json
-          git add Zones/last_updated_regular.txt
-          git add Zones/last_updated_playoffs.txt
-          git add NFI/last_updated_current.txt
+          git add -A Zones/adjusted_rankings/ 2>/dev/null || true
+          git add -A Zones/output/ 2>/dev/null || true
+          git add -A NFI/output/fully_adjusted/current_season_player_fully_adjusted.csv 2>/dev/null || true
+          git add -A NFI/processed_game_ids.json 2>/dev/null || true
+          git add -A NFI/last_updated_current.txt 2>/dev/null || true
+          find Zones -name "last_updated_*.txt" -exec git add {} \; 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Daily data update $(date +'%Y-%m-%d')"
           git push
         env:
