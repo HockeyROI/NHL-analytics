@@ -116,21 +116,36 @@ def load_combined_regular() -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-@st.cache_data(show_spinner=False)
 def nfi_playoffs_available() -> bool:
-    """Check whether NFI playoff data file exists."""
-    return (NFI_ADJ / "player_fully_adjusted_playoffs.csv").exists()
+    """Check whether NFI playoff data file exists with at least one row."""
+    fp = NFI_ADJ / "player_fully_adjusted_playoffs.csv"
+    if not fp.exists():
+        return False
+    try:
+        # Header-only or empty files don't count
+        with open(fp) as f:
+            return sum(1 for _ in f) > 1
+    except Exception:
+        return False
 
 
+@st.cache_data(show_spinner=False)
 def playoffs_available() -> bool:
-    """Check whether any playoff-adjusted or playoff-event files exist."""
+    """Check whether playoff-adjusted TNZI files exist with data."""
     candidates = [
-        ZONES / "oze_dze_nze_forwards_playoffs.csv",
-        ZONES / "oze_dze_nze_defense_playoffs.csv",
-        ADJ / "tnzi_adjusted_forwards_playoffs.csv",
-        ADJ / "tnzi_adjusted_defense_playoffs.csv",
+        ZONES / "output" / "playoffs" / "tnzi_adjusted_forwards_playoffs.csv",
+        ZONES / "output" / "playoffs" / "tnzi_adjusted_defense_playoffs.csv",
     ]
-    return any(p.exists() for p in candidates)
+    for p in candidates:
+        if not p.exists():
+            continue
+        try:
+            with open(p) as f:
+                if sum(1 for _ in f) > 1:
+                    return True
+        except Exception:
+            continue
+    return False
 
 
 @st.cache_data(show_spinner=False)
