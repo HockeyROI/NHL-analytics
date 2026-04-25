@@ -116,6 +116,30 @@ def load_combined_regular() -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
+def load_combined_playoffs() -> pd.DataFrame:
+    """Load TNZI playoff-adjusted data (forwards + defense) from
+    Zones/output/playoffs/. Adds the _pos_group helper column so the same
+    position filter used for regular-season works unchanged."""
+    frames = []
+    for pos_file in ("forwards", "defense"):
+        fp = ZONES / "output" / "playoffs" / f"tnzi_adjusted_{pos_file}_playoffs.csv"
+        if not fp.exists():
+            continue
+        try:
+            d = pd.read_csv(fp)
+        except Exception:
+            continue
+        if d.empty:
+            continue
+        d = d.copy()
+        d["_pos_group"] = pos_file
+        frames.append(d)
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+@st.cache_data(show_spinner=False)
 def nfi_playoffs_available() -> bool:
     """Check whether NFI playoff data file exists with at least one row."""
     fp = NFI_ADJ / "player_fully_adjusted_playoffs.csv"
@@ -540,7 +564,14 @@ def render_tnzi_sidebar() -> None:
     st.session_state.setdefault("f_flag", "All")
 
     st.sidebar.radio("Position", ["All", "Forwards", "Defensemen"], key="f_position")
-    st.sidebar.selectbox("Season", SEASON_OPTIONS, key="f_season")
+    # Add "Playoffs" to the TNZI season selector only when data is present.
+    tnzi_season_options = list(SEASON_OPTIONS)
+    if playoffs_available():
+        tnzi_season_options = tnzi_season_options + ["Playoffs"]
+    # If state is stale (e.g., user previously selected Playoffs and data is now gone), reset.
+    if st.session_state.get("f_season") not in tnzi_season_options:
+        st.session_state["f_season"] = SEASON_OPTIONS[0]
+    st.sidebar.selectbox("Season", tnzi_season_options, key="f_season")
     if not playoffs_available():
         st.sidebar.markdown(
             f"<div style='color:{PALETTE['lightblue']};opacity:0.7;font-style:italic;"
@@ -554,10 +585,17 @@ def render_tnzi_sidebar() -> None:
 
 
 def render_tnzi_table() -> None:
-    data = load_combined_regular()
-    if data.empty:
-        st.error("Adjusted ranking files not found under Zones/adjusted_rankings/.")
-        return
+    season = st.session_state.get("f_season", SEASON_OPTIONS[0])
+    if season == "Playoffs":
+        data = load_combined_playoffs()
+        if data.empty:
+            st.caption("🏒 TNZI playoff data coming soon — populates automatically as games are played")
+            return
+    else:
+        data = load_combined_regular()
+        if data.empty:
+            st.error("Adjusted ranking files not found under Zones/adjusted_rankings/.")
+            return
     filtered = apply_filters(data)
     if filtered.empty:
         st.info("No players match the current filters. Widen position, team, or GP filters.")
@@ -565,14 +603,17 @@ def render_tnzi_table() -> None:
 
     display_df = prepare_display(filtered)
     # Hardcoded default sort: TNZI_L descending (best individual-contribution metric).
-    # Falls back if column missing for any reason.
-    default_sort = "TNZI_L" if "TNZI_L" in display_df.columns else display_df.columns[0]
+    # Playoff data lacks TNZI_L/CL — fall back to TNZI, then to first column.
+    default_sort = next(
+        (c for c in ("TNZI_L", "TNZI") if c in display_df.columns),
+        display_df.columns[0],
+    )
     display_df = display_df.sort_values(
         by=default_sort, ascending=False, na_position="last"
     )
 
     st.dataframe(style_frame(display_df), width="stretch", hide_index=True)
-    st.caption(f"Showing {len(display_df):,} players")
+    st.caption(f"Showing {len(display_df):,} players — sorted by {default_sort} desc")
 
 
 def render_tnzi_explainers() -> None:
@@ -591,6 +632,7 @@ def render_tnzi_explainers() -> None:
             f'<li style="color:{W};"><strong>ZQoC</strong>: Zone Quality of Competition — weighted average zone metric score of opponents faced. Higher = tougher competition.</li>'
             f'<li style="color:{W};"><strong>ZQoL</strong>: Zone Quality of Linemates — weighted average zone metric score of teammates. Higher = better linemates.</li>'
             f'<li style="color:{W};"><strong>DOZI</strong>: Delta on Zone Impact — year over year change in TNZI score. Positive = improving. Negative = declining.</li>'
+            f'<li style="color:#F0F4F8;"><strong>DOZI vs NFI%_3A_MOM</strong>: DOZI (Zone Impact) and NFI%_3A_MOM (Net Front Impact) both measure year-over-year player trajectory but through different frameworks. DOZI tracks zone possession change. NFI%_3A_MOM tracks dangerous zone shot quality change. Use both together for the most complete picture of player momentum.</li>'
             f'</ul>',
             unsafe_allow_html=True,
         )
@@ -870,6 +912,7 @@ def render_nfi_explainers() -> None:
             f'<li style="color:{W};"><strong>NFQOC</strong> — <strong>Net Front Quality of Competition</strong> — shared-TOI weighted mean of opponents\' NFI%, computed linemate-without-me to avoid shared-event collinearity.</li>'
             f'<li style="color:{W};"><strong>NFQOL</strong> — <strong>Net Front Quality of Linemates</strong> — same approach for teammates.</li>'
             f'<li style="color:{W};"><strong>NFI%_3A_MOM</strong> — year-over-year change in NFI%_3A. Positive = ascending.</li>'
+            f'<li style="color:#F0F4F8;"><strong>NFI%_3A_MOM vs DOZI</strong>: NFI%_3A_MOM tracks year-over-year change in quality-adjusted dangerous zone performance. DOZI in the Zone Impact tab tracks zone possession change. They measure analogous momentum concepts through different methodologies — check both tabs for the most complete player trajectory picture.</li>'
             f'</ul>',
             unsafe_allow_html=True,
         )
@@ -918,15 +961,28 @@ def main() -> None:
     inject_css()
     render_header()
 
-    tab_tnzi, tab_nfi = st.tabs(["Zone Impact (TNZI)", "Net Front Impact (NFI)"])
+    # Sidebar framework selector — replaces the previous top-tab navigation.
+    # Renders above all framework-specific filters; the picked section drives
+    # which sidebar group + main content block is shown.
+    st.sidebar.markdown(
+        '<p style="color:#FF6B35; font-weight:700; font-size:1rem; margin-bottom:4px;">FRAMEWORK</p>',
+        unsafe_allow_html=True,
+    )
+    section = st.sidebar.selectbox(
+        "Framework",
+        ["Zone Impact (TNZI)", "Net Front Impact (NFI)"],
+        index=0,
+        key="framework_selector",
+        label_visibility="collapsed",
+    )
+    st.sidebar.markdown("---")
 
-    with tab_tnzi:
+    if section == "Zone Impact (TNZI)":
         render_tnzi_disclaimer()
         render_tnzi_sidebar()
         render_tnzi_table()
         render_tnzi_explainers()
-
-    with tab_nfi:
+    elif section == "Net Front Impact (NFI)":
         render_nfi_disclaimer()
         render_nfi_sidebar()
         render_nfi_table()
