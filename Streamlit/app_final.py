@@ -39,7 +39,6 @@ SEASON_TO_DOZI_COL = {
 }
 
 FLAG_EMOJI = {"RISING": "🟢", "STABLE": "🟡", "DECLINING": "🔴"}
-FLAG_COLOR = {"RISING": "#44AA66", "STABLE": "#FFB700", "DECLINING": "#CC3333"}
 
 TERTILE_METRICS = ["OZI", "DZI", "NZI", "TNZI", "TNZI_C", "TNZI_L", "TNZI_CL"]
 
@@ -53,7 +52,6 @@ DISPLAY_COLUMNS = [
     "DOZI_flag",
 ]
 
-# NFI season key mapping
 NFI_SEASON_KEY = {
     "Pooled (4 seasons)": "pooled",
     "Current Season (2025-26)": "20252026",
@@ -61,6 +59,10 @@ NFI_SEASON_KEY = {
     "2023-24": "20232024",
     "2022-23": "20222023",
 }
+
+# NFI TOI thresholds per season context
+NFI_TOI_DEFAULT = {"pooled": 2000, "season": 500}
+NFI_TOI_MAX = 7500  # fixed slider range prevents cross-season state conflicts
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +78,6 @@ def load_last_updated(kind: str = "regular") -> str:
 
 @st.cache_data(show_spinner=False)
 def load_adjusted(position: str) -> pd.DataFrame:
-    """Load tnzi_adjusted_{forwards|defense}.csv — primary data source."""
     fp = ADJ / f"tnzi_adjusted_{position}.csv"
     if not fp.exists():
         return pd.DataFrame()
@@ -84,21 +85,7 @@ def load_adjusted(position: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def load_playoffs_raw(position: str) -> pd.DataFrame:
-    """Best-effort load of playoffs zone data (oze_dze_nze_*)."""
-    fp = ZONES / f"oze_dze_nze_{position}_playoffs.csv"
-    if not fp.exists():
-        return pd.DataFrame()
-    try:
-        df = pd.read_csv(fp)
-    except Exception:
-        return pd.DataFrame()
-    return df
-
-
-@st.cache_data(show_spinner=False)
 def load_combined_regular() -> pd.DataFrame:
-    """Union of forwards + defense adjusted files, regular season."""
     frames = []
     for pos_file in ("forwards", "defense"):
         d = load_adjusted(pos_file)
@@ -112,23 +99,19 @@ def load_combined_regular() -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def load_combined_playoffs() -> pd.DataFrame:
-    frames = []
-    for pos_file in ("forwards", "defense"):
-        d = load_playoffs_raw(pos_file)
-        if not d.empty:
-            d = d.copy()
-            d["_pos_group"] = pos_file
-            frames.append(d)
-    if not frames:
-        return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True)
+def playoffs_available() -> bool:
+    """Check whether any playoff-adjusted or playoff-event files exist."""
+    candidates = [
+        ZONES / "oze_dze_nze_forwards_playoffs.csv",
+        ZONES / "oze_dze_nze_defense_playoffs.csv",
+        ADJ / "tnzi_adjusted_forwards_playoffs.csv",
+        ADJ / "tnzi_adjusted_defense_playoffs.csv",
+    ]
+    return any(p.exists() for p in candidates)
 
 
 @st.cache_data(show_spinner=False)
 def tertile_cutoffs(metric: str) -> tuple[float, float] | None:
-    """Compute 33rd/67th percentile cutoffs on the full unfiltered regular
-    season dataset so colors remain stable as the user filters."""
     df = load_combined_regular()
     if df.empty or metric not in df.columns:
         return None
@@ -141,7 +124,6 @@ def tertile_cutoffs(metric: str) -> tuple[float, float] | None:
 
 @st.cache_data(show_spinner=False)
 def load_nfi_player() -> pd.DataFrame:
-    """Load full NFI player dataset."""
     fp = NFI_ADJ / "player_fully_adjusted.csv"
     if not fp.exists():
         return pd.DataFrame()
@@ -153,18 +135,21 @@ def load_nfi_player() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Styling
+# Styling — palette + CSS
 # ---------------------------------------------------------------------------
 PALETTE = {
-    "bg": "#1B3A5C",
-    "surface": "#0B1D2E",
-    "blue": "#2E7DC4",
-    "lightblue": "#4AB3E8",
-    "text": "#F0F4F8",
-    "orange": "#FF6B35",
-    "rising": "#44AA66",
-    "stable": "#FFB700",
-    "declining": "#CC3333",
+    "bg":          "#0B1D2E",   # uniform dark background
+    "surface":     "#0B1D2E",
+    "panel":       "#122C44",   # slightly lighter for sidebar/expander contrast
+    "blue":        "#2E7DC4",
+    "lightblue":   "#4AB3E8",
+    "text":        "#F0F4F8",
+    "text_dark":   "#1B3A5C",   # for dark-on-light dropdowns
+    "input_bg":    "#F0F4F8",
+    "orange":      "#FF6B35",
+    "rising":      "#5DAA7A",   # softer green
+    "stable":      "#D4A843",   # softer yellow
+    "declining":   "#C05555",   # softer red
 }
 
 
@@ -179,9 +164,14 @@ def inject_css() -> None:
             color: {PALETTE['text']} !important;
             font-family: 'Inter', Arial, sans-serif;
         }}
-        [data-testid="stHeader"] {{ background: {PALETTE['surface']}; }}
-        [data-testid="stSidebar"] {{ background-color: {PALETTE['surface']} !important; }}
-        [data-testid="stSidebar"] * {{ color: {PALETTE['text']} !important; }}
+        [data-testid="stHeader"] {{ background: {PALETTE['bg']}; }}
+        [data-testid="stSidebar"] {{ background-color: {PALETTE['panel']} !important; }}
+        /* Sidebar label text stays white, but EXCLUDE input controls (handled below) */
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] p {{ color: {PALETTE['text']} !important; }}
 
         h1, h2, h3, h4 {{
             font-family: 'Bebas Neue', Impact, 'Arial Black', sans-serif;
@@ -195,21 +185,13 @@ def inject_css() -> None:
             line-height: 1;
             letter-spacing: 2px;
         }}
-        .hockeyroi-brand .hockey {{ color: {PALETTE['lightblue']}; }}
-        .hockeyroi-brand .roi {{ color: {PALETTE['orange']}; }}
+        .hockeyroi-brand .hockey {{ color: {PALETTE['text']}; }}
+        .hockeyroi-brand .roi    {{ color: {PALETTE['orange']}; }}
 
-        .tagline {{
-            color: {PALETTE['text']};
-            opacity: 0.85;
-            font-size: 1rem;
-            margin-top: -0.25rem;
-        }}
-        .timestamp {{
-            color: {PALETTE['lightblue']};
-            font-size: 0.85rem;
-            margin-top: 0.25rem;
-        }}
+        .tagline {{ color: {PALETTE['text']}; opacity: 0.85; font-size: 1rem; margin-top: -0.25rem; }}
+        .timestamp {{ color: {PALETTE['lightblue']}; font-size: 0.85rem; margin-top: 0.25rem; }}
 
+        /* Disclaimer box — orange border, orange heading, white body */
         .disclaimer-box {{
             border: 2px solid {PALETTE['orange']};
             background: rgba(11, 29, 46, 0.6);
@@ -222,25 +204,36 @@ def inject_css() -> None:
         }}
         .disclaimer-box strong {{ color: {PALETTE['orange']}; }}
 
-        /* Dataframe styling */
-        [data-testid="stDataFrame"] {{ background-color: {PALETTE['surface']}; }}
+        /* Dataframe */
+        [data-testid="stDataFrame"],
+        [data-testid="stDataFrame"] table {{
+            background-color: {PALETTE['surface']} !important;
+            color: {PALETTE['text']} !important;
+        }}
 
-        /* Expander */
+        /* Expander — orange border, orange header */
         [data-testid="stExpander"] {{
-            background-color: {PALETTE['surface']};
-            border: 1px solid {PALETTE['blue']};
+            background-color: {PALETTE['panel']};
+            border: 1px solid {PALETTE['orange']};
             border-radius: 4px;
         }}
-        [data-testid="stExpander"] summary {{ color: {PALETTE['lightblue']} !important; }}
+        [data-testid="stExpander"] summary,
+        [data-testid="stExpander"] summary p {{
+            color: {PALETTE['orange']} !important;
+            font-weight: 600;
+        }}
+        [data-testid="stExpander"] div[role="region"] {{ color: {PALETTE['text']}; }}
+        [data-testid="stExpander"] li {{ color: {PALETTE['text']}; }}
 
-        /* Tabs */
+        /* Tabs — text white, active tab white underline */
+        [data-testid="stTabs"] {{ background-color: {PALETTE['bg']}; }}
         [data-testid="stTabs"] button {{
             color: {PALETTE['text']} !important;
-            background-color: {PALETTE['surface']};
+            background-color: transparent !important;
         }}
         [data-testid="stTabs"] button[aria-selected="true"] {{
-            color: {PALETTE['orange']} !important;
-            border-bottom: 3px solid {PALETTE['orange']};
+            color: {PALETTE['text']} !important;
+            border-bottom: 3px solid {PALETTE['text']} !important;
         }}
 
         /* Footer */
@@ -255,13 +248,63 @@ def inject_css() -> None:
         }}
         .hockeyroi-footer a {{ color: {PALETTE['lightblue']}; text-decoration: none; }}
 
-        /* Buttons and widgets */
+        /* Buttons */
         .stButton > button {{
             background-color: {PALETTE['blue']};
             color: {PALETTE['text']};
             border: 0;
         }}
         .stButton > button:hover {{ background-color: {PALETTE['lightblue']}; }}
+
+        /* --- DROPDOWN / INPUT READABILITY (ISSUE 2 FIX) --- */
+        /* Selectbox displayed value */
+        [data-testid="stSelectbox"] > div > div {{
+            color: {PALETTE['text_dark']} !important;
+            background-color: {PALETTE['input_bg']} !important;
+        }}
+        /* Multiselect container */
+        [data-testid="stMultiSelect"] > div > div {{
+            color: {PALETTE['text_dark']} !important;
+            background-color: {PALETTE['input_bg']} !important;
+        }}
+        /* Base select — selected value text */
+        [data-baseweb="select"] span,
+        [data-baseweb="select"] div[role="button"] span {{
+            color: {PALETTE['text_dark']} !important;
+        }}
+        /* Dropdown menu options */
+        [data-baseweb="menu"] {{
+            background-color: {PALETTE['input_bg']} !important;
+        }}
+        [data-baseweb="menu"] li,
+        [data-baseweb="menu"] li div {{
+            color: {PALETTE['text_dark']} !important;
+            background-color: {PALETTE['input_bg']} !important;
+        }}
+        [data-baseweb="menu"] li:hover {{
+            background-color: #D9E2EC !important;
+        }}
+        /* Multiselect selected tags */
+        [data-baseweb="tag"] {{
+            background-color: {PALETTE['lightblue']} !important;
+        }}
+        [data-baseweb="tag"] span {{
+            color: {PALETTE['text_dark']} !important;
+        }}
+        /* Text input */
+        input[type="text"] {{
+            color: {PALETTE['text_dark']} !important;
+            background-color: {PALETTE['input_bg']} !important;
+        }}
+        [data-testid="stTextInput"] input {{
+            color: {PALETTE['text_dark']} !important;
+            background-color: {PALETTE['input_bg']} !important;
+        }}
+        /* Radio option text stays white in sidebar */
+        [data-testid="stRadio"] label,
+        [data-testid="stRadio"] label p {{
+            color: {PALETTE['text']} !important;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -269,9 +312,11 @@ def inject_css() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Filtering (Zone Impact tab)
+# TNZI — filtering, display, styling
 # ---------------------------------------------------------------------------
 def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
+    """Filters for TNZI tab. Case-insensitive name search; season / position /
+    team / GP / flag filters all applied to raw columns."""
     if df.empty:
         return df
     f = df.copy()
@@ -288,7 +333,6 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         if col in f.columns:
             f = f[f[col].notna()]
     elif season == "2022-23":
-        # DOZI not tracked for 22-23 — filter to players with 4 qualified seasons
         if "seasons_qualified" in f.columns:
             f = f[pd.to_numeric(f["seasons_qualified"], errors="coerce") >= 4]
 
@@ -298,7 +342,7 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
 
     name_q = (st.session_state.get("f_name", "") or "").strip().lower()
     if name_q:
-        f = f[f["player_name"].str.lower().str.contains(name_q, na=False)]
+        f = f[f["player_name"].fillna("").str.lower().str.contains(name_q, na=False)]
 
     min_gp = st.session_state.get("f_min_gp", 0)
     if "GP" in f.columns and min_gp > 0:
@@ -323,14 +367,12 @@ def prepare_display(df: pd.DataFrame) -> pd.DataFrame:
         "IOZL": "ZQoL",
     }
     out = out.rename(columns=rename)
-
     if "DOZI_flag" in out.columns:
         def _fmt(v):
             if pd.isna(v) or v == "" or v is None:
                 return ""
             return f"{FLAG_EMOJI.get(v, '')} {v}".strip()
         out["DOZI_flag"] = out["DOZI_flag"].apply(_fmt)
-
     cols = [c for c in DISPLAY_COLUMNS if c in out.columns]
     return out[cols]
 
@@ -338,7 +380,6 @@ def prepare_display(df: pd.DataFrame) -> pd.DataFrame:
 def style_frame(display_df: pd.DataFrame):
     if display_df.empty:
         return display_df
-
     cutoffs = {m: tertile_cutoffs(m) for m in TERTILE_METRICS}
 
     def color_metric(col_name):
@@ -397,7 +438,7 @@ def style_frame(display_df: pd.DataFrame):
 
 
 # ---------------------------------------------------------------------------
-# UI sections — common
+# Common UI
 # ---------------------------------------------------------------------------
 def render_header() -> None:
     ts = load_last_updated("regular")
@@ -426,7 +467,7 @@ def render_footer() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Zone Impact (TNZI) tab
+# TNZI tab
 # ---------------------------------------------------------------------------
 def render_tnzi_disclaimer() -> None:
     st.markdown(
@@ -447,7 +488,6 @@ def render_tnzi_sidebar() -> None:
 
     st.session_state.setdefault("f_position", "All")
     st.session_state.setdefault("f_season", SEASON_OPTIONS[0])
-    st.session_state.setdefault("f_game_type", "Regular Season")
     st.session_state.setdefault("f_teams", [])
     st.session_state.setdefault("f_name", "")
     st.session_state.setdefault("f_min_gp", 0)
@@ -457,7 +497,12 @@ def render_tnzi_sidebar() -> None:
 
     st.sidebar.radio("Position", ["All", "Forwards", "Defensemen"], key="f_position")
     st.sidebar.selectbox("Season", SEASON_OPTIONS, key="f_season")
-    st.sidebar.radio("Game type", ["Regular Season", "Playoffs"], key="f_game_type")
+    if not playoffs_available():
+        st.sidebar.markdown(
+            f"<div style='color:{PALETTE['lightblue']};opacity:0.7;font-style:italic;"
+            "margin:-0.3rem 0 0.6rem 0;font-size:0.85rem;'>Playoffs — Coming Soon</div>",
+            unsafe_allow_html=True,
+        )
     st.sidebar.multiselect("Teams", NHL_TEAMS, key="f_teams")
     st.sidebar.text_input("Player name contains", key="f_name")
     st.sidebar.slider("Minimum GP", min_value=0, max_value=400, step=5, key="f_min_gp")
@@ -465,56 +510,26 @@ def render_tnzi_sidebar() -> None:
 
 
 def render_tnzi_table() -> None:
-    game_type = st.session_state.get("f_game_type", "Regular Season")
-
-    if game_type == "Playoffs":
-        raw = load_combined_playoffs()
-        if raw.empty:
-            st.info(
-                "No playoffs data available yet for the selected view. "
-                "Playoffs metrics use a different schema and are tracked separately."
-            )
-            return
-        st.warning(
-            "Playoffs view shows raw zone-event metrics (OZE / DZE / NZE) only. "
-            "Adjusted TNZI and DOZI are computed on regular season data."
-        )
-        filtered = apply_filters(raw)
-        if filtered.empty:
-            st.info("No players match the current filters.")
-            return
-        st.dataframe(filtered, width="stretch", hide_index=True)
-        st.caption(f"Showing {len(filtered):,} players")
-        return
-
     data = load_combined_regular()
     if data.empty:
         st.error("Adjusted ranking files not found under Zones/adjusted_rankings/.")
         return
-
     filtered = apply_filters(data)
     if filtered.empty:
         st.info("No players match the current filters. Widen position, team, or GP filters.")
         return
 
     display_df = prepare_display(filtered)
-
     sort_col = st.session_state.get("sort_col", "TNZI_L")
-    if sort_col in display_df.columns:
-        display_df = display_df.sort_values(
-            by=sort_col,
-            ascending=not st.session_state.get("sort_desc", True),
-            na_position="last",
-        )
+    if sort_col not in display_df.columns:
+        sort_col = "TNZI_L" if "TNZI_L" in display_df.columns else display_df.columns[0]
 
     col_a, col_b = st.columns([3, 1])
+    sortable = [c for c in display_df.columns if c not in ("player_name", "team", "pos")]
     with col_a:
         pick = st.selectbox(
-            "Sort by",
-            [c for c in display_df.columns if c not in ("player_name", "team", "pos")],
-            index=[c for c in display_df.columns if c not in ("player_name", "team", "pos")].index(
-                sort_col
-            ) if sort_col in display_df.columns else 0,
+            "Sort by", sortable,
+            index=sortable.index(sort_col) if sort_col in sortable else 0,
             key="sort_col",
         )
     with col_b:
@@ -556,7 +571,7 @@ def render_tnzi_explainers() -> None:
 - Wilson CI at 95% confidence using faceoff shift count as `n`
 - Minimum 50 faceoff shifts per zone type
 - Normalized 0–10 within position group separately
-- Full methodology and source code: [github.com/HockeyROI/nhl-analytics](https://github.com/HockeyROI/nhl-analytics)
+- Full methodology and source: [github.com/HockeyROI/nhl-analytics](https://github.com/HockeyROI/nhl-analytics)
             """
         )
 
@@ -596,23 +611,26 @@ def render_nfi_sidebar() -> None:
     st.session_state.setdefault("nfi_season", SEASON_OPTIONS[0])
     st.session_state.setdefault("nfi_teams", [])
     st.session_state.setdefault("nfi_name", "")
-    st.session_state.setdefault("nfi_min_toi", 2000)
+    st.session_state.setdefault("nfi_min_toi", NFI_TOI_DEFAULT["pooled"])
+    st.session_state.setdefault("nfi_last_season", SEASON_OPTIONS[0])
 
+    # Widgets
     st.sidebar.radio("Position", ["All", "Forwards", "Defensemen"], key="nfi_position")
-    season = st.sidebar.selectbox("Season", SEASON_OPTIONS, key="nfi_season")
+    chosen_season = st.sidebar.selectbox("Season", SEASON_OPTIONS, key="nfi_season")
+
+    # --- FIX ISSUE 1 (slider bug): on season change, reset TOI threshold to
+    # the appropriate default BEFORE the slider is instantiated this run.
+    if st.session_state.get("nfi_last_season") != chosen_season:
+        default = NFI_TOI_DEFAULT["pooled"] if chosen_season == "Pooled (4 seasons)" else NFI_TOI_DEFAULT["season"]
+        st.session_state["nfi_min_toi"] = default
+        st.session_state["nfi_last_season"] = chosen_season
+
     st.sidebar.multiselect("Teams", NHL_TEAMS, key="nfi_teams")
     st.sidebar.text_input("Player name contains", key="nfi_name")
-    # TOI slider default adapts to season
-    default_min = 2000 if season == "Pooled (4 seasons)" else 500
-    max_min = 7500 if season == "Pooled (4 seasons)" else 1600
-    step = 100
+    # Fixed 0..NFI_TOI_MAX range so max_value never conflicts with stored state
     st.sidebar.slider(
         "Minimum ES TOI (min)",
-        min_value=0,
-        max_value=max_min,
-        value=default_min,
-        step=step,
-        key="nfi_min_toi",
+        min_value=0, max_value=NFI_TOI_MAX, step=50, key="nfi_min_toi",
     )
 
 
@@ -628,11 +646,11 @@ def _aggregate_nfi_pooled(df: pd.DataFrame) -> pd.DataFrame:
             continue
 
         def tw(col: str) -> float:
-            vals = pd.to_numeric(g[col], errors="coerce") if col in g.columns else pd.Series(dtype=float)
-            m = vals.notna() & (toi > 0)
-            if m.sum() == 0:
+            if col not in g.columns:
                 return np.nan
-            return float(np.average(vals[m], weights=toi[m]))
+            vals = pd.to_numeric(g[col], errors="coerce")
+            m = vals.notna() & (toi > 0)
+            return float(np.average(vals[m], weights=toi[m])) if m.any() else np.nan
 
         rows.append({
             "player_id": int(pid),
@@ -644,28 +662,24 @@ def _aggregate_nfi_pooled(df: pd.DataFrame) -> pd.DataFrame:
             "NFI_pct_3A": tw("NFI_pct_3A"),
             "RelNFI_F_pct": tw("RelNFI_F_pct"),
             "RelNFI_A_pct": tw("RelNFI_A_pct"),
-            "RelNFI_pct": tw("RelNFI_pct"),
-            "NFQOC": tw("NFQOC"),
-            "NFQOL": tw("NFQOL"),
-            # MOM only valid on single-season view; leave NaN in pooled
-            "NFI_pct_3A_MOM": np.nan,
+            "RelNFI_pct":   tw("RelNFI_pct"),
+            "NFQOC":        tw("NFQOC"),
+            "NFQOL":        tw("NFQOL"),
+            "NFI_pct_3A_MOM": np.nan,  # MOM meaningful only per-season
         })
     return pd.DataFrame(rows)
 
 
 def _filter_nfi(df: pd.DataFrame, season_opt: str) -> pd.DataFrame:
-    """Apply sidebar filters and return the prepared NFI table."""
     if df.empty:
         return df
 
-    # Position filter
     position = st.session_state.get("nfi_position", "All")
     if position == "Forwards":
         df = df[df["position"] == "F"]
     elif position == "Defensemen":
         df = df[df["position"] == "D"]
 
-    # Season filter / pooling
     season_key = NFI_SEASON_KEY[season_opt]
     if season_key == "pooled":
         out = _aggregate_nfi_pooled(df)
@@ -680,48 +694,36 @@ def _filter_nfi(df: pd.DataFrame, season_opt: str) -> pd.DataFrame:
         ]
         out = sub[[c for c in keep_cols if c in sub.columns]].copy()
 
-    # Team / name filters
     teams = st.session_state.get("nfi_teams", [])
     if teams:
         out = out[out["team"].isin(teams)]
+
     name_q = (st.session_state.get("nfi_name", "") or "").strip().lower()
     if name_q:
-        out = out[out["player_name"].str.lower().str.contains(name_q, na=False)]
+        out = out[out["player_name"].fillna("").str.lower().str.contains(name_q, na=False)]
 
-    # TOI filter
-    min_toi = st.session_state.get("nfi_min_toi", 2000)
+    min_toi = st.session_state.get("nfi_min_toi", NFI_TOI_DEFAULT["pooled"])
     out = out[out["toi_min"].fillna(0) >= min_toi]
 
-    # Small-sample flag (for pooled: under 2000; for single season: under 500)
-    threshold = 2000 if season_key == "pooled" else 500
+    threshold = NFI_TOI_DEFAULT["pooled"] if season_key == "pooled" else NFI_TOI_DEFAULT["season"]
     out["small_sample"] = out["toi_min"] < threshold
-
     return out.reset_index(drop=True)
 
 
 def _nfi_display(df: pd.DataFrame) -> pd.DataFrame:
-    """Rename columns + format for display."""
     if df.empty:
         return df
     out = df.copy()
-    # Add asterisk to names of small-sample players
     if "small_sample" in out.columns:
         out["player_name"] = out.apply(
             lambda r: f"{r['player_name']} *" if r["small_sample"] else r["player_name"],
             axis=1,
         )
     out = out.rename(columns={
-        "player_name": "Player",
-        "position":    "Pos",
-        "team":        "Team",
-        "toi_min":     "TOI",
-        "NFI_pct_ZA":  "NFI%_ZA",
-        "NFI_pct_3A":  "NFI%_3A",
-        "RelNFI_F_pct":"RelNFI_F%",
-        "RelNFI_A_pct":"RelNFI_A%",
-        "RelNFI_pct":  "RelNFI%",
-        "NFQOC":       "NFQOC",
-        "NFQOL":       "NFQOL",
+        "player_name": "Player", "position": "Pos", "team": "Team", "toi_min": "TOI",
+        "NFI_pct_ZA": "NFI%_ZA", "NFI_pct_3A": "NFI%_3A",
+        "RelNFI_F_pct": "RelNFI_F%", "RelNFI_A_pct": "RelNFI_A%", "RelNFI_pct": "RelNFI%",
+        "NFQOC": "NFQOC", "NFQOL": "NFQOL",
         "NFI_pct_3A_MOM": "NFI%_3A_MOM",
     })
     cols = ["Player", "Pos", "Team", "TOI",
@@ -788,16 +790,14 @@ def render_nfi_table() -> None:
         st.info("No players match the current filters. Widen position, team, or TOI filters.")
         return
 
-    # Sort default: NFI_pct_ZA descending
     filtered = filtered.sort_values("NFI_pct_ZA", ascending=False, na_position="last").reset_index(drop=True)
     filtered.insert(0, "Rank", np.arange(1, len(filtered) + 1))
-
     display_df = _nfi_display(filtered)
     display_df.insert(0, "#", filtered["Rank"].values)
 
     st.dataframe(_style_nfi(display_df), width="stretch", hide_index=True)
     caption = f"Showing {len(display_df):,} players — sorted by NFI%_ZA descending"
-    if filtered["small_sample"].any():
+    if "small_sample" in filtered.columns and filtered["small_sample"].any():
         n_small = int(filtered["small_sample"].sum())
         caption += f"  |  {n_small} small-sample players flagged with *"
     st.caption(caption)
@@ -808,23 +808,20 @@ def render_nfi_explainers() -> None:
         st.markdown(
             """
 - **NFI%** — **Net Front Impact %**. Fenwick attempts (shots on goal + misses + goals, blocks
-  excluded) filtered to the empirically-derived high-danger zones CNFI (central net-front) and
-  MNFI (mid net-front). Measured as team CNFI+MNFI for / (for + against) while the player is on
-  the ice. Beats xG% (R² = 0.538) and Corsi (0.397) at predicting team points — **R² = 0.583
-  against standings**.
-- **NFI%_ZA** — Zone-Adjusted using the **empirical OZ/DZ factor of +10.71 pp** (not the
-  traditional 3.5 pp Corsi factor — applying 3.5 pp here under-corrects by ~67%).
-- **NFI%_3A** — **Three-Adjusted**: zone adjustment + NFQOC + NFQOL. Individual player contribution
-  net of context.
-- **RelNFI_F%** — on-ice minus off-ice team CNFI+MNFI **For** rate per 60. Positive = team generates
-  more dangerous shots with player on the ice.
-- **RelNFI_A%** — off-ice minus on-ice team CNFI+MNFI **Against** rate per 60. Positive = team
-  allows fewer dangerous shots with player on the ice.
+  excluded) filtered to CNFI (central net-front) and MNFI (mid net-front) zones. Team CNFI+MNFI
+  for / (for + against) while the player is on ice. **R² = 0.583 vs standings** — beats
+  xG% (0.538) and Corsi (0.397).
+- **NFI%_ZA** — Zone-Adjusted using the **empirical OZ/DZ factor of +10.71 pp**
+  (not the traditional 3.5 pp, which under-corrects by ~67%).
+- **NFI%_3A** — **Three-Adjusted**: zone adjustment + NFQOC + NFQOL.
+- **RelNFI_F%** — on-ice minus off-ice team CNFI+MNFI For per 60. Positive = team generates
+  more dangerous shots with player on ice.
+- **RelNFI_A%** — off-ice minus on-ice CNFI+MNFI Against per 60. Positive = suppresses more.
 - **RelNFI%** — net two-way dangerous-zone impact = RelNFI_F% + RelNFI_A%.
-- **NFQOC** — **Net Front Quality of Competition** — shared-TOI weighted average of opposing
-  skaters' NFI%, computed linemate-without-me to avoid shared-event collinearity.
+- **NFQOC** — **Net Front Quality of Competition** — shared-TOI weighted mean of opponents'
+  NFI%, computed linemate-without-me to avoid shared-event collinearity.
 - **NFQOL** — **Net Front Quality of Linemates** — same approach for teammates.
-- **NFI%_3A_MOM** — year-over-year change in NFI%_3A. Positive = ascending. Negative = declining.
+- **NFI%_3A_MOM** — year-over-year change in NFI%_3A. Positive = ascending.
             """
         )
 
@@ -832,35 +829,30 @@ def render_nfi_explainers() -> None:
         st.markdown(
             """
 - NFI zones (CNFI, MNFI) derived from shot-density clustering of NHL API x/y coordinates
-- Fenwick events only: shot-on-goal + missed-shot + goal. Blocked shots excluded (blocker-side
-  coordinates would mis-tag the zone).
-- 5v5 even-strength regulation only (state = ES in `shots_tagged.csv`)
-- Per-player attribution: each ES shot event counted for all 10 on-ice skaters (Corsi-style)
-- Zone adjustment factor derived empirically from OZ/DZ faceoff-shift analysis:
-  league-pooled OZ% − DZ% in own-share space = **+10.71 pp** for NFI%
-- NFQOC / NFQOL use a **linemate-without-me** correction: when computing teammate `j`'s
-  contribution to player `i`'s context, `j`'s rating is recomputed excluding events where
-  both `i` and `j` were on the ice — otherwise β_QoL ≈ 1.0 from shared-event collinearity
-- 3A = raw − zone adjustment − β_NFQOC × (NFQOC − mean) − β_NFQOL × (NFQOL − mean)
+- Fenwick events only (shots on goal + missed + goals). Blocks excluded — their coordinates
+  are recorded at the blocker's location, not the shooter's.
+- 5v5 ES regulation only (state = ES in `shots_tagged.csv`)
+- Per-player on-ice attribution: each ES shot event counts for all skaters on-ice
+- Empirical zone factor from league-pooled OZ/DZ faceoff-shift analysis = **+10.71 pp**
+- NFQOC / NFQOL use a **linemate-without-me** correction — teammate `j`'s rating is
+  recomputed excluding events where both `i` and `j` were on ice, preventing β_QoL ≈ 1.0
+- 3A = raw − zone × (OZ_ratio − 0.5) − β_NFQOC × (NFQOC − mean) − β_NFQOL × (NFQOL − mean)
 - Minimum thresholds: 2000 ES minutes pooled, 500 ES minutes current season
-- Full methodology and source:
-  [github.com/HockeyROI/nhl-analytics](https://github.com/HockeyROI/nhl-analytics)
+- Source: [github.com/HockeyROI/nhl-analytics](https://github.com/HockeyROI/nhl-analytics)
             """
         )
 
     with st.expander("Known limitations"):
         st.markdown(
             """
-- NFI% is an **on-ice** metric — shared-event effects (your shot counts for all 4 linemates too)
-  are corrected via linemate-without-me in NFQOC/NFQOL, but residual context effects remain.
-- Team-system effects are real and partially persist into 3A: Carolina forwards (Fast, Staal,
-  Martinook) rank high on NFI%_ZA because of CAR's system. 3A adjusts for it but doesn't fully
-  eliminate it.
-- 2022-23 through 2025-26 available. 2021-22 not included (raw PBP data starts 2022-23).
-- NFI% regresses well to points at team aggregate (R² = 0.58) but **Rel-NFI metrics do not**
-  aggregate to team points (they demean to zero within each team). Use Rel-NFI for individual
-  ranking, NFI%_ZA/3A for team-level inference.
-- MOM values for 2025-26 are partial-season through the latest update.
+- NFI% is an **on-ice** metric — shared-event context effects are partially corrected via
+  linemate-without-me but residual team-system effects remain.
+- Carolina forwards (Fast, Staal, Martinook) rank high on NFI%_ZA because of CAR's system.
+  3A adjusts for it but doesn't fully eliminate it.
+- 2022-23 through 2025-26 available. 2021-22 not included (raw PBP starts 2022-23).
+- **Rel-NFI metrics do not aggregate to team points** (they demean to zero within each team).
+  Use Rel-NFI for individual ranking; use NFI%_ZA / 3A for team-level inference.
+- MOM for 2025-26 is partial-season through the latest update.
             """
         )
 
