@@ -211,19 +211,40 @@ def inject_css() -> None:
             color: {PALETTE['text']} !important;
         }}
 
-        /* Expander — orange border, orange header */
+        /* Expander — orange border, orange header, white body */
         [data-testid="stExpander"] {{
             background-color: {PALETTE['panel']};
             border: 1px solid {PALETTE['orange']};
             border-radius: 4px;
         }}
-        [data-testid="stExpander"] summary,
+        /* Header (arrow + title text) */
+        [data-testid="stExpander"] summary {{
+            color: {PALETTE['orange']} !important;
+            font-weight: 600;
+        }}
         [data-testid="stExpander"] summary p {{
             color: {PALETTE['orange']} !important;
             font-weight: 600;
         }}
-        [data-testid="stExpander"] div[role="region"] {{ color: {PALETTE['text']}; }}
-        [data-testid="stExpander"] li {{ color: {PALETTE['text']}; }}
+        /* Chevron icon stays white for contrast against dark panel */
+        [data-testid="stExpander"] summary svg {{
+            fill: {PALETTE['text']} !important;
+            stroke: {PALETTE['text']} !important;
+        }}
+        /* Body */
+        [data-testid="stExpander"] div[data-testid="stExpanderDetails"] {{
+            color: {PALETTE['text']} !important;
+        }}
+        [data-testid="stExpander"] div[data-testid="stExpanderDetails"] p,
+        [data-testid="stExpander"] div[data-testid="stExpanderDetails"] li {{
+            color: {PALETTE['text']} !important;
+        }}
+        /* Fallback for older Streamlit versions */
+        [data-testid="stExpander"] div[role="region"],
+        [data-testid="stExpander"] div[role="region"] p,
+        [data-testid="stExpander"] div[role="region"] li {{
+            color: {PALETTE['text']} !important;
+        }}
 
         /* Tabs — text white, active tab white underline */
         [data-testid="stTabs"] {{ background-color: {PALETTE['bg']}; }}
