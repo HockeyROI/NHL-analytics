@@ -60,9 +60,26 @@ NFI_SEASON_KEY = {
     "2022-23": "20222023",
 }
 
+# NFI season selector options — adds a "Playoffs" entry that gates on file presence
+NFI_SEASON_OPTIONS = SEASON_OPTIONS + ["Playoffs"]
+
 # NFI TOI thresholds per season context
 NFI_TOI_DEFAULT = {"pooled": 2000, "season": 500}
 NFI_TOI_MAX = 7500  # fixed slider range prevents cross-season state conflicts
+
+# Style block injected at the top of each expander. Uses `details[open] *`
+# selector with !important — beats inline color and any inherited CSS,
+# regardless of Streamlit's internal DOM nesting. Summary stays orange.
+EXPANDER_STYLE = (
+    "<style>"
+    "details[open] > div > div > div > div { color: #F0F4F8 !important; }"
+    "details[open] * { color: #F0F4F8 !important; }"
+    "details[open] summary { color: #FF6B35 !important; }"
+    "details[open] summary * { color: #FF6B35 !important; }"
+    "details[open] summary svg, details[open] summary svg path {"
+    " fill: #F0F4F8 !important; stroke: #F0F4F8 !important; }"
+    "</style>"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +116,12 @@ def load_combined_regular() -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False)
+def nfi_playoffs_available() -> bool:
+    """Check whether NFI playoff data file exists."""
+    return (NFI_ADJ / "player_fully_adjusted_playoffs.csv").exists()
+
+
 def playoffs_available() -> bool:
     """Check whether any playoff-adjusted or playoff-event files exist."""
     candidates = [
@@ -554,6 +577,7 @@ def render_tnzi_table() -> None:
 def render_tnzi_explainers() -> None:
     W = "#F0F4F8"  # body text color — inline to bypass CSS specificity
     with st.expander("What each metric means"):
+        st.markdown(EXPANDER_STYLE, unsafe_allow_html=True)
         st.markdown(
             f'<ul style="color:{W};">'
             f'<li style="color:{W};"><strong>OZI</strong>: After an offensive zone faceoff, what % of the shift generated events in the offensive zone. Measures zone retention.</li>'
@@ -571,6 +595,7 @@ def render_tnzi_explainers() -> None:
         )
 
     with st.expander("Methodology"):
+        st.markdown(EXPANDER_STYLE, unsafe_allow_html=True)
         st.markdown(
             f'<ul style="color:{W};">'
             f'<li style="color:{W};">Zone tracking from NHL API x/y coordinates</li>'
@@ -589,6 +614,7 @@ def render_tnzi_explainers() -> None:
         )
 
     with st.expander("Known limitations"):
+        st.markdown(EXPANDER_STYLE, unsafe_allow_html=True)
         st.markdown(
             f'<ul style="color:{W};">'
             f'<li style="color:{W};">These are <strong>team outcome</strong> metrics — individual skill AND team system both contribute.</li>'
@@ -630,7 +656,7 @@ def render_nfi_sidebar() -> None:
 
     # Widgets
     st.sidebar.radio("Position", ["All", "Forwards", "Defensemen"], key="nfi_position")
-    chosen_season = st.sidebar.selectbox("Season", SEASON_OPTIONS, key="nfi_season")
+    chosen_season = st.sidebar.selectbox("Season", NFI_SEASON_OPTIONS, key="nfi_season")
 
     # --- FIX ISSUE 1 (slider bug): on season change, reset TOI threshold to
     # the appropriate default BEFORE the slider is instantiated this run.
@@ -791,6 +817,18 @@ def _style_nfi(display_df: pd.DataFrame):
 
 
 def render_nfi_table() -> None:
+    season = st.session_state.get("nfi_season", SEASON_OPTIONS[0])
+
+    # ISSUE 2 — NFI Playoffs gate. If user picks "Playoffs" and the data file
+    # isn't present, show a friendly Coming-Soon caption and stop rendering the
+    # rest of this tab so we don't try to filter / aggregate missing data.
+    if season == "Playoffs":
+        if nfi_playoffs_available():
+            pass  # data file present — would load here once it exists
+        else:
+            st.caption("🏒 Playoff data coming soon — populates automatically as games are played")
+            st.stop()
+
     df = load_nfi_player()
     if df.empty:
         st.error(
@@ -798,7 +836,6 @@ def render_nfi_table() -> None:
             "`NFI/output/fully_adjusted/player_fully_adjusted.csv`."
         )
         return
-    season = st.session_state.get("nfi_season", SEASON_OPTIONS[0])
     filtered = _filter_nfi(df, season)
     if filtered.empty:
         st.info("No players match the current filters. Widen position, team, or TOI filters.")
@@ -820,6 +857,7 @@ def render_nfi_table() -> None:
 def render_nfi_explainers() -> None:
     W = "#F0F4F8"
     with st.expander("What each NFI metric means"):
+        st.markdown(EXPANDER_STYLE, unsafe_allow_html=True)
         st.markdown(
             f'<ul style="color:{W};">'
             f'<li style="color:{W};"><strong>NFI%</strong> — <strong>Net Front Impact %</strong>. Fenwick attempts (shots on goal + misses + goals, blocks excluded) filtered to CNFI (central net-front) and MNFI (mid net-front) zones. Team CNFI+MNFI for / (for + against) while the player is on ice. <strong>R² = 0.583 vs standings</strong> — beats xG% (0.538) and Corsi (0.397).</li>'
@@ -836,6 +874,7 @@ def render_nfi_explainers() -> None:
         )
 
     with st.expander("Methodology"):
+        st.markdown(EXPANDER_STYLE, unsafe_allow_html=True)
         st.markdown(
             f'<ul style="color:{W};">'
             f'<li style="color:{W};">NFI zones (CNFI, MNFI) derived from shot-density clustering of NHL API x/y coordinates</li>'
@@ -852,6 +891,7 @@ def render_nfi_explainers() -> None:
         )
 
     with st.expander("Known limitations"):
+        st.markdown(EXPANDER_STYLE, unsafe_allow_html=True)
         st.markdown(
             f'<ul style="color:{W};">'
             f'<li style="color:{W};">NFI% is an <strong>on-ice</strong> metric — shared-event context effects are partially corrected via linemate-without-me but residual team-system effects remain.</li>'
