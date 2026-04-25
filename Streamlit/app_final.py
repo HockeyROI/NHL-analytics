@@ -74,8 +74,8 @@ EXPANDER_STYLE = (
     "<style>"
     "details[open] > div > div > div > div { color: #F0F4F8 !important; }"
     "details[open] * { color: #F0F4F8 !important; }"
-    "details[open] summary { color: #FF6B35 !important; }"
-    "details[open] summary * { color: #FF6B35 !important; }"
+    "details[open] summary { color: #F0F4F8 !important; }"
+    "details[open] summary * { color: #F0F4F8 !important; }"
     "details[open] summary svg, details[open] summary svg path {"
     " fill: #F0F4F8 !important; stroke: #F0F4F8 !important; }"
     "</style>"
@@ -234,9 +234,9 @@ def inject_css() -> None:
             color: {PALETTE['text']} !important;
         }}
 
-        /* Expander — orange border + orange summary. Body text color set inline
-           in each expander (see render_*_explainers); avoids CSS specificity
-           conflicts with Streamlit's own styles. */
+        /* Expander — orange border, white summary + body text. Body text color
+           set inline in each expander (see render_*_explainers) to avoid CSS
+           specificity conflicts with Streamlit's own styles. */
         [data-testid="stExpander"] {{
             background-color: {PALETTE['panel']};
             border: 1px solid {PALETTE['orange']};
@@ -245,7 +245,7 @@ def inject_css() -> None:
         [data-testid="stExpander"] summary,
         [data-testid="stExpander"] summary p,
         [data-testid="stExpander"] summary span {{
-            color: {PALETTE['orange']} !important;
+            color: {PALETTE['text']} !important;
             font-weight: 600;
         }}
         /* Chevron SVG stays white for contrast */
