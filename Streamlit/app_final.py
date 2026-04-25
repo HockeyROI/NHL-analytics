@@ -211,33 +211,21 @@ def inject_css() -> None:
             color: {PALETTE['text']} !important;
         }}
 
-        /* Expander — orange border, orange header text, white body text */
+        /* Expander — orange border + orange summary. Body text color set inline
+           in each expander (see render_*_explainers); avoids CSS specificity
+           conflicts with Streamlit's own styles. */
         [data-testid="stExpander"] {{
             background-color: {PALETTE['panel']};
             border: 1px solid {PALETTE['orange']};
             border-radius: 4px;
         }}
-        /* 1) Default ALL expander text to white (wins via !important on body elements). */
-        [data-testid="stExpander"] p,
-        [data-testid="stExpander"] li,
-        [data-testid="stExpander"] span,
-        [data-testid="stExpander"] div,
-        [data-testid="stExpander"] a {{
-            color: {PALETTE['text']} !important;
-        }}
-        /* 2) Then override the summary (and its nested text) to orange — this selector
-              is MORE specific than the generic rules above (summary chain > bare elem). */
         [data-testid="stExpander"] summary,
         [data-testid="stExpander"] summary p,
-        [data-testid="stExpander"] summary span,
-        [data-testid="stExpander"] summary div,
-        [data-testid="stExpander"] details > summary,
-        [data-testid="stExpander"] details > summary p,
-        [data-testid="stExpander"] details > summary span {{
+        [data-testid="stExpander"] summary span {{
             color: {PALETTE['orange']} !important;
             font-weight: 600;
         }}
-        /* 3) Chevron SVG stays white for contrast */
+        /* Chevron SVG stays white for contrast */
         [data-testid="stExpander"] summary svg,
         [data-testid="stExpander"] summary svg path,
         [data-testid="stExpander"] summary svg polygon {{
@@ -564,48 +552,54 @@ def render_tnzi_table() -> None:
 
 
 def render_tnzi_explainers() -> None:
+    W = "#F0F4F8"  # body text color — inline to bypass CSS specificity
     with st.expander("What each metric means"):
         st.markdown(
-            """
-- **OZI**: After an offensive zone faceoff, what % of the shift generated events in the offensive zone. Measures zone retention.
-- **DZI**: After a defensive zone faceoff, what % of the shift generated events in the offensive zone. Measures complete eventful transition from own end to attack.
-- **NZI**: After a neutral zone faceoff, what % of the shift generated events in the offensive zone. Measures offensive zone reach from equal footing.
-- **TNZI**: After a neutral zone faceoff, net difference between offensive and defensive zone events. Positive = net offensive driver. Negative = net drag.
-- **TNZI_C**: TNZI adjusted for quality of competition faced. Higher competition = more credit.
-- **TNZI_L**: TNZI adjusted for quality of linemates. Better linemates = score adjusted down. Best measure of individual contribution.
-- **TNZI_CL**: TNZI adjusted for both competition and linemates.
-- **ZQoC**: Zone Quality of Competition — weighted average zone metric score of opponents faced. Higher = tougher competition.
-- **ZQoL**: Zone Quality of Linemates — weighted average zone metric score of teammates. Higher = better linemates.
-- **DOZI**: Delta on Zone Impact — year over year change in TNZI score. Positive = improving. Negative = declining.
-            """
+            f'<ul style="color:{W};">'
+            f'<li style="color:{W};"><strong>OZI</strong>: After an offensive zone faceoff, what % of the shift generated events in the offensive zone. Measures zone retention.</li>'
+            f'<li style="color:{W};"><strong>DZI</strong>: After a defensive zone faceoff, what % of the shift generated events in the offensive zone. Measures complete eventful transition from own end to attack.</li>'
+            f'<li style="color:{W};"><strong>NZI</strong>: After a neutral zone faceoff, what % of the shift generated events in the offensive zone. Measures offensive zone reach from equal footing.</li>'
+            f'<li style="color:{W};"><strong>TNZI</strong>: After a neutral zone faceoff, net difference between offensive and defensive zone events. Positive = net offensive driver. Negative = net drag.</li>'
+            f'<li style="color:{W};"><strong>TNZI_C</strong>: TNZI adjusted for quality of competition faced. Higher competition = more credit.</li>'
+            f'<li style="color:{W};"><strong>TNZI_L</strong>: TNZI adjusted for quality of linemates. Better linemates = score adjusted down. Best measure of individual contribution.</li>'
+            f'<li style="color:{W};"><strong>TNZI_CL</strong>: TNZI adjusted for both competition and linemates.</li>'
+            f'<li style="color:{W};"><strong>ZQoC</strong>: Zone Quality of Competition — weighted average zone metric score of opponents faced. Higher = tougher competition.</li>'
+            f'<li style="color:{W};"><strong>ZQoL</strong>: Zone Quality of Linemates — weighted average zone metric score of teammates. Higher = better linemates.</li>'
+            f'<li style="color:{W};"><strong>DOZI</strong>: Delta on Zone Impact — year over year change in TNZI score. Positive = improving. Negative = declining.</li>'
+            f'</ul>',
+            unsafe_allow_html=True,
         )
 
     with st.expander("Methodology"):
         st.markdown(
-            """
-- Zone tracking from NHL API x/y coordinates
-- All events with xCoord contribute — shots, hits, blocked shots, faceoffs, giveaways, takeaways
-- Zone boundaries: OZ `x > 25`, NZ `-25 to 25`, DZ `x < -25`
-- Faceoff shifts only — line changes excluded
-- 5v5 situations only via `situationCode 1551`
-- Wilson CI at 95% confidence using faceoff shift count as `n`
-- Minimum 50 faceoff shifts per zone type
-- Normalized 0–10 within position group separately
-- Full methodology and source: [github.com/HockeyROI/nhl-analytics](https://github.com/HockeyROI/nhl-analytics)
-            """
+            f'<ul style="color:{W};">'
+            f'<li style="color:{W};">Zone tracking from NHL API x/y coordinates</li>'
+            f'<li style="color:{W};">All events with xCoord contribute — shots, hits, blocked shots, faceoffs, giveaways, takeaways</li>'
+            f'<li style="color:{W};">Zone boundaries: OZ <code>x &gt; 25</code>, NZ <code>-25 to 25</code>, DZ <code>x &lt; -25</code></li>'
+            f'<li style="color:{W};">Faceoff shifts only — line changes excluded</li>'
+            f'<li style="color:{W};">5v5 situations only via <code>situationCode 1551</code></li>'
+            f'<li style="color:{W};">Wilson CI at 95% confidence using faceoff shift count as <code>n</code></li>'
+            f'<li style="color:{W};">Minimum 50 faceoff shifts per zone type</li>'
+            f'<li style="color:{W};">Normalized 0–10 within position group separately</li>'
+            f'<li style="color:{W};">Full methodology and source: '
+              f'<a href="https://github.com/HockeyROI/nhl-analytics" style="color:#4AB3E8;">'
+              f'github.com/HockeyROI/nhl-analytics</a></li>'
+            f'</ul>',
+            unsafe_allow_html=True,
         )
 
     with st.expander("Known limitations"):
         st.markdown(
-            """
-- These are **team outcome** metrics — individual skill AND team system both contribute.
-- Carolina Hurricanes system effect is clearly visible — multiple Hurricanes in top 20 across all metrics.
-- Current season ZQoL uses pooled linemate data as approximation — players traded mid-season (e.g. Quinn Hughes Dec 2025, Brent Burns) may show stale linemate context. Historical season views use exact linemate data.
-- Brent Burns shows #1 current season D in TNZI_L — this is an artifact of his historical Carolina ZQoL. His current raw TNZI (7.2) does not support a #1 ranking.
-- Y coordinate not used — corner vs slot play treated identically.
-- Zone tracking between events is approximation — last known coordinate assumed.
-- These metrics do not predict team winning better than Corsi or xG in multi-season testing.
-            """
+            f'<ul style="color:{W};">'
+            f'<li style="color:{W};">These are <strong>team outcome</strong> metrics — individual skill AND team system both contribute.</li>'
+            f'<li style="color:{W};">Carolina Hurricanes system effect is clearly visible — multiple Hurricanes in top 20 across all metrics.</li>'
+            f'<li style="color:{W};">Current season ZQoL uses pooled linemate data as approximation — players traded mid-season (e.g. Quinn Hughes Dec 2025, Brent Burns) may show stale linemate context. Historical season views use exact linemate data.</li>'
+            f'<li style="color:{W};">Brent Burns shows #1 current season D in TNZI_L — this is an artifact of his historical Carolina ZQoL. His current raw TNZI (7.2) does not support a #1 ranking.</li>'
+            f'<li style="color:{W};">Y coordinate not used — corner vs slot play treated identically.</li>'
+            f'<li style="color:{W};">Zone tracking between events is approximation — last known coordinate assumed.</li>'
+            f'<li style="color:{W};">These metrics do not predict team winning better than Corsi or xG in multi-season testing.</li>'
+            f'</ul>',
+            unsafe_allow_html=True,
         )
 
 
@@ -824,56 +818,49 @@ def render_nfi_table() -> None:
 
 
 def render_nfi_explainers() -> None:
+    W = "#F0F4F8"
     with st.expander("What each NFI metric means"):
         st.markdown(
-            """
-- **NFI%** — **Net Front Impact %**. Fenwick attempts (shots on goal + misses + goals, blocks
-  excluded) filtered to CNFI (central net-front) and MNFI (mid net-front) zones. Team CNFI+MNFI
-  for / (for + against) while the player is on ice. **R² = 0.583 vs standings** — beats
-  xG% (0.538) and Corsi (0.397).
-- **NFI%_ZA** — Zone-Adjusted using the **empirical OZ/DZ factor of +10.71 pp**
-  (not the traditional 3.5 pp, which under-corrects by ~67%).
-- **NFI%_3A** — **Three-Adjusted**: zone adjustment + NFQOC + NFQOL.
-- **RelNFI_F%** — on-ice minus off-ice team CNFI+MNFI For per 60. Positive = team generates
-  more dangerous shots with player on ice.
-- **RelNFI_A%** — off-ice minus on-ice CNFI+MNFI Against per 60. Positive = suppresses more.
-- **RelNFI%** — net two-way dangerous-zone impact = RelNFI_F% + RelNFI_A%.
-- **NFQOC** — **Net Front Quality of Competition** — shared-TOI weighted mean of opponents'
-  NFI%, computed linemate-without-me to avoid shared-event collinearity.
-- **NFQOL** — **Net Front Quality of Linemates** — same approach for teammates.
-- **NFI%_3A_MOM** — year-over-year change in NFI%_3A. Positive = ascending.
-            """
+            f'<ul style="color:{W};">'
+            f'<li style="color:{W};"><strong>NFI%</strong> — <strong>Net Front Impact %</strong>. Fenwick attempts (shots on goal + misses + goals, blocks excluded) filtered to CNFI (central net-front) and MNFI (mid net-front) zones. Team CNFI+MNFI for / (for + against) while the player is on ice. <strong>R² = 0.583 vs standings</strong> — beats xG% (0.538) and Corsi (0.397).</li>'
+            f'<li style="color:{W};"><strong>NFI%_ZA</strong> — Zone-Adjusted using the <strong>empirical OZ/DZ factor of +10.71 pp</strong> (not the traditional 3.5 pp, which under-corrects by ~67%).</li>'
+            f'<li style="color:{W};"><strong>NFI%_3A</strong> — <strong>Three-Adjusted</strong>: zone adjustment + NFQOC + NFQOL.</li>'
+            f'<li style="color:{W};"><strong>RelNFI_F%</strong> — on-ice minus off-ice team CNFI+MNFI For per 60. Positive = team generates more dangerous shots with player on ice.</li>'
+            f'<li style="color:{W};"><strong>RelNFI_A%</strong> — off-ice minus on-ice CNFI+MNFI Against per 60. Positive = suppresses more.</li>'
+            f'<li style="color:{W};"><strong>RelNFI%</strong> — net two-way dangerous-zone impact = RelNFI_F% + RelNFI_A%.</li>'
+            f'<li style="color:{W};"><strong>NFQOC</strong> — <strong>Net Front Quality of Competition</strong> — shared-TOI weighted mean of opponents\' NFI%, computed linemate-without-me to avoid shared-event collinearity.</li>'
+            f'<li style="color:{W};"><strong>NFQOL</strong> — <strong>Net Front Quality of Linemates</strong> — same approach for teammates.</li>'
+            f'<li style="color:{W};"><strong>NFI%_3A_MOM</strong> — year-over-year change in NFI%_3A. Positive = ascending.</li>'
+            f'</ul>',
+            unsafe_allow_html=True,
         )
 
     with st.expander("Methodology"):
         st.markdown(
-            """
-- NFI zones (CNFI, MNFI) derived from shot-density clustering of NHL API x/y coordinates
-- Fenwick events only (shots on goal + missed + goals). Blocks excluded — their coordinates
-  are recorded at the blocker's location, not the shooter's.
-- 5v5 ES regulation only (state = ES in `shots_tagged.csv`)
-- Per-player on-ice attribution: each ES shot event counts for all skaters on-ice
-- Empirical zone factor from league-pooled OZ/DZ faceoff-shift analysis = **+10.71 pp**
-- NFQOC / NFQOL use a **linemate-without-me** correction — teammate `j`'s rating is
-  recomputed excluding events where both `i` and `j` were on ice, preventing β_QoL ≈ 1.0
-- 3A = raw − zone × (OZ_ratio − 0.5) − β_NFQOC × (NFQOC − mean) − β_NFQOL × (NFQOL − mean)
-- Minimum thresholds: 2000 ES minutes pooled, 500 ES minutes current season
-- Source: [github.com/HockeyROI/nhl-analytics](https://github.com/HockeyROI/nhl-analytics)
-            """
+            f'<ul style="color:{W};">'
+            f'<li style="color:{W};">NFI zones (CNFI, MNFI) derived from shot-density clustering of NHL API x/y coordinates</li>'
+            f'<li style="color:{W};">Fenwick events only (shots on goal + missed + goals). Blocks excluded — their coordinates are recorded at the blocker\'s location, not the shooter\'s.</li>'
+            f'<li style="color:{W};">5v5 ES regulation only (state = ES in <code>shots_tagged.csv</code>)</li>'
+            f'<li style="color:{W};">Per-player on-ice attribution: each ES shot event counts for all skaters on-ice</li>'
+            f'<li style="color:{W};">Empirical zone factor from league-pooled OZ/DZ faceoff-shift analysis = <strong>+10.71 pp</strong></li>'
+            f'<li style="color:{W};">NFQOC / NFQOL use a <strong>linemate-without-me</strong> correction — teammate <code>j</code>\'s rating is recomputed excluding events where both <code>i</code> and <code>j</code> were on ice, preventing β_QoL ≈ 1.0</li>'
+            f'<li style="color:{W};">3A = raw − zone × (OZ_ratio − 0.5) − β_NFQOC × (NFQOC − mean) − β_NFQOL × (NFQOL − mean)</li>'
+            f'<li style="color:{W};">Minimum thresholds: 2000 ES minutes pooled, 500 ES minutes current season</li>'
+            f'<li style="color:{W};">Source: <a href="https://github.com/HockeyROI/nhl-analytics" style="color:#4AB3E8;">github.com/HockeyROI/nhl-analytics</a></li>'
+            f'</ul>',
+            unsafe_allow_html=True,
         )
 
     with st.expander("Known limitations"):
         st.markdown(
-            """
-- NFI% is an **on-ice** metric — shared-event context effects are partially corrected via
-  linemate-without-me but residual team-system effects remain.
-- Carolina forwards (Fast, Staal, Martinook) rank high on NFI%_ZA because of CAR's system.
-  3A adjusts for it but doesn't fully eliminate it.
-- 2022-23 through 2025-26 available. 2021-22 not included (raw PBP starts 2022-23).
-- **Rel-NFI metrics do not aggregate to team points** (they demean to zero within each team).
-  Use Rel-NFI for individual ranking; use NFI%_ZA / 3A for team-level inference.
-- MOM for 2025-26 is partial-season through the latest update.
-            """
+            f'<ul style="color:{W};">'
+            f'<li style="color:{W};">NFI% is an <strong>on-ice</strong> metric — shared-event context effects are partially corrected via linemate-without-me but residual team-system effects remain.</li>'
+            f'<li style="color:{W};">Carolina forwards (Fast, Staal, Martinook) rank high on NFI%_ZA because of CAR\'s system. 3A adjusts for it but doesn\'t fully eliminate it.</li>'
+            f'<li style="color:{W};">2022-23 through 2025-26 available. 2021-22 not included (raw PBP starts 2022-23).</li>'
+            f'<li style="color:{W};"><strong>Rel-NFI metrics do not aggregate to team points</strong> (they demean to zero within each team). Use Rel-NFI for individual ranking; use NFI%_ZA / 3A for team-level inference.</li>'
+            f'<li style="color:{W};">MOM for 2025-26 is partial-season through the latest update.</li>'
+            f'</ul>',
+            unsafe_allow_html=True,
         )
 
 
