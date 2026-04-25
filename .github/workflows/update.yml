@@ -1,0 +1,44 @@
+name: Daily Data Update
+
+on:
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r Streamlit/requirements.txt
+
+      - name: Run TNZI daily update
+        run: python Zones/scripts/update_daily.py
+        continue-on-error: true
+
+      - name: Run NFI current season update
+        run: python NFI/scripts/update_current_season.py
+        continue-on-error: true
+
+      - name: Commit and push updated data
+        run: |
+          git config user.email "hockeyroi-bot@noreply.github.com"
+          git config user.name "HockeyROI Bot"
+          git add Zones/adjusted_rankings/
+          git add Zones/output/
+          git add NFI/output/fully_adjusted/current_season_*.csv
+          git add NFI/processed_game_ids.json
+          git add Zones/last_updated_regular.txt
+          git add Zones/last_updated_playoffs.txt
+          git add NFI/last_updated_current.txt
+          git diff --staged --quiet || git commit -m "Daily data update $(date +'%Y-%m-%d')"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
