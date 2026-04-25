@@ -25,7 +25,7 @@ NHL_TEAMS = [
 ]
 
 SEASON_OPTIONS = [
-    "Pooled (4 seasons)",
+    "Pooled (2022–2026)",
     "Current Season (2025-26)",
     "2024-25",
     "2023-24",
@@ -53,7 +53,7 @@ DISPLAY_COLUMNS = [
 ]
 
 NFI_SEASON_KEY = {
-    "Pooled (4 seasons)": "pooled",
+    "Pooled (2022–2026)": "pooled",
     "Current Season (2025-26)": "20252026",
     "2024-25": "20242025",
     "2023-24": "20232024",
@@ -661,7 +661,7 @@ def render_nfi_sidebar() -> None:
     # --- FIX ISSUE 1 (slider bug): on season change, reset TOI threshold to
     # the appropriate default BEFORE the slider is instantiated this run.
     if st.session_state.get("nfi_last_season") != chosen_season:
-        default = NFI_TOI_DEFAULT["pooled"] if chosen_season == "Pooled (4 seasons)" else NFI_TOI_DEFAULT["season"]
+        default = NFI_TOI_DEFAULT["pooled"] if chosen_season == "Pooled (2022–2026)" else NFI_TOI_DEFAULT["season"]
         st.session_state["nfi_min_toi"] = default
         st.session_state["nfi_last_season"] = chosen_season
 
