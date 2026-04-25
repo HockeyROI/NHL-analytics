@@ -120,7 +120,12 @@
       "Bash(disown)",
       "Bash(python3 NFI/scripts/stage5_7_finalize.py)",
       "Bash(python3 \"Brand/Covers/New/fix_banner_and_dostal.py\")",
-      "Bash(python3 NFI/scripts/tnfi_relatives_pp_pk.py)"
+      "Bash(python3 NFI/scripts/tnfi_relatives_pp_pk.py)",
+      "Bash(gh auth *)",
+      "Bash(git config *)",
+      "Read(//Users/ashgarg/**)",
+      "Bash(python3 Zones/images/_build_charts.py)",
+      "Bash(python3 NFI/scripts/42_publication_charts_7.py)"
     ]
   }
 }
