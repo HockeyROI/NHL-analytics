@@ -211,39 +211,38 @@ def inject_css() -> None:
             color: {PALETTE['text']} !important;
         }}
 
-        /* Expander — orange border, orange header, white body */
+        /* Expander — orange border, orange header text, white body text */
         [data-testid="stExpander"] {{
             background-color: {PALETTE['panel']};
             border: 1px solid {PALETTE['orange']};
             border-radius: 4px;
         }}
-        /* Header (arrow + title text) */
-        [data-testid="stExpander"] summary {{
+        /* 1) Default ALL expander text to white (wins via !important on body elements). */
+        [data-testid="stExpander"] p,
+        [data-testid="stExpander"] li,
+        [data-testid="stExpander"] span,
+        [data-testid="stExpander"] div,
+        [data-testid="stExpander"] a {{
+            color: {PALETTE['text']} !important;
+        }}
+        /* 2) Then override the summary (and its nested text) to orange — this selector
+              is MORE specific than the generic rules above (summary chain > bare elem). */
+        [data-testid="stExpander"] summary,
+        [data-testid="stExpander"] summary p,
+        [data-testid="stExpander"] summary span,
+        [data-testid="stExpander"] summary div,
+        [data-testid="stExpander"] details > summary,
+        [data-testid="stExpander"] details > summary p,
+        [data-testid="stExpander"] details > summary span {{
             color: {PALETTE['orange']} !important;
             font-weight: 600;
         }}
-        [data-testid="stExpander"] summary p {{
-            color: {PALETTE['orange']} !important;
-            font-weight: 600;
-        }}
-        /* Chevron icon stays white for contrast against dark panel */
-        [data-testid="stExpander"] summary svg {{
+        /* 3) Chevron SVG stays white for contrast */
+        [data-testid="stExpander"] summary svg,
+        [data-testid="stExpander"] summary svg path,
+        [data-testid="stExpander"] summary svg polygon {{
             fill: {PALETTE['text']} !important;
             stroke: {PALETTE['text']} !important;
-        }}
-        /* Body */
-        [data-testid="stExpander"] div[data-testid="stExpanderDetails"] {{
-            color: {PALETTE['text']} !important;
-        }}
-        [data-testid="stExpander"] div[data-testid="stExpanderDetails"] p,
-        [data-testid="stExpander"] div[data-testid="stExpanderDetails"] li {{
-            color: {PALETTE['text']} !important;
-        }}
-        /* Fallback for older Streamlit versions */
-        [data-testid="stExpander"] div[role="region"],
-        [data-testid="stExpander"] div[role="region"] p,
-        [data-testid="stExpander"] div[role="region"] li {{
-            color: {PALETTE['text']} !important;
         }}
 
         /* Tabs — text white, active tab white underline */
