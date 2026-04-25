@@ -538,8 +538,6 @@ def render_tnzi_sidebar() -> None:
     st.session_state.setdefault("f_name", "")
     st.session_state.setdefault("f_min_gp", 0)
     st.session_state.setdefault("f_flag", "All")
-    st.session_state.setdefault("sort_col", "TNZI_L")
-    st.session_state.setdefault("sort_desc", True)
 
     st.sidebar.radio("Position", ["All", "Forwards", "Defensemen"], key="f_position")
     st.sidebar.selectbox("Season", SEASON_OPTIONS, key="f_season")
@@ -566,23 +564,11 @@ def render_tnzi_table() -> None:
         return
 
     display_df = prepare_display(filtered)
-    sort_col = st.session_state.get("sort_col", "TNZI_L")
-    if sort_col not in display_df.columns:
-        sort_col = "TNZI_L" if "TNZI_L" in display_df.columns else display_df.columns[0]
-
-    col_a, col_b = st.columns([3, 1])
-    sortable = [c for c in display_df.columns if c not in ("player_name", "team", "pos")]
-    with col_a:
-        pick = st.selectbox(
-            "Sort by", sortable,
-            index=sortable.index(sort_col) if sort_col in sortable else 0,
-            key="sort_col",
-        )
-    with col_b:
-        st.checkbox("Descending", key="sort_desc")
-
+    # Hardcoded default sort: TNZI_L descending (best individual-contribution metric).
+    # Falls back if column missing for any reason.
+    default_sort = "TNZI_L" if "TNZI_L" in display_df.columns else display_df.columns[0]
     display_df = display_df.sort_values(
-        by=pick, ascending=not st.session_state.get("sort_desc", True), na_position="last"
+        by=default_sort, ascending=False, na_position="last"
     )
 
     st.dataframe(style_frame(display_df), width="stretch", hide_index=True)
