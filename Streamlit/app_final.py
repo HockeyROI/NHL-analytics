@@ -1743,7 +1743,9 @@ def render_team_construction() -> None:
         ax.scatter(sel["fwd_RelNFI_pct"], sel["NFI_GSAx_per60"],
                    s=140, color=c, edgecolor=NAVY, linewidth=1, zorder=3)
 
-    edm = sub[sub["team"] == "EDM"]
+    # Guarantee a single highlight even if upstream data accidentally carries
+    # two EDM rows (e.g. two goalies tied on games-played for the same team).
+    edm = sub[sub["team"] == "EDM"].head(1)
     if not edm.empty:
         ax.scatter(edm["fwd_RelNFI_pct"], edm["NFI_GSAx_per60"],
                    s=300, facecolors="none", edgecolors=ORANGE,
