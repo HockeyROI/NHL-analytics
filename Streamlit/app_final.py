@@ -368,8 +368,18 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
     if players.empty:
         return pd.DataFrame()
 
+    # Pick X-axis metric: prefer RelNFI_pct, fall back to NFI_pct_ZA when
+    # RelNFI is missing (e.g. mid-pipeline current-season export). Carry the
+    # source label out via attribute so the renderer can label the axis.
+    if "RelNFI_pct" in players.columns and players["RelNFI_pct"].notna().any():
+        x_metric = "RelNFI_pct"
+        x_label = "Forward RelNFI%"
+    else:
+        x_metric = "NFI_pct_ZA"
+        x_label = "Forward NFI%_ZA (RelNFI unavailable)"
+
     fwd = players[(players["position"] == "F")].dropna(
-        subset=["RelNFI_pct", "team"]
+        subset=[x_metric, "team"]
     ).copy()
     if fwd.empty:
         return pd.DataFrame()
@@ -378,12 +388,14 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
         toi = g["toi_min"].astype(float)
         if toi.sum() <= 0:
             return float("nan")
-        return float(np.average(g["RelNFI_pct"], weights=toi))
+        return float(np.average(g[x_metric], weights=toi))
 
     fwd_team = (
         fwd.groupby("team").apply(wmean, include_groups=False)
            .rename("fwd_RelNFI_pct").reset_index()
     )
+    fwd_team.attrs["x_metric"] = x_metric
+    fwd_team.attrs["x_label"] = x_label
 
     # Goalie metric — pooled across seasons in goalie_nfi_gsax.csv
     g = load_goalie_nfi()
@@ -419,6 +431,8 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
     )
 
     out = fwd_team.merge(starter, on="team", how="inner")
+    out.attrs["x_metric"] = fwd_team.attrs.get("x_metric", "RelNFI_pct")
+    out.attrs["x_label"] = fwd_team.attrs.get("x_label", "Forward RelNFI%")
     return out
 
 
@@ -1592,6 +1606,9 @@ def render_team_construction() -> None:
         )
         return
 
+    # Carry through which forward metric is on the X-axis (RelNFI fallback
+    # to NFI%_ZA when RelNFI is unavailable).
+    x_label = df.attrs.get("x_label", "Forward RelNFI%")
     sub = df.dropna(subset=["fwd_RelNFI_pct", "NFI_GSAx_per60"]).copy()
     if sub.empty:
         st.markdown(
@@ -1664,7 +1681,7 @@ def render_team_construction() -> None:
                     xytext=(5, 5), textcoords="offset points",
                     fontsize=9, color=NAVY, weight="bold")
 
-    ax.set_xlabel("Team Forwards RelNFI% (TOI-weighted)", color=NAVY)
+    ax.set_xlabel(f"Team Forwards {x_label} (TOI-weighted)", color=NAVY)
     ax.set_ylabel("Starter Goalie NFI-GSAx per 60", color=NAVY)
     ax.set_title("Team Construction — Forwards × Goalie", color=NAVY,
                  fontsize=14, weight="bold", pad=14)
@@ -1686,18 +1703,18 @@ def render_team_construction() -> None:
                    "goalie_name", "fwd_RelNFI_pct", "NFI_GSAx_per60"]].rename(
         columns={
             "team": "Team",
-            "fwd_rank": "Forward RelNFI% rank",
+            "fwd_rank": f"{x_label} rank",
             "goalie_rank": "Goalie GSAx rank",
             "combined_rank": "Combined rank",
             "q": "Quadrant",
             "goalie_name": "Starter",
-            "fwd_RelNFI_pct": "Forward RelNFI%",
+            "fwd_RelNFI_pct": x_label,
             "NFI_GSAx_per60": "Goalie GSAx /60",
         }
     )
     st.dataframe(
         out.style.format({
-            "Forward RelNFI%": "{:+.3f}",
+            x_label: "{:+.3f}",
             "Goalie GSAx /60": "{:+.3f}",
         }),
         width="stretch", hide_index=True,
