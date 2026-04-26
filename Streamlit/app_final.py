@@ -31,16 +31,24 @@ NHL_TEAMS = [
 # season column), so only "All Playoffs" is shown for now — additional entries
 # are added automatically once breakdown data is published.
 REGULAR_SEASON_OPTIONS = [
-    "Pooled (2022–2026)",
     "2025-26",
     "2024-25",
     "2023-24",
     "2022-23",
+    "Pooled (2022–2026)",
 ]
 SEASON_OPTIONS = REGULAR_SEASON_OPTIONS  # back-compat alias for TNZI filter code
 
+# Default season we want selected on first paint (drop-downs render with this
+# pre-selected even though it's no longer index 0).
+DEFAULT_SEASON = "Pooled (2022–2026)"
+DEFAULT_PLAYOFF_SEASON = "2025-26 Playoffs"
+
 GAME_TYPE_OPTIONS = ["Regular Season", "Playoffs"]
-PLAYOFF_SEASON_OPTIONS_BASE = ["All Playoffs (2022–2025)"]
+# All-playoffs label is now "(2022–2026)" since the dropdown also shows
+# 2025-26 even before any 2025-26 playoff data has been played.
+PLAYOFF_POOLED_LABEL = "All Playoffs (2022–2026)"
+PLAYOFF_SEASON_OPTIONS_BASE = [PLAYOFF_POOLED_LABEL]
 
 SEASON_TO_DOZI_COL = {
     "2025-26": "DOZI_25_26",
@@ -54,8 +62,11 @@ TERTILE_METRICS = ["OZI", "DZI", "NZI", "TNZI", "TNZI_C", "TNZI_L", "TNZI_CL"]
 
 DISPLAY_COLUMNS = [
     "player_name", "team", "pos", "GP", "seasons_qualified",
+    # FIX 8 — TNZI_L promoted to the first metric column (it's the most
+    # informative single metric — TNZI adjusted for linemate quality).
+    "TNZI_L",
     "OZI", "DZI", "NZI",
-    "TNZI", "TNZI_C", "TNZI_L", "TNZI_CL",
+    "TNZI", "TNZI_C", "TNZI_CL",
     "ZQoC", "ZQoL",
     "DOZI_23/24", "DOZI_24/25", "DOZI_25/26",
     "DOZI_trend", "DOZI_recent",
@@ -98,7 +109,7 @@ EXPANDER_STYLE = (
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_last_updated(kind: str = "regular") -> str:
     fp = ZONES / f"last_updated_{kind}.txt"
     if not fp.exists():
@@ -106,7 +117,7 @@ def load_last_updated(kind: str = "regular") -> str:
     return fp.read_text().strip()
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_adjusted(position: str) -> pd.DataFrame:
     fp = ADJ / f"tnzi_adjusted_{position}.csv"
     if not fp.exists():
@@ -114,7 +125,7 @@ def load_adjusted(position: str) -> pd.DataFrame:
     return pd.read_csv(fp)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_combined_regular() -> pd.DataFrame:
     frames = []
     for pos_file in ("forwards", "defense"):
@@ -128,7 +139,7 @@ def load_combined_regular() -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_combined_playoffs() -> pd.DataFrame:
     """Load TNZI playoff-adjusted data (forwards + defense) from
     Zones/output/playoffs/. Adds the _pos_group helper column so the same
@@ -152,7 +163,7 @@ def load_combined_playoffs() -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_nfi_playoffs() -> pd.DataFrame:
     """Load NFI playoff player table, if present."""
     fp = NFI_ADJ / "player_fully_adjusted_playoffs.csv"
@@ -169,40 +180,35 @@ def load_nfi_playoffs() -> pd.DataFrame:
     return df
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def playoff_season_options(df: pd.DataFrame) -> list[str]:
-    """Return the playoff season options to show in the Season dropdown.
-    Always starts with 'All Playoffs (2022–2025)'. Per-year options follow,
-    newest first. The 'all_playoffs' / 'playoffs' / empty values are pooled
-    markers and are excluded from the per-year list. The current-season
-    playoff option ('2025-26 Playoffs') is always appended at the end so
-    users see the bucket; the table renders a coming-soon note until games
-    are played."""
-    options = list(PLAYOFF_SEASON_OPTIONS_BASE)
+    """Return playoff season dropdown options in display order:
+    [2025-26 Playoffs, 2024-25 Playoffs, 2023-24 Playoffs, 2022-23 Playoffs,
+     All Playoffs (2022–2026)]. Most recent first, pooled at the bottom.
+    The 2025-26 bucket is always shown even before any games have played —
+    the renderers display a coming-soon note in that case."""
     label_map = {
-        "20222023": "2022-23 Playoffs",
-        "20232024": "2023-24 Playoffs",
-        "20242025": "2024-25 Playoffs",
         "20252026": "2025-26 Playoffs",
+        "20242025": "2024-25 Playoffs",
+        "20232024": "2023-24 Playoffs",
+        "20222023": "2022-23 Playoffs",
     }
+    # Years that exist in the data
+    have = set()
     if df is not None and not df.empty and "season" in df.columns:
-        distinct = set(df["season"].astype(str).unique()) - {"playoffs", "all_playoffs", ""}
-        distinct = sorted(distinct, reverse=True)
-        for s in distinct:
-            lbl = label_map.get(s, f"{s} Playoffs")
-            if lbl not in options:
-                options.append(lbl)
-    # FIX 1 — always expose the current-season playoff bucket
-    if "2025-26 Playoffs" not in options:
-        options.append("2025-26 Playoffs")
-    return options
+        have = set(df["season"].astype(str).unique()) - {"playoffs", "all_playoffs", ""}
+    # Build the per-year list: include any year present in data + always include
+    # the current playoff bucket (so the coming-soon message is reachable).
+    have.add("20252026")
+    per_year = [label_map[y] for y in sorted(have, reverse=True) if y in label_map]
+    return per_year + [PLAYOFF_POOLED_LABEL]
 
 
 CURRENT_PLAYOFF_LABEL = "2025-26 Playoffs"
 CURRENT_PLAYOFF_KEY = "20252026"
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def nfi_playoffs_available() -> bool:
     """Check whether NFI playoff data file exists with at least one row."""
     fp = NFI_ADJ / "player_fully_adjusted_playoffs.csv"
@@ -216,7 +222,7 @@ def nfi_playoffs_available() -> bool:
         return False
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def playoffs_available() -> bool:
     """Check whether playoff-adjusted TNZI files exist with data."""
     candidates = [
@@ -235,7 +241,7 @@ def playoffs_available() -> bool:
     return False
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def tertile_cutoffs(metric: str) -> tuple[float, float] | None:
     df = load_combined_regular()
     if df.empty or metric not in df.columns:
@@ -247,7 +253,7 @@ def tertile_cutoffs(metric: str) -> tuple[float, float] | None:
     return float(low), float(high)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_nfi_player() -> pd.DataFrame:
     fp = NFI_ADJ / "player_fully_adjusted.csv"
     if not fp.exists():
@@ -262,7 +268,7 @@ def load_nfi_player() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Goalie + Team Construction loaders (FIX 7, FIX 8)
 # ---------------------------------------------------------------------------
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_goalie_nfi() -> pd.DataFrame:
     """Goalie NFI-GSAx + team + ES TOI + tier (joined from publication file)."""
     base = REPO_ROOT / "NFI" / "output" / "goalie_nfi_gsax.csv"
@@ -328,7 +334,7 @@ def load_goalie_nfi() -> pd.DataFrame:
     return df
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_team_construction(season_choice: str = "Current Season (2025-26)") -> pd.DataFrame:
     """Per-team forward RelNFI% (TOI-weighted) joined with the team's primary
     goalie GSAx /60. Uses only player_fully_adjusted CSVs and goalie_nfi_gsax —
@@ -344,23 +350,40 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
     games_played for that team (current season) or summed across seasons
     (pooled view).
     """
-    # Resolve which file to load
+    # Resolve which file to load (FIX 9 — accept individual season options)
     cur_fp = NFI_ADJ / "current_season_player_fully_adjusted.csv"
     full_fp = NFI_ADJ / "player_fully_adjusted.csv"
     players = pd.DataFrame()
+    season_to_key = {
+        "Current Season (2025-26)": "20252026",
+        "2025-26": "20252026",
+        "2024-25": "20242025",
+        "2023-24": "20232024",
+        "2022-23": "20222023",
+    }
+    season_key = season_to_key.get(season_choice)  # None for "Pooled (2022–2026)"
+
     if season_choice == "Current Season (2025-26)":
         if cur_fp.exists():
             players = pd.read_csv(cur_fp)
-            # The current-season export occasionally ships with all-NaN
-            # RelNFI columns (mid-pipeline state). If that's the case, fall
-            # back to the full file filtered to 20252026.
+            # The current-season export occasionally ships with all-NaN RelNFI
+            # columns (mid-pipeline state). If that's the case, fall back to
+            # the full file filtered to 20252026.
             if "RelNFI_pct" not in players.columns or players["RelNFI_pct"].isna().all():
                 players = pd.DataFrame()
         if players.empty and full_fp.exists():
             full = pd.read_csv(full_fp)
             full["season"] = full["season"].astype(str)
             players = full[full["season"] == "20252026"].copy()
+    elif season_key is not None:
+        # Per-season slice from the full file
+        if not full_fp.exists():
+            return pd.DataFrame()
+        full = pd.read_csv(full_fp)
+        full["season"] = full["season"].astype(str)
+        players = full[full["season"] == season_key].copy()
     else:
+        # Pooled view across all seasons
         if not full_fp.exists():
             return pd.DataFrame()
         players = pd.read_csv(full_fp)
@@ -408,8 +431,8 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
     lookup_fp = REPO_ROOT / "Goalies" / "Benchmarks Goalies" / "Data" / "goalie_team_lookup.csv"
     if lookup_fp.exists():
         lk = pd.read_csv(lookup_fp)
-        if season_choice == "Current Season (2025-26)":
-            lk = lk[lk["season"].astype(str) == "20252026"]
+        if season_key is not None:
+            lk = lk[lk["season"].astype(str) == season_key]
         # Highest games_played per (team, goalie) -> primary goalie for the team
         starter = (
             lk.groupby(["goalie_team", "goalie_id"])["games_played"].sum()
@@ -424,6 +447,8 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
              .sort_values("ES_TOI_min", ascending=False)
              .drop_duplicates("team", keep="first")[["team", "goalie_id"]]
         )
+    # FIX (EDM dedup) — guarantee one starter row per team
+    starter = starter.drop_duplicates(subset=["team"], keep="first")
 
     starter = starter.merge(
         g[["goalie_id", "goalie_name", "NFI_GSAx_cumulative", "NFI_GSAx_per60"]],
@@ -431,9 +456,28 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
     )
 
     out = fwd_team.merge(starter, on="team", how="inner")
+    # FIX (EDM dedup) — final safety net on the merged frame
+    out = out.drop_duplicates(subset=["team"], keep="first").reset_index(drop=True)
     out.attrs["x_metric"] = fwd_team.attrs.get("x_metric", "RelNFI_pct")
     out.attrs["x_label"] = fwd_team.attrs.get("x_label", "Forward RelNFI%")
     return out
+
+
+def _prefetch_all() -> None:
+    """Warm every cached loader at startup so framework tabs render with
+    pre-loaded dataframes instead of flashing empty on first paint."""
+    try:
+        load_combined_regular()
+        load_combined_playoffs()
+        load_nfi_player()
+        load_nfi_playoffs()
+        load_goalie_nfi()
+        load_team_construction("Current Season (2025-26)")
+        load_team_construction("Pooled (2022–2026)")
+    except Exception:
+        # Loaders are individually defensive; ignore prefetch errors so a
+        # broken auxiliary file can never block app startup.
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -676,26 +720,17 @@ def inject_css() -> None:
             z-index: 100 !important;
         }}
 
-        /* FIX 6 — Mobile sidebar hint */
+        /* FIX 11 — small mobile-only filter hint */
         @media (max-width: 768px) {{
-            .mobile-nav-hint {{
+            .mobile-filter-hint {{
                 display: block !important;
-                background-color: {PALETTE['orange']};
-                color: {PALETTE['text']};
-                padding: 8px 12px;
-                border-radius: 4px;
-                font-size: 0.85rem;
-                margin-bottom: 1rem;
-                text-align: center;
-                font-weight: bold;
-                /* FIX 4 — keep z-index low so it doesn't intercept taps on
-                   the framework toggle buttons that follow */
-                z-index: 1 !important;
-                position: relative;
+                color: {PALETTE['lightblue']};
+                font-size: 0.8rem;
+                margin-bottom: 0.5rem;
             }}
         }}
         @media (min-width: 769px) {{
-            .mobile-nav-hint {{ display: none !important; }}
+            .mobile-filter-hint {{ display: none !important; }}
         }}
         </style>
         """,
@@ -769,7 +804,7 @@ def prepare_display(df: pd.DataFrame) -> pd.DataFrame:
     return out[cols]
 
 
-def style_frame(display_df: pd.DataFrame):
+def style_frame(display_df: pd.DataFrame, color_map: bool = True):
     if display_df.empty:
         return display_df
     cutoffs = {m: tertile_cutoffs(m) for m in TERTILE_METRICS}
@@ -809,11 +844,13 @@ def style_frame(display_df: pd.DataFrame):
         return out
 
     styler = display_df.style
-    for m in TERTILE_METRICS:
-        if m in display_df.columns:
-            styler = styler.apply(lambda _c, name=m: color_metric(name), subset=[m])
-    if "DOZI_flag" in display_df.columns:
-        styler = styler.apply(color_flag, subset=["DOZI_flag"])
+    # FIX 7 — heat map only on pooled view; otherwise plain text on dark bg.
+    if color_map:
+        for m in TERTILE_METRICS:
+            if m in display_df.columns:
+                styler = styler.apply(lambda _c, name=m: color_metric(name), subset=[m])
+        if "DOZI_flag" in display_df.columns:
+            styler = styler.apply(color_flag, subset=["DOZI_flag"])
 
     fmt = {}
     for m in TERTILE_METRICS:
@@ -865,12 +902,10 @@ def render_tnzi_disclaimer() -> None:
     st.markdown(
         """
         <div class="disclaimer-box">
-        <strong>Primary Metric: TNZI_L</strong> — Zone impact adjusted for linemate quality.
-        The most informative single metric in the Zone Impact framework. Measures how well
-        a player drives zone possession after neutral zone faceoffs independent of their
-        linemates — stripping out teammate effects to reveal individual contribution.
-        Higher is better. Sort by TNZI_L to find players who genuinely drive zone time
-        themselves rather than riding good linemates.<br><br>
+        <strong>Already sorted by TNZI_L — the most informative individual metric.</strong>
+        TNZI adjusted for linemate quality strips out teammate effects to reveal individual
+        contribution. Higher is better. Use it to find players who genuinely drive zone
+        time themselves rather than riding good linemates.<br><br>
         <strong>Note:</strong> Zone time metrics do not outperform Corsi or xG% as team
         winning predictors. These metrics excel at individual player context — decomposing
         linemate effects and enabling clean same-team comparisons.
@@ -907,7 +942,7 @@ def render_tnzi_sidebar() -> None:
                 "Playoffs — Coming Soon</div>",
                 unsafe_allow_html=True,
             )
-            season_opts = ["All Playoffs (2022–2025)"]
+            season_opts = [PLAYOFF_POOLED_LABEL]
         else:
             tnzi_play = load_combined_playoffs()
             season_opts = playoff_season_options(tnzi_play)
@@ -933,13 +968,9 @@ def render_tnzi_table() -> None:
     game_type = st.session_state.get("game_type_tnzi", "Regular Season")
     season = st.session_state.get("f_season", REGULAR_SEASON_OPTIONS[0])
     if game_type == "Playoffs":
-        # FIX 1 — current-season playoffs not yet started
+        # FIX 4 — 2025-26 playoffs not yet started
         if season == CURRENT_PLAYOFF_LABEL:
-            st.markdown(
-                '<p style="color:#F0F4F8;">2025-26 playoff data will populate '
-                'automatically as games are played.</p>',
-                unsafe_allow_html=True,
-            )
+            st.info("2025-26 playoff data will populate automatically as games are played.")
             return
         data = load_combined_playoffs()
         if data.empty:
@@ -980,8 +1011,15 @@ def render_tnzi_table() -> None:
         by=default_sort, ascending=False, na_position="last"
     )
 
-    st.dataframe(style_frame(display_df), width="stretch", hide_index=True)
-    st.caption(f"Showing {len(display_df):,} players — sorted by {default_sort} desc")
+    is_pooled_view = season == DEFAULT_SEASON
+    st.dataframe(
+        style_frame(display_df, color_map=is_pooled_view),
+        width="stretch", hide_index=True,
+    )
+    st.caption(
+        f"Showing {len(display_df):,} players — sorted by {default_sort} desc"
+        + ("" if is_pooled_view else " · single-season view (heat map shown only on pooled)")
+    )
 
 
 def render_tnzi_explainers() -> None:
@@ -1090,7 +1128,7 @@ def render_nfi_sidebar() -> None:
                 "NFI Playoffs — Coming Soon</div>",
                 unsafe_allow_html=True,
             )
-            season_opts = ["All Playoffs (2022–2025)"]
+            season_opts = [PLAYOFF_POOLED_LABEL]
         else:
             nfi_play = load_nfi_playoffs()
             season_opts = playoff_season_options(nfi_play)
@@ -1109,7 +1147,7 @@ def render_nfi_sidebar() -> None:
     if st.session_state.get("nfi_last_season") != chosen_season:
         is_playoffs = game_type == "Playoffs"
         if is_playoffs:
-            is_pooled_view = chosen_season == "All Playoffs (2022–2025)"
+            is_pooled_view = chosen_season == PLAYOFF_POOLED_LABEL
             default_toi = (
                 NFI_TOI_DEFAULT["playoffs_pooled"]
                 if is_pooled_view else NFI_TOI_DEFAULT["playoffs_season"]
@@ -1227,7 +1265,7 @@ def _filter_nfi(df: pd.DataFrame, season_opt: str) -> pd.DataFrame:
 
 
 PLAYOFF_SEASON_LABEL_TO_KEY = {
-    "All Playoffs (2022–2025)": "all_playoffs",
+    PLAYOFF_POOLED_LABEL: "all_playoffs",
     "2022-23 Playoffs": "20222023",
     "2023-24 Playoffs": "20232024",
     "2024-25 Playoffs": "20242025",
@@ -1295,7 +1333,7 @@ def _nfi_display(df: pd.DataFrame) -> pd.DataFrame:
     return out[cols]
 
 
-def _style_nfi(display_df: pd.DataFrame):
+def _style_nfi(display_df: pd.DataFrame, color_map: bool = True):
     if display_df.empty:
         return display_df
 
@@ -1336,11 +1374,13 @@ def _style_nfi(display_df: pd.DataFrame):
         return out
 
     styler = display_df.style
-    if "NFI%_3A_MOM" in display_df.columns:
-        styler = styler.apply(color_mom, subset=["NFI%_3A_MOM"])
-    for c in ("NFI%_ZA", "CF%_ZA", "FF%_ZA"):
-        if c in display_df.columns:
-            styler = styler.apply(color_pct_tertile, subset=[c])
+    # FIX 7 — heat map only when color_map flag is on (pooled view).
+    if color_map:
+        if "NFI%_3A_MOM" in display_df.columns:
+            styler = styler.apply(color_mom, subset=["NFI%_3A_MOM"])
+        for c in ("NFI%_ZA", "CF%_ZA", "FF%_ZA"):
+            if c in display_df.columns:
+                styler = styler.apply(color_pct_tertile, subset=[c])
 
     fmt = {}
     for c in ("NFI%_ZA", "NFI%_3A", "NFQOC", "NFQOL", "CF%_ZA", "FF%_ZA"):
@@ -1368,13 +1408,9 @@ def render_nfi_table() -> None:
     season = st.session_state.get("nfi_season", REGULAR_SEASON_OPTIONS[0])
 
     if game_type == "Playoffs":
-        # FIX 1 — current-season playoffs not yet started
+        # FIX 4 — 2025-26 playoffs not yet started
         if season == CURRENT_PLAYOFF_LABEL:
-            st.markdown(
-                '<p style="color:#F0F4F8;">2025-26 playoff data will populate '
-                'automatically as games are played.</p>',
-                unsafe_allow_html=True,
-            )
+            st.info("2025-26 playoff data will populate automatically as games are played.")
             return
         if not nfi_playoffs_available():
             st.markdown(
@@ -1415,23 +1451,39 @@ def render_nfi_table() -> None:
     display_df.insert(0, "#", filtered["Rank"].values)
 
     # FIX 5 — three summary stat boxes above the table
+    # FIX 2 — NaN guard so playoff data (RelNFI all NaN) shows N/A not +nan
+    def _avg(col):
+        if col not in display_df.columns:
+            return None
+        v = display_df[col].mean()
+        return None if pd.isna(v) else float(v)
+
+    avg_f = _avg("RelNFI_F%")
+    avg_a = _avg("RelNFI_A%")
+    avg_rel = _avg("RelNFI%")
     col1, col2, col3 = st.columns(3)
     with col1:
-        avg_f = display_df['RelNFI_F%'].mean() if 'RelNFI_F%' in display_df.columns else 0
-        st.metric("Avg Generation", f"{avg_f:+.2f}",
+        st.metric("Avg Generation",
+                  "N/A" if avg_f is None else f"{avg_f:+.2f}",
                   help="Average RelNFI_F% for filtered players")
     with col2:
-        avg_a = display_df['RelNFI_A%'].mean() if 'RelNFI_A%' in display_df.columns else 0
-        st.metric("Avg Suppression", f"{avg_a:+.2f}",
+        st.metric("Avg Suppression",
+                  "N/A" if avg_a is None else f"{avg_a:+.2f}",
                   help="Average RelNFI_A% for filtered players")
     with col3:
-        avg_rel = display_df['RelNFI%'].mean() if 'RelNFI%' in display_df.columns else 0
-        st.metric("Avg Two-Way", f"{avg_rel:+.2f}",
+        st.metric("Avg Two-Way",
+                  "N/A" if avg_rel is None else f"{avg_rel:+.2f}",
                   help="Average RelNFI% for filtered players")
 
-    st.dataframe(_style_nfi(display_df), width="stretch", hide_index=True)
+    is_pooled_view = season == DEFAULT_SEASON
+    st.dataframe(
+        _style_nfi(display_df, color_map=is_pooled_view),
+        width="stretch", hide_index=True,
+    )
     sort_label = {"RelNFI_pct": "RelNFI%", "NFI_pct_ZA": "NFI%_ZA"}.get(sort_col, sort_col)
     caption = f"Showing {len(display_df):,} players — sorted by {sort_label} descending"
+    if not is_pooled_view:
+        caption += "  ·  single-season view (heat map shown only on pooled)"
     if "small_sample" in filtered.columns and filtered["small_sample"].any():
         n_small = int(filtered["small_sample"].sum())
         caption += f"  |  {n_small} small-sample players flagged with *"
@@ -1450,10 +1502,27 @@ def render_nfi_goalie_table() -> None:
         unsafe_allow_html=True,
     )
 
+    # FIX 5 — react to game type / season selectors
+    game_type = st.session_state.get("game_type_nfi", "Regular Season")
+    season = st.session_state.get("nfi_season", DEFAULT_SEASON)
+    if game_type == "Playoffs":
+        st.info("Goalie playoff data coming soon — populates automatically as games are played.")
+        return
+
     df = load_goalie_nfi()
     if df.empty:
         st.error("Goalie file not found at `NFI/output/goalie_nfi_gsax.csv`.")
         return
+
+    # Pooled view always uses the file as-is. Per-season views are based on
+    # the same pooled file with a caption noting that per-season goalie
+    # breakdowns aren't yet wired through (the underlying CSV is pooled).
+    season_caption = None
+    if season != DEFAULT_SEASON:
+        season_caption = (
+            f"Showing pooled multi-season goalie data — "
+            f"per-season goalie breakdown for {season} coming soon."
+        )
 
     # Filters — goalies use a fixed 2000-min qualification regardless of the
     # skater TOI slider; the slider exists only for skaters.
@@ -1507,6 +1576,8 @@ def render_nfi_goalie_table() -> None:
 
     styler = disp.style.format(fmt, na_rep="—")
     st.dataframe(styler, width="stretch", hide_index=True)
+    if season_caption:
+        st.caption(season_caption)
     st.caption(f"Showing {len(disp):,} goalies — sorted by NFI_GSAx_cumulative descending")
 
 
@@ -1585,7 +1656,9 @@ def render_team_construction_sidebar() -> None:
     st.session_state.setdefault("tc_season", "Current Season (2025-26)")
     st.sidebar.selectbox(
         "Season",
-        ["Current Season (2025-26)", "Pooled (2022–2026)"],
+        # FIX 9 — most-recent first, pooled at the bottom
+        ["Current Season (2025-26)", "2024-25", "2023-24", "2022-23",
+         "Pooled (2022–2026)"],
         key="tc_season",
     )
     st.sidebar.caption(
@@ -1725,10 +1798,9 @@ def render_team_construction() -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 def main() -> None:
-    # Sidebar starts expanded on desktop (where filters need to be visible).
-    # On mobile, the orange .mobile-nav-hint banner instructs users to tap
-    # the arrow at top-left to open the sidebar — that's sufficient guidance
-    # without forcing 'collapsed' which would hide all filters on desktop.
+    # FIX 11 — sidebar always starts expanded so desktop users see filters.
+    # Mobile users get a small hint near the top of the main column directing
+    # them to the sidebar arrow.
     st.set_page_config(
         page_title="HockeyROI — Zone Time + Net Front Impact",
         page_icon="🏒",
@@ -1736,18 +1808,20 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
 
-    # FIX 6 — mobile sidebar hint (rendered immediately after set_page_config)
-    st.markdown(
-        """
-        <div class="mobile-nav-hint">
-            ☰ Tap the arrow at top-left to open filters and switch between frameworks
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     inject_css()
     render_header()
+
+    # FIX 1 — warm @st.cache_data on every loader before any tab renders so
+    # the first NFI paint already has its dataframe ready (previously the
+    # NFI table flashed empty until the user clicked into another tab and
+    # back).
+    _prefetch_all()
+
+    # FIX 11 — small, mobile-only filter hint (replaces the old orange banner)
+    st.markdown(
+        '<p class="mobile-filter-hint">← Use the sidebar arrow to access filters</p>',
+        unsafe_allow_html=True,
+    )
 
     # ----- explicit session-state init (defaults need to be set before any
     # widget reads them, otherwise the very first render produces an empty
