@@ -21,10 +21,12 @@ import csv, datetime as dt, json, os, subprocess, sys, time, urllib.request
 
 ROOT    = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(ROOT)
+REPO_ROOT = os.path.dirname(PROJECT)
 DATA_DIR = ROOT
 SHIFTS_DIR = os.path.join(ROOT, "raw", "shifts")
 PBP_DIR    = os.path.join(ROOT, "raw", "pbp")
-GAME_IDS_CSV = os.path.join(PROJECT, "Data", "game_ids.csv")
+# game_ids.csv lives at the repo root under Data/, not under Zones/Data/.
+GAME_IDS_CSV = os.path.join(REPO_ROOT, "Data", "game_ids.csv")
 
 UA = {"User-Agent": "Mozilla/5.0 (HockeyROI nhl-analytics updater)"}
 CURRENT_SEASON = "20252026"
@@ -110,6 +112,9 @@ def pull_game(gid):
 
 def append_game_ids(new_games):
     """Append new rows to Data/game_ids.csv if not already present."""
+    # Make sure parent dir exists so the "a"-mode open below cannot crash on
+    # a fresh runner where Data/ has not yet been created.
+    os.makedirs(os.path.dirname(GAME_IDS_CSV), exist_ok=True)
     existing = set()
     if os.path.exists(GAME_IDS_CSV):
         with open(GAME_IDS_CSV) as f:
