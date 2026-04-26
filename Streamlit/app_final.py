@@ -62,11 +62,11 @@ TERTILE_METRICS = ["OZI", "DZI", "NZI", "TNZI", "TNZI_C", "TNZI_L", "TNZI_CL"]
 
 DISPLAY_COLUMNS = [
     "player_name", "team", "pos", "GP", "seasons_qualified",
-    # FIX 8 — TNZI_L promoted to the first metric column (it's the most
-    # informative single metric — TNZI adjusted for linemate quality).
-    "TNZI_L",
+    # FIX 4 — TNZI_L is the primary metric and goes first; TNZI_CL right after,
+    # then the rest in priority order.
+    "TNZI_L", "TNZI_CL", "TNZI",
     "OZI", "DZI", "NZI",
-    "TNZI", "TNZI_C", "TNZI_CL",
+    "TNZI_C",
     "ZQoC", "ZQoL",
     "DOZI_23/24", "DOZI_24/25", "DOZI_25/26",
     "DOZI_trend", "DOZI_recent",
@@ -463,6 +463,17 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
     return out
 
 
+# FIX 2 — explicit NFI pre-loader. Wraps the pooled NFI loader in a defensive
+# try/except so any I/O hiccup at startup never crashes the page.
+@st.cache_data(ttl=3600)
+def _preload_nfi():
+    """Pre-load the pooled NFI dataframe at startup."""
+    try:
+        return load_nfi_player()
+    except Exception:
+        return None
+
+
 def _prefetch_all() -> None:
     """Warm every cached loader at startup so framework tabs render with
     pre-loaded dataframes instead of flashing empty on first paint."""
@@ -843,10 +854,46 @@ def style_frame(display_df: pd.DataFrame, color_map: bool = True):
                 out.append("")
         return out
 
+    def color_primary(col_name):
+        # FIX 4 — strongest tertile heat map, always shown on the primary col.
+        cut = cutoffs.get(col_name)
+        if not cut:
+            return [""] * len(display_df)
+        low, high = cut
+        out = []
+        for v in display_df[col_name]:
+            try:
+                x = float(v)
+            except (TypeError, ValueError):
+                out.append("")
+                continue
+            if x >= high:
+                out.append(
+                    f"background-color: {PALETTE['rising']}; color: white;"
+                    " font-weight: 700;"
+                )
+            elif x >= low:
+                out.append(
+                    f"background-color: {PALETTE['stable']}; color: black;"
+                    " font-weight: 700;"
+                )
+            else:
+                out.append(
+                    f"background-color: {PALETTE['declining']}; color: white;"
+                    " font-weight: 700;"
+                )
+        return out
+
     styler = display_df.style
-    # FIX 7 — heat map only on pooled view; otherwise plain text on dark bg.
+    # FIX 4 — TNZI_L (primary metric) always highlighted with strongest intensity
+    if "TNZI_L" in display_df.columns:
+        styler = styler.apply(lambda _c: color_primary("TNZI_L"), subset=["TNZI_L"])
+
+    # FIX 7 — secondary heat map only on pooled view; otherwise plain text.
     if color_map:
         for m in TERTILE_METRICS:
+            if m == "TNZI_L":
+                continue  # already painted as primary
             if m in display_df.columns:
                 styler = styler.apply(lambda _c, name=m: color_metric(name), subset=[m])
         if "DOZI_flag" in display_df.columns:
@@ -1324,11 +1371,14 @@ def _nfi_display(df: pd.DataFrame) -> pd.DataFrame:
         "CF_pct_ZA": "CF%_ZA", "FF_pct_ZA": "FF%_ZA",
     })
     show_cf_ff = bool(st.session_state.get("nfi_show_corsi_fenwick", False))
-    cols = ["Player", "Pos", "Team", "TOI", "NFI%_ZA"]
+    # FIX 3 — RelNFI% is now the primary metric, surfaced first
+    cols = ["Player", "Pos", "Team", "TOI", "RelNFI%",
+            "RelNFI_F%", "RelNFI_A%",
+            "NFI%_ZA", "NFI%_3A", "NFQOC", "NFQOL", "NFI%_3A_MOM"]
     if show_cf_ff:
-        cols += ["CF%_ZA", "FF%_ZA"]
-    cols += ["NFI%_3A", "RelNFI_F%", "RelNFI_A%", "RelNFI%",
-             "NFQOC", "NFQOL", "NFI%_3A_MOM"]
+        # Insert CF/FF right next to NFI%_ZA for direct comparison
+        idx = cols.index("NFI%_ZA")
+        cols = cols[:idx] + ["CF%_ZA", "FF%_ZA"] + cols[idx:]
     cols = [c for c in cols if c in out.columns]
     return out[cols]
 
@@ -1373,8 +1423,42 @@ def _style_nfi(display_df: pd.DataFrame, color_map: bool = True):
                 out.append(f"background-color: {PALETTE['declining']}; color: white;")
         return out
 
+    # FIX 3 — RelNFI% is the primary metric. Use a higher-intensity tertile
+    # heat map on it; the other metric columns get the standard tertile
+    # treatment only on the pooled view.
+    def color_primary(col):
+        vals = pd.to_numeric(col, errors="coerce")
+        clean = vals.dropna()
+        if len(clean) < 6:
+            return [""] * len(col)
+        low, high = np.percentile(clean, [33.333, 66.666])
+        out = []
+        for v in vals:
+            if pd.isna(v):
+                out.append("")
+            elif v >= high:
+                out.append(
+                    f"background-color: {PALETTE['rising']}; color: white;"
+                    " font-weight: 700;"
+                )
+            elif v >= low:
+                out.append(
+                    f"background-color: {PALETTE['stable']}; color: black;"
+                    " font-weight: 700;"
+                )
+            else:
+                out.append(
+                    f"background-color: {PALETTE['declining']}; color: white;"
+                    " font-weight: 700;"
+                )
+        return out
+
     styler = display_df.style
-    # FIX 7 — heat map only when color_map flag is on (pooled view).
+    # FIX 3 — RelNFI% column highlighted with strongest intensity always
+    if "RelNFI%" in display_df.columns:
+        styler = styler.apply(color_primary, subset=["RelNFI%"])
+
+    # FIX 7 — secondary heat map only when color_map flag is on (pooled view).
     if color_map:
         if "NFI%_3A_MOM" in display_df.columns:
             styler = styler.apply(color_mom, subset=["NFI%_3A_MOM"])
@@ -1588,7 +1672,7 @@ def render_nfi_explainers() -> None:
         st.markdown(
             f'<ul style="color:{W};">'
             f'<li style="color:{W};"><strong>NFI%</strong> — <strong>Net Front Impact %</strong>. Fenwick attempts (shots on goal + misses + goals, blocks excluded) filtered to CNFI (central net-front) and MNFI (mid net-front) zones. Team CNFI+MNFI for / (for + against) while the player is on ice. <strong>R² = 0.583 vs standings</strong> — beats xG% (0.538) and Corsi (0.397).</li>'
-            f'<li style="color:{W};"><strong>NFI%_ZA</strong> — Zone-Adjusted using the <strong>empirical OZ/DZ factor of +10.71 pp</strong> (not the traditional 3.5 pp, which under-corrects by ~67%).</li>'
+            f'<li style="color:{W};"><strong>NFI%_ZA</strong> — Zone-Adjusted using the <strong>3.5pp conventional zone adjustment factor (Tulsky 2013)</strong>.</li>'
             f'<li style="color:{W};"><strong>NFI%_3A</strong> — <strong>Three-Adjusted</strong>: zone adjustment + NFQOC + NFQOL.</li>'
             f'<li style="color:{W};"><strong>RelNFI_F%</strong> — on-ice minus off-ice team CNFI+MNFI For per 60. Positive = team generates more dangerous shots with player on ice.</li>'
             f'<li style="color:{W};"><strong>RelNFI_A%</strong> — off-ice minus on-ice CNFI+MNFI Against per 60. Positive = suppresses more.</li>'
@@ -1609,7 +1693,7 @@ def render_nfi_explainers() -> None:
             f'<li style="color:{W};">Fenwick events only (shots on goal + missed + goals). Blocks excluded — their coordinates are recorded at the blocker\'s location, not the shooter\'s.</li>'
             f'<li style="color:{W};">5v5 ES regulation only (state = ES in <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">shots_tagged.csv</code>)</li>'
             f'<li style="color:{W};">Per-player on-ice attribution: each ES shot event counts for all skaters on-ice</li>'
-            f'<li style="color:{W};">Empirical zone factor from league-pooled OZ/DZ faceoff-shift analysis = <strong>+10.71 pp</strong></li>'
+            f'<li style="color:{W};">Zone factor: <strong>3.5pp conventional zone adjustment (Tulsky 2013)</strong> applied to the OZ/DZ deployment ratio</li>'
             f'<li style="color:{W};">NFQOC / NFQOL use a <strong>linemate-without-me</strong> correction — teammate <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">j</code>\'s rating is recomputed excluding events where both <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">i</code> and <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">j</code> were on ice, preventing β_QoL ≈ 1.0</li>'
             f'<li style="color:{W};">3A = raw − zone × (OZ_ratio − 0.5) − β_NFQOC × (NFQOC − mean) − β_NFQOL × (NFQOL − mean)</li>'
             f'<li style="color:{W};">Minimum thresholds: 2000 ES minutes pooled, 500 ES minutes current season</li>'
@@ -1810,13 +1894,24 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
 
+    # FIX 2 — session-state defaults must be set before any widget runs,
+    # otherwise the first render shows an empty NFI table while widgets
+    # settle on their own defaults.
+    st.session_state.setdefault("framework",     "NFI")
+    st.session_state.setdefault("nfi_season",    "Pooled (2022–2026)")
+    st.session_state.setdefault("nfi_game_type", "Regular Season")
+    st.session_state.setdefault("game_type_nfi", "Regular Season")
+    st.session_state.setdefault("nfi_position",  "All")
+
     inject_css()
     render_header()
 
-    # FIX 1 — warm @st.cache_data on every loader before any tab renders so
-    # the first NFI paint already has its dataframe ready (previously the
-    # NFI table flashed empty until the user clicked into another tab and
-    # back).
+    # FIX 2 — Pre-load NFI data at startup so the very first click on the
+    # NFI tab is instant (no flash of empty / no loading delay).
+    _nfi_preload = _preload_nfi()
+
+    # Warm every other cached loader too (TNZI, goalies, team construction)
+    # so framework switches don't pay a load penalty either.
     _prefetch_all()
 
     # FIX 11 — small, mobile-only filter hint (replaces the old orange banner)
