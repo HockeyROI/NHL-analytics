@@ -1567,6 +1567,7 @@ def render_team_construction_disclaimer() -> None:
 
 def render_team_construction_sidebar() -> None:
     st.sidebar.header("Team Construction Filters")
+    st.sidebar.markdown("### Season")
     st.session_state.setdefault("tc_season", "Current Season (2025-26)")
     st.sidebar.selectbox(
         "Season",
@@ -1731,9 +1732,34 @@ def main() -> None:
     inject_css()
     render_header()
 
+    # ----- explicit session-state init (defaults need to be set before any
+    # widget reads them, otherwise the very first render produces an empty
+    # NFI table while the sidebar widgets settle on their defaults) -----
+    _DEFAULTS = {
+        "framework":         "NFI",
+        "nfi_position":      "All",
+        "game_type_nfi":     "Regular Season",
+        "nfi_game_type":     "Regular Season",  # alias kept for safety
+        "nfi_season":        "Pooled (2022–2026)",
+        "nfi_teams":         [],
+        "nfi_name":          "",
+        "nfi_min_toi":       NFI_TOI_DEFAULT["pooled"],
+        "nfi_last_season":   "Pooled (2022–2026)",
+        "nfi_show_corsi_fenwick": False,
+        "f_position":        "All",
+        "game_type_tnzi":    "Regular Season",
+        "f_season":          REGULAR_SEASON_OPTIONS[0],
+        "f_teams":           [],
+        "f_name":            "",
+        "f_min_gp":          0,
+        "f_flag":            "All",
+        "tc_season":         "Current Season (2025-26)",
+    }
+    for _k, _v in _DEFAULTS.items():
+        if _k not in st.session_state:
+            st.session_state[_k] = _v
+
     # FIX 11 — framework toggle buttons in main area (not sidebar)
-    if "framework" not in st.session_state:
-        st.session_state["framework"] = "NFI"
 
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
