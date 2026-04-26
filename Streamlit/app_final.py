@@ -70,8 +70,14 @@ NFI_SEASON_KEY = {
     "2022-23": "20222023",
 }
 
-# NFI TOI thresholds per season context
-NFI_TOI_DEFAULT = {"pooled": 2000, "season": 500}
+# NFI TOI thresholds per season context.
+# Playoff TOI is dramatically smaller than regular season — top performers
+# log roughly 50–600 ES min over a deep run, so the 2000-min regular-season
+# threshold wipes the entire playoff table. Use playoff-specific defaults.
+NFI_TOI_DEFAULT = {
+    "pooled": 2000, "season": 500,
+    "playoffs_pooled": 100, "playoffs_season": 25,
+}
 NFI_TOI_MAX = 7500  # fixed slider range prevents cross-season state conflicts
 
 # Style block injected at the top of each expander. Uses `details[open] *`
@@ -166,14 +172,16 @@ def load_nfi_playoffs() -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def playoff_season_options(df: pd.DataFrame) -> list[str]:
     """Return the playoff season options to show in the Season dropdown.
-    Always starts with 'All Playoffs (2022–2025)'. If the data has a
-    distinguishable per-year season column (something other than the
-    literal 'playoffs' bucket), add per-year options too — currently the
-    files are pooled so just 'All' is shown."""
+    Always starts with 'All Playoffs (2022–2025)'. Per-year options follow,
+    newest first. The 'all_playoffs' / 'playoffs' / empty values are pooled
+    markers and are excluded from the per-year list."""
     options = list(PLAYOFF_SEASON_OPTIONS_BASE)
     if df is None or df.empty or "season" not in df.columns:
         return options
-    distinct = sorted(set(df["season"].astype(str).unique()) - {"playoffs", ""})
+    # Exclude pooled markers from the per-year set
+    distinct = set(df["season"].astype(str).unique()) - {"playoffs", "all_playoffs", ""}
+    # Sort newest first (descending int order on yearly keys like '20242025')
+    distinct = sorted(distinct, reverse=True)
     label_map = {
         "20222023": "2022-23 Playoffs",
         "20232024": "2023-24 Playoffs",
@@ -879,7 +887,8 @@ def render_tnzi_table() -> None:
         # int year like 20242025).
         target_key = PLAYOFF_SEASON_LABEL_TO_KEY.get(season)
         if target_key is not None and "season" in data.columns:
-            data = data[data["season"].astype(str) == target_key]
+            # Same defensive cast as the NFI playoff filter
+            data = data[data["season"].astype("string").astype(str) == str(target_key)]
     else:
         data = load_combined_regular()
         if data.empty:
@@ -887,7 +896,11 @@ def render_tnzi_table() -> None:
             return
     filtered = apply_filters(data)
     if filtered.empty:
-        st.info("No players match the current filters. Widen position, team, or GP filters.")
+        st.markdown(
+            '<p style="color:#F0F4F8;">No players match the current filters. '
+            'Widen position, team, or GP filters.</p>',
+            unsafe_allow_html=True,
+        )
         return
 
     display_df = prepare_display(filtered)
@@ -932,10 +945,10 @@ def render_tnzi_explainers() -> None:
             f'<ul style="color:{W};">'
             f'<li style="color:{W};">Zone tracking from NHL API x/y coordinates</li>'
             f'<li style="color:{W};">All events with xCoord contribute — shots, hits, blocked shots, faceoffs, giveaways, takeaways</li>'
-            f'<li style="color:{W};">Zone boundaries: OZ <code>x &gt; 25</code>, NZ <code>-25 to 25</code>, DZ <code>x &lt; -25</code></li>'
+            f'<li style="color:{W};">Zone boundaries: OZ <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">x &gt; 25</code>, NZ <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">-25 to 25</code>, DZ <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">x &lt; -25</code></li>'
             f'<li style="color:{W};">Faceoff shifts only — line changes excluded</li>'
-            f'<li style="color:{W};">5v5 situations only via <code>situationCode 1551</code></li>'
-            f'<li style="color:{W};">Wilson CI at 95% confidence using faceoff shift count as <code>n</code></li>'
+            f'<li style="color:{W};">5v5 situations only via <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">situationCode 1551</code></li>'
+            f'<li style="color:{W};">Wilson CI at 95% confidence using faceoff shift count as <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">n</code></li>'
             f'<li style="color:{W};">Minimum 50 faceoff shifts per zone type</li>'
             f'<li style="color:{W};">Normalized 0–10 within position group separately</li>'
             f'<li style="color:{W};">Full methodology and source: '
@@ -1028,10 +1041,20 @@ def render_nfi_sidebar() -> None:
 
     # On season change, reset TOI threshold to appropriate default.
     if st.session_state.get("nfi_last_season") != chosen_season:
-        is_pooled_view = chosen_season in ("Pooled (2022–2026)", "All Playoffs (2022–2025)")
-        st.session_state["nfi_min_toi"] = (
-            NFI_TOI_DEFAULT["pooled"] if is_pooled_view else NFI_TOI_DEFAULT["season"]
-        )
+        is_playoffs = game_type == "Playoffs"
+        if is_playoffs:
+            is_pooled_view = chosen_season == "All Playoffs (2022–2025)"
+            default_toi = (
+                NFI_TOI_DEFAULT["playoffs_pooled"]
+                if is_pooled_view else NFI_TOI_DEFAULT["playoffs_season"]
+            )
+        else:
+            is_pooled_view = chosen_season == "Pooled (2022–2026)"
+            default_toi = (
+                NFI_TOI_DEFAULT["pooled"]
+                if is_pooled_view else NFI_TOI_DEFAULT["season"]
+            )
+        st.session_state["nfi_min_toi"] = default_toi
         st.session_state["nfi_last_season"] = chosen_season
 
     st.sidebar.multiselect("Teams", NHL_TEAMS, key="nfi_teams")
@@ -1162,7 +1185,9 @@ def _filter_nfi_playoffs(df: pd.DataFrame, season_opt: str) -> pd.DataFrame:
     if "season" in out.columns:
         target_key = PLAYOFF_SEASON_LABEL_TO_KEY.get(season_opt)
         if target_key is not None:
-            out = out[out["season"].astype(str) == target_key]
+            # Defensive: coerce both sides to plain Python str so ArrowStringArray
+            # vs str (or older numpy.int) mismatches never produce empty filters.
+            out = out[out["season"].astype("string").astype(str) == str(target_key)]
     teams = st.session_state.get("nfi_teams", [])
     if teams:
         out = out[out["team"].isin(teams)]
@@ -1295,7 +1320,11 @@ def render_nfi_table() -> None:
             return
         filtered = _filter_nfi(df, season)
     if filtered.empty:
-        st.info("No players match the current filters. Widen position, team, or TOI filters.")
+        st.markdown(
+            '<p style="color:#F0F4F8;">No players match the current filters. '
+            'Widen position, team, or TOI filters.</p>',
+            unsafe_allow_html=True,
+        )
         return
 
     # FIX 12 — default sort RelNFI% descending (fall back if missing)
@@ -1360,7 +1389,10 @@ def render_nfi_goalie_table() -> None:
     df = df[df["ES_TOI_min"].fillna(0) >= min_toi]
 
     if df.empty:
-        st.info("No goalies match the current filters.")
+        st.markdown(
+            '<p style="color:#F0F4F8;">No goalies match the current filters.</p>',
+            unsafe_allow_html=True,
+        )
         return
 
     df = df.sort_values("NFI_GSAx_cumulative", ascending=False, na_position="last").reset_index(drop=True)
@@ -1424,10 +1456,10 @@ def render_nfi_explainers() -> None:
             f'<ul style="color:{W};">'
             f'<li style="color:{W};">NFI zones (CNFI, MNFI) derived from shot-density clustering of NHL API x/y coordinates</li>'
             f'<li style="color:{W};">Fenwick events only (shots on goal + missed + goals). Blocks excluded — their coordinates are recorded at the blocker\'s location, not the shooter\'s.</li>'
-            f'<li style="color:{W};">5v5 ES regulation only (state = ES in <code>shots_tagged.csv</code>)</li>'
+            f'<li style="color:{W};">5v5 ES regulation only (state = ES in <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">shots_tagged.csv</code>)</li>'
             f'<li style="color:{W};">Per-player on-ice attribution: each ES shot event counts for all skaters on-ice</li>'
             f'<li style="color:{W};">Empirical zone factor from league-pooled OZ/DZ faceoff-shift analysis = <strong>+10.71 pp</strong></li>'
-            f'<li style="color:{W};">NFQOC / NFQOL use a <strong>linemate-without-me</strong> correction — teammate <code>j</code>\'s rating is recomputed excluding events where both <code>i</code> and <code>j</code> were on ice, preventing β_QoL ≈ 1.0</li>'
+            f'<li style="color:{W};">NFQOC / NFQOL use a <strong>linemate-without-me</strong> correction — teammate <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">j</code>\'s rating is recomputed excluding events where both <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">i</code> and <code style="background-color:#1B3A5C; color:#4AB3E8; padding:2px 4px; border-radius:3px;">j</code> were on ice, preventing β_QoL ≈ 1.0</li>'
             f'<li style="color:{W};">3A = raw − zone × (OZ_ratio − 0.5) − β_NFQOC × (NFQOC − mean) − β_NFQOL × (NFQOL − mean)</li>'
             f'<li style="color:{W};">Minimum thresholds: 2000 ES minutes pooled, 500 ES minutes current season</li>'
             f'<li style="color:{W};">Source: <a href="https://github.com/HockeyROI/nhl-analytics" style="color:#4AB3E8;">github.com/HockeyROI/nhl-analytics</a></li>'
@@ -1495,7 +1527,10 @@ def render_team_construction() -> None:
         subset=["fwd_RelNFI_pct", "NFI_GSAx_per60"]
     ).copy()
     if sub.empty:
-        st.info("No teams with both metrics available for this view.")
+        st.markdown(
+            '<p style="color:#F0F4F8;">No teams with both metrics available for this view.</p>',
+            unsafe_allow_html=True,
+        )
         return
 
     x = sub["fwd_RelNFI_pct"]
