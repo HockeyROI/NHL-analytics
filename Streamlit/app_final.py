@@ -245,6 +245,149 @@ def load_nfi_player() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Goalie + Team Construction loaders (FIX 7, FIX 8)
+# ---------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def load_goalie_nfi() -> pd.DataFrame:
+    """Goalie NFI-GSAx + team + ES TOI + tier (joined from publication file)."""
+    base = REPO_ROOT / "NFI" / "output" / "goalie_nfi_gsax.csv"
+    if not base.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(base)
+
+    # ES TOI
+    toi_fp = REPO_ROOT / "NFI" / "output" / "player_toi.csv"
+    if toi_fp.exists():
+        toi = pd.read_csv(toi_fp)
+        toi = toi[toi["position"] == "G"][["player_id", "toi_ES_sec"]].copy()
+        toi["ES_TOI_min"] = (toi["toi_ES_sec"] / 60.0).round(2)
+        df = df.merge(toi.rename(columns={"player_id": "goalie_id"})[
+            ["goalie_id", "ES_TOI_min"]
+        ], on="goalie_id", how="left")
+    else:
+        df["ES_TOI_min"] = np.nan
+
+    # Per-60 (goalie_nfi_gsax doesn't carry it directly)
+    df["NFI_GSAx_per60"] = np.where(
+        df["ES_TOI_min"].fillna(0) > 0,
+        df["NFI_GSAx_calibrated"] / df["ES_TOI_min"] * 60.0,
+        np.nan,
+    )
+    df = df.rename(columns={"NFI_GSAx_calibrated": "NFI_GSAx_cumulative"})
+
+    # Team — latest known
+    team_fp = REPO_ROOT / "Goalies" / "Benchmarks Goalies" / "Data" / "goalie_team_lookup.csv"
+    if team_fp.exists():
+        teams = pd.read_csv(team_fp)
+        teams_latest = (
+            teams.sort_values("season").drop_duplicates("goalie_id", keep="last")[
+                ["goalie_id", "goalie_team"]
+            ].rename(columns={"goalie_team": "team"})
+        )
+        df = df.merge(teams_latest, on="goalie_id", how="left")
+    else:
+        df["team"] = ""
+
+    # Tier from publication file
+    pub_fp = REPO_ROOT / "NFI" / "output" / "publication_goalies_top60.csv"
+    if pub_fp.exists():
+        pub = pd.read_csv(pub_fp)
+        df = df.merge(
+            pub[["goalie_name", "tier_label_text"]].rename(columns={"tier_label_text": "Tier"}),
+            on="goalie_name", how="left",
+        )
+    if "Tier" not in df.columns:
+        df["Tier"] = np.nan
+
+    # Optional rebound-control join
+    reb_fp = REPO_ROOT / "NFI" / "output" / "goalie_rebound_control.csv"
+    if reb_fp.exists():
+        reb = pd.read_csv(reb_fp)
+        df = df.merge(
+            reb[["goalie_id", "CNFI_rebound_goal_rate", "z_score"]].rename(
+                columns={"z_score": "rebound_z"}
+            ),
+            on="goalie_id", how="left",
+        )
+
+    return df
+
+
+@st.cache_data(show_spinner=False)
+def load_team_construction() -> pd.DataFrame:
+    """Per (team, season) starter goalie + forward RelNFI% (TOI-weighted)."""
+    players_fp = NFI_ADJ / "current_season_player_fully_adjusted.csv"
+    full_fp = NFI_ADJ / "player_fully_adjusted.csv"
+    shots_fp = REPO_ROOT / "NFI" / "output" / "shots_tagged.csv"
+    if not (full_fp.exists() and shots_fp.exists()):
+        return pd.DataFrame()
+
+    players = pd.read_csv(full_fp)
+    players["season"] = players["season"].astype(str)
+
+    # Forward team avg per season (TOI weighted)
+    fwd = players[(players["position"] == "F")].dropna(subset=["RelNFI_pct", "team"]).copy()
+
+    def wmean(g: pd.DataFrame) -> float:
+        toi = g["toi_min"].astype(float)
+        if toi.sum() <= 0:
+            return float("nan")
+        return float(np.average(g["RelNFI_pct"], weights=toi))
+
+    fwd_team = (
+        fwd.groupby(["team", "season"]).apply(wmean, include_groups=False)
+           .rename("fwd_RelNFI_pct").reset_index()
+    )
+
+    # Pooled view across seasons (TOI-weighted)
+    fwd_pool = (
+        fwd.groupby("team").apply(wmean, include_groups=False)
+           .rename("fwd_RelNFI_pct").reset_index()
+    )
+    fwd_pool["season"] = "pooled"
+    fwd_team = pd.concat([fwd_team, fwd_pool], ignore_index=True)
+
+    # Starter goalie per (team, season) by ES shots faced
+    shots = pd.read_csv(shots_fp)
+    shots = shots.dropna(subset=["goalie_id"]).copy()
+    shots["goalie_id"] = shots["goalie_id"].astype("int64")
+    shots["season"] = shots["season"].astype(str)
+    shots["defending_team"] = np.where(
+        shots["shooting_team_abbrev"] == shots["home_team_abbrev"],
+        shots["away_team_abbrev"], shots["home_team_abbrev"],
+    )
+    shots = shots[
+        (shots["state"] == "ES") & shots["period"].between(1, 3)
+    ]
+    starter_season = (
+        shots.groupby(["defending_team", "season", "goalie_id"]).size().rename("faced").reset_index()
+            .sort_values(["defending_team", "season", "faced"], ascending=[True, True, False])
+            .drop_duplicates(["defending_team", "season"], keep="first")
+            .rename(columns={"defending_team": "team"})
+    )
+    starter_pool = (
+        shots.groupby(["defending_team", "goalie_id"]).size().rename("faced").reset_index()
+            .sort_values(["defending_team", "faced"], ascending=[True, False])
+            .drop_duplicates("defending_team", keep="first")
+            .rename(columns={"defending_team": "team"})
+    )
+    starter_pool["season"] = "pooled"
+    starter = pd.concat([starter_season, starter_pool], ignore_index=True)
+
+    # Attach goalie metric
+    g = load_goalie_nfi()
+    if g.empty:
+        return pd.DataFrame()
+    starter = starter.merge(
+        g[["goalie_id", "goalie_name", "NFI_GSAx_per60", "NFI_GSAx_cumulative"]],
+        on="goalie_id", how="left",
+    )
+
+    out = fwd_team.merge(starter, on=["team", "season"], how="inner")
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Styling — palette + CSS
 # ---------------------------------------------------------------------------
 PALETTE = {
@@ -423,6 +566,74 @@ def inject_css() -> None:
         [data-testid="stRadio"] label p {{
             color: {PALETTE['text']} !important;
         }}
+
+        /* FIX 1 — Expander summary stays dark navy with orange text after open */
+        [data-testid="stExpander"] details summary {{
+            background-color: {PALETTE['bg']} !important;
+        }}
+        [data-testid="stExpander"] details[open] summary {{
+            background-color: {PALETTE['bg']} !important;
+            color: {PALETTE['orange']} !important;
+        }}
+        [data-testid="stExpander"] details[open] summary * {{
+            color: {PALETTE['orange']} !important;
+        }}
+        [data-testid="stExpander"] details[open] summary svg,
+        [data-testid="stExpander"] details[open] summary svg path,
+        [data-testid="stExpander"] details[open] summary svg polygon {{
+            fill: {PALETTE['orange']} !important;
+            stroke: {PALETTE['orange']} !important;
+        }}
+
+        /* FIX 5 — Metric stat box styling: dark navy bg, white labels, orange values */
+        [data-testid="stMetric"] {{
+            background-color: {PALETTE['bg']} !important;
+            border: 1px solid {PALETTE['orange']};
+            border-radius: 6px;
+            padding: 0.85rem 1rem;
+        }}
+        [data-testid="stMetric"] label,
+        [data-testid="stMetricLabel"] {{
+            color: {PALETTE['text']} !important;
+        }}
+        [data-testid="stMetricValue"] {{
+            color: {PALETTE['orange']} !important;
+            font-weight: 700 !important;
+        }}
+        [data-testid="stMetricValue"] * {{
+            color: {PALETTE['orange']} !important;
+        }}
+
+        /* FIX 11 — Framework toggle buttons */
+        [data-testid="stButton"] button[kind="primary"] {{
+            background-color: {PALETTE['orange']} !important;
+            color: {PALETTE['text']} !important;
+            border: none !important;
+            font-weight: 700 !important;
+        }}
+        [data-testid="stButton"] button[kind="secondary"] {{
+            background-color: {PALETTE['bg']} !important;
+            color: {PALETTE['text']} !important;
+            border: 1px solid {PALETTE['blue']} !important;
+        }}
+
+        /* FIX 6 — Mobile sidebar hint */
+        @media (max-width: 768px) {{
+            .mobile-nav-hint {{
+                display: block !important;
+                background-color: {PALETTE['orange']};
+                color: {PALETTE['text']};
+                padding: 8px 12px;
+                border-radius: 4px;
+                font-size: 0.85rem;
+                margin-bottom: 1rem;
+                text-align: center;
+                font-weight: bold;
+            }}
+        }}
+        @media (min-width: 769px) {{
+            .mobile-nav-hint {{ display: none !important; }}
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -591,10 +802,15 @@ def render_tnzi_disclaimer() -> None:
     st.markdown(
         """
         <div class="disclaimer-box">
-        <strong>IMPORTANT:</strong> These metrics measure <em>eventful zone time</em> — where meaningful
-        hockey plays occur after each type of faceoff deployment. They are context tools for player
-        evaluation, not winning predictors. Zone time metrics do not outperform Corsi or xG% as team
-        winning predictors in multi-season testing.
+        <strong>Primary Metric: TNZI_L</strong> — Zone impact adjusted for linemate quality.
+        The most informative single metric in the Zone Impact framework. Measures how well
+        a player drives zone possession after neutral zone faceoffs independent of their
+        linemates — stripping out teammate effects to reveal individual contribution.
+        Higher is better. Sort by TNZI_L to find players who genuinely drive zone time
+        themselves rather than riding good linemates.<br><br>
+        <strong>Note:</strong> Zone time metrics do not outperform Corsi or xG% as team
+        winning predictors. These metrics excel at individual player context — decomposing
+        linemate effects and enabling clean same-team comparisons.
         </div>
         """,
         unsafe_allow_html=True,
@@ -752,8 +968,15 @@ def render_nfi_disclaimer() -> None:
     st.markdown(
         """
         <div class="disclaimer-box">
-        <strong>NFI metrics use ES regulation data only.</strong> Minimum 2000 ES minutes for pooled
-        rankings. Small sample players flagged with an asterisk. All data from public NHL API.
+        <strong>Primary Metric: RelNFI%</strong> — Two-way dangerous zone impact combined.
+        RelNFI% = RelNFI_F% (generation) + RelNFI_A% (suppression). The individual metric
+        that predicts winning — r=0.764 against standings, beating xG% (0.733), HD Fenwick
+        (0.694), and Corsi (0.631) across 126 team-seasons.<br><br>
+        Sort by <strong>RelNFI%</strong> for most complete two-way players.
+        Sort by <strong>RelNFI_F%</strong> for pure generators.
+        Sort by <strong>RelNFI_A%</strong> for pure suppressors.
+        <strong>NFI%_3A</strong> is the fairest individual comparison — fully adjusted for
+        deployment, competition quality, and linemate quality simultaneously.
         </div>
         """,
         unsafe_allow_html=True,
@@ -772,7 +995,9 @@ def render_nfi_sidebar() -> None:
     st.session_state.setdefault("nfi_last_season", REGULAR_SEASON_OPTIONS[0])
 
     # Widgets
-    st.sidebar.radio("Position", ["All", "Forwards", "Defensemen"], key="nfi_position")
+    st.sidebar.radio(
+        "Position", ["All", "Forwards", "Defensemen", "Goalies"], key="nfi_position"
+    )
 
     # --- Game Type then Season (two-dropdown structure) ---
     game_type = st.sidebar.selectbox("Game Type", GAME_TYPE_OPTIONS, key="game_type_nfi")
@@ -816,6 +1041,15 @@ def render_nfi_sidebar() -> None:
         min_value=0, max_value=NFI_TOI_MAX, step=50, key="nfi_min_toi",
     )
 
+    # FIX 10 — Corsi / Fenwick comparison toggle (skater views only)
+    if st.session_state.get("nfi_position", "All") != "Goalies":
+        st.sidebar.checkbox(
+            "Show Corsi/Fenwick comparison columns",
+            key="nfi_show_corsi_fenwick",
+            value=st.session_state.get("nfi_show_corsi_fenwick", False),
+            help="Adds CF%_ZA and FF%_ZA next to NFI%_ZA for direct comparison.",
+        )
+
 
 def _aggregate_nfi_pooled(df: pd.DataFrame) -> pd.DataFrame:
     """Career TOI-weighted means per player for pooled view."""
@@ -835,6 +1069,13 @@ def _aggregate_nfi_pooled(df: pd.DataFrame) -> pd.DataFrame:
             m = vals.notna() & (toi > 0)
             return float(np.average(vals[m], weights=toi[m])) if m.any() else np.nan
 
+        # FIX 9 — pooled MOM: use the most recent season's MOM (not blank)
+        mom_latest = np.nan
+        if "NFI_pct_3A_MOM" in g.columns:
+            recent = g.sort_values("season").dropna(subset=["NFI_pct_3A_MOM"])
+            if not recent.empty:
+                mom_latest = float(recent["NFI_pct_3A_MOM"].iloc[-1])
+
         rows.append({
             "player_id": int(pid),
             "player_name": name,
@@ -848,7 +1089,9 @@ def _aggregate_nfi_pooled(df: pd.DataFrame) -> pd.DataFrame:
             "RelNFI_pct":   tw("RelNFI_pct"),
             "NFQOC":        tw("NFQOC"),
             "NFQOL":        tw("NFQOL"),
-            "NFI_pct_3A_MOM": np.nan,  # MOM meaningful only per-season
+            "NFI_pct_3A_MOM": mom_latest,
+            "CF_pct_ZA":     tw("CF_pct_ZA"),
+            "FF_pct_ZA":     tw("FF_pct_ZA"),
         })
     return pd.DataFrame(rows)
 
@@ -874,6 +1117,7 @@ def _filter_nfi(df: pd.DataFrame, season_opt: str) -> pd.DataFrame:
             "RelNFI_F_pct", "RelNFI_A_pct", "RelNFI_pct",
             "NFQOC", "NFQOL",
             "NFI_pct_3A_MOM",
+            "CF_pct_ZA", "FF_pct_ZA",
         ]
         out = sub[[c for c in keep_cols if c in sub.columns]].copy()
 
@@ -948,11 +1192,14 @@ def _nfi_display(df: pd.DataFrame) -> pd.DataFrame:
         "RelNFI_F_pct": "RelNFI_F%", "RelNFI_A_pct": "RelNFI_A%", "RelNFI_pct": "RelNFI%",
         "NFQOC": "NFQOC", "NFQOL": "NFQOL",
         "NFI_pct_3A_MOM": "NFI%_3A_MOM",
+        "CF_pct_ZA": "CF%_ZA", "FF_pct_ZA": "FF%_ZA",
     })
-    cols = ["Player", "Pos", "Team", "TOI",
-            "NFI%_ZA", "NFI%_3A",
-            "RelNFI_F%", "RelNFI_A%", "RelNFI%",
-            "NFQOC", "NFQOL", "NFI%_3A_MOM"]
+    show_cf_ff = bool(st.session_state.get("nfi_show_corsi_fenwick", False))
+    cols = ["Player", "Pos", "Team", "TOI", "NFI%_ZA"]
+    if show_cf_ff:
+        cols += ["CF%_ZA", "FF%_ZA"]
+    cols += ["NFI%_3A", "RelNFI_F%", "RelNFI_A%", "RelNFI%",
+             "NFQOC", "NFQOL", "NFI%_3A_MOM"]
     cols = [c for c in cols if c in out.columns]
     return out[cols]
 
@@ -979,12 +1226,33 @@ def _style_nfi(display_df: pd.DataFrame):
                 out.append("")
         return out
 
+    def color_pct_tertile(col):
+        vals = pd.to_numeric(col, errors="coerce")
+        clean = vals.dropna()
+        if len(clean) < 6:
+            return [""] * len(col)
+        low, high = np.percentile(clean, [33.333, 66.666])
+        out = []
+        for v in vals:
+            if pd.isna(v):
+                out.append("")
+            elif v >= high:
+                out.append(f"background-color: {PALETTE['rising']}; color: white;")
+            elif v >= low:
+                out.append(f"background-color: {PALETTE['stable']}; color: black;")
+            else:
+                out.append(f"background-color: {PALETTE['declining']}; color: white;")
+        return out
+
     styler = display_df.style
     if "NFI%_3A_MOM" in display_df.columns:
         styler = styler.apply(color_mom, subset=["NFI%_3A_MOM"])
+    for c in ("NFI%_ZA", "CF%_ZA", "FF%_ZA"):
+        if c in display_df.columns:
+            styler = styler.apply(color_pct_tertile, subset=[c])
 
     fmt = {}
-    for c in ("NFI%_ZA", "NFI%_3A", "NFQOC", "NFQOL"):
+    for c in ("NFI%_ZA", "NFI%_3A", "NFQOC", "NFQOL", "CF%_ZA", "FF%_ZA"):
         if c in display_df.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
     for c in ("RelNFI_F%", "RelNFI_A%", "RelNFI%"):
@@ -1000,6 +1268,11 @@ def _style_nfi(display_df: pd.DataFrame):
 
 
 def render_nfi_table() -> None:
+    # FIX 7 — Goalies branch
+    if st.session_state.get("nfi_position", "All") == "Goalies":
+        render_nfi_goalie_table()
+        return
+
     game_type = st.session_state.get("game_type_nfi", "Regular Season")
     season = st.session_state.get("nfi_season", REGULAR_SEASON_OPTIONS[0])
 
@@ -1025,17 +1298,104 @@ def render_nfi_table() -> None:
         st.info("No players match the current filters. Widen position, team, or TOI filters.")
         return
 
-    filtered = filtered.sort_values("NFI_pct_ZA", ascending=False, na_position="last").reset_index(drop=True)
+    # FIX 12 — default sort RelNFI% descending (fall back if missing)
+    sort_col = next(
+        (c for c in ("RelNFI_pct", "NFI_pct_ZA") if c in filtered.columns),
+        filtered.columns[0],
+    )
+    filtered = filtered.sort_values(sort_col, ascending=False, na_position="last").reset_index(drop=True)
     filtered.insert(0, "Rank", np.arange(1, len(filtered) + 1))
     display_df = _nfi_display(filtered)
     display_df.insert(0, "#", filtered["Rank"].values)
 
+    # FIX 5 — three summary stat boxes above the table
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        avg_f = display_df['RelNFI_F%'].mean() if 'RelNFI_F%' in display_df.columns else 0
+        st.metric("Avg Generation", f"{avg_f:+.2f}",
+                  help="Average RelNFI_F% for filtered players")
+    with col2:
+        avg_a = display_df['RelNFI_A%'].mean() if 'RelNFI_A%' in display_df.columns else 0
+        st.metric("Avg Suppression", f"{avg_a:+.2f}",
+                  help="Average RelNFI_A% for filtered players")
+    with col3:
+        avg_rel = display_df['RelNFI%'].mean() if 'RelNFI%' in display_df.columns else 0
+        st.metric("Avg Two-Way", f"{avg_rel:+.2f}",
+                  help="Average RelNFI% for filtered players")
+
     st.dataframe(_style_nfi(display_df), width="stretch", hide_index=True)
-    caption = f"Showing {len(display_df):,} players — sorted by NFI%_ZA descending"
+    sort_label = {"RelNFI_pct": "RelNFI%", "NFI_pct_ZA": "NFI%_ZA"}.get(sort_col, sort_col)
+    caption = f"Showing {len(display_df):,} players — sorted by {sort_label} descending"
     if "small_sample" in filtered.columns and filtered["small_sample"].any():
         n_small = int(filtered["small_sample"].sum())
         caption += f"  |  {n_small} small-sample players flagged with *"
     st.caption(caption)
+
+
+# ---------------------------------------------------------------------------
+# FIX 7 — Goalie NFI-GSAx table
+# ---------------------------------------------------------------------------
+def render_nfi_goalie_table() -> None:
+    st.markdown(
+        f"<p style='color:{PALETTE['text']}; font-size:0.95rem; line-height:1.5;'>"
+        "Goalie NFI-GSAx measures goals saved above expected from dangerous zones. "
+        "Validated against MoneyPuck GSAx at r=0.858. "
+        "Minimum 2000 ES minutes for qualification.</p>",
+        unsafe_allow_html=True,
+    )
+
+    df = load_goalie_nfi()
+    if df.empty:
+        st.error("Goalie file not found at `NFI/output/goalie_nfi_gsax.csv`.")
+        return
+
+    # Filters
+    teams = st.session_state.get("nfi_teams", [])
+    if teams:
+        df = df[df["team"].isin(teams)]
+    name_q = (st.session_state.get("nfi_name", "") or "").strip().lower()
+    if name_q:
+        df = df[df["goalie_name"].fillna("").str.lower().str.contains(name_q, na=False)]
+    min_toi = st.session_state.get("nfi_min_toi", NFI_TOI_DEFAULT["pooled"])
+    df = df[df["ES_TOI_min"].fillna(0) >= min_toi]
+
+    if df.empty:
+        st.info("No goalies match the current filters.")
+        return
+
+    df = df.sort_values("NFI_GSAx_cumulative", ascending=False, na_position="last").reset_index(drop=True)
+    df.insert(0, "#", np.arange(1, len(df) + 1))
+
+    show_cols = {
+        "#": "#",
+        "goalie_name": "Goalie",
+        "team": "Team",
+        "ES_TOI_min": "TOI",
+        "NFI_GSAx_cumulative": "NFI_GSAx_cumulative",
+        "NFI_GSAx_per60": "NFI_GSAx_per60",
+        "Tier": "Tier",
+    }
+    if "CNFI_rebound_goal_rate" in df.columns:
+        show_cols["CNFI_rebound_goal_rate"] = "CNFI_rebound_goal_rate"
+        show_cols["rebound_z"] = "z_score"
+
+    disp = df[[c for c in show_cols if c in df.columns]].rename(columns=show_cols)
+
+    fmt = {}
+    if "TOI" in disp.columns:
+        fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
+    if "NFI_GSAx_cumulative" in disp.columns:
+        fmt["NFI_GSAx_cumulative"] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
+    if "NFI_GSAx_per60" in disp.columns:
+        fmt["NFI_GSAx_per60"] = lambda x: "—" if pd.isna(x) else f"{x:+.3f}"
+    if "CNFI_rebound_goal_rate" in disp.columns:
+        fmt["CNFI_rebound_goal_rate"] = lambda x: "—" if pd.isna(x) else f"{x:.3f}"
+    if "z_score" in disp.columns:
+        fmt["z_score"] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
+
+    styler = disp.style.format(fmt, na_rep="—")
+    st.dataframe(styler, width="stretch", hide_index=True)
+    st.caption(f"Showing {len(disp):,} goalies — sorted by NFI_GSAx_cumulative descending")
 
 
 def render_nfi_explainers() -> None:
@@ -1090,44 +1450,236 @@ def render_nfi_explainers() -> None:
 
 
 # ---------------------------------------------------------------------------
+# FIX 8 — Team Construction (Two Pillar) page
+# ---------------------------------------------------------------------------
+def render_team_construction_disclaimer() -> None:
+    st.markdown(
+        """
+        <div class="disclaimer-box">
+        <strong>Team Construction (Two Pillar)</strong> — Pairs each team's
+        forward group RelNFI% (TOI-weighted) against its starter goalie's NFI-GSAx
+        per 60. Quadrants reveal which teams are complete, which lean entirely on
+        their goalie, which are exposed when the goalie struggles, and which are
+        rebuilding.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_team_construction_sidebar() -> None:
+    st.sidebar.header("Team Construction Filters")
+    st.session_state.setdefault("tc_season", "Current Season")
+    st.sidebar.selectbox(
+        "Season", ["Current Season", "Pooled (2022–2026)"], key="tc_season"
+    )
+    st.sidebar.caption(
+        "Forward RelNFI% is TOI-weighted across the team. Starter = goalie with most ES shots faced."
+    )
+
+
+def render_team_construction() -> None:
+    import matplotlib.pyplot as plt
+
+    df = load_team_construction()
+    if df.empty:
+        st.error(
+            "Team construction data unavailable — required: "
+            "`player_fully_adjusted.csv`, `goalie_nfi_gsax.csv`, `shots_tagged.csv`."
+        )
+        return
+
+    season_pick = st.session_state.get("tc_season", "Current Season")
+    target = "20252026" if season_pick == "Current Season" else "pooled"
+    sub = df[df["season"] == target].dropna(
+        subset=["fwd_RelNFI_pct", "NFI_GSAx_per60"]
+    ).copy()
+    if sub.empty:
+        st.info("No teams with both metrics available for this view.")
+        return
+
+    x = sub["fwd_RelNFI_pct"]
+    y = sub["NFI_GSAx_per60"]
+    x_avg = x.mean()
+    y_avg = y.mean()
+
+    sub["q"] = np.select(
+        [
+            (sub["fwd_RelNFI_pct"] >= x_avg) & (sub["NFI_GSAx_per60"] >= y_avg),
+            (sub["fwd_RelNFI_pct"] < x_avg) & (sub["NFI_GSAx_per60"] < y_avg),
+            (sub["fwd_RelNFI_pct"] < x_avg) & (sub["NFI_GSAx_per60"] >= y_avg),
+            (sub["fwd_RelNFI_pct"] >= x_avg) & (sub["NFI_GSAx_per60"] < y_avg),
+        ],
+        ["Complete Teams", "Rebuilding", "Goalie Dependent", "Goalie Exposed"],
+        default="?",
+    )
+
+    GREEN, RED, YELLOW, ORANGE, NAVY = "#5DAA7A", "#C05555", "#D4A843", "#FF6B35", "#0B1D2E"
+
+    fig, ax = plt.subplots(figsize=(11, 7.5))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    xmin, xmax = x.min() - 0.05, x.max() + 0.05
+    ymin, ymax = y.min() - 0.05, y.max() + 0.05
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+
+    x_frac = (x_avg - xmin) / (xmax - xmin)
+    y_frac = (y_avg - ymin) / (ymax - ymin)
+    ax.axhspan(y_avg, ymax, xmin=x_frac, xmax=1.0, facecolor=GREEN, alpha=0.13)
+    ax.axhspan(ymin, y_avg, xmin=0.0, xmax=x_frac, facecolor=RED, alpha=0.13)
+    ax.axhspan(y_avg, ymax, xmin=0.0, xmax=x_frac, facecolor=YELLOW, alpha=0.13)
+    ax.axhspan(ymin, y_avg, xmin=x_frac, xmax=1.0, facecolor=YELLOW, alpha=0.13)
+
+    ax.axvline(x_avg, color=NAVY, linestyle="--", linewidth=1)
+    ax.axhline(y_avg, color=NAVY, linestyle="--", linewidth=1)
+
+    ax.text(xmax, ymax, "  Complete Teams", ha="right", va="top",
+            fontsize=11, color=GREEN, weight="bold")
+    ax.text(xmin, ymin, "  Rebuilding", ha="left", va="bottom",
+            fontsize=11, color=RED, weight="bold")
+    ax.text(xmin, ymax, "  Goalie Dependent", ha="left", va="top",
+            fontsize=11, color="#9B7E1E", weight="bold")
+    ax.text(xmax, ymin, "  Goalie Exposed", ha="right", va="bottom",
+            fontsize=11, color="#9B7E1E", weight="bold")
+
+    qcol = {"Complete Teams": GREEN, "Rebuilding": RED,
+            "Goalie Dependent": YELLOW, "Goalie Exposed": YELLOW}
+    for q, c in qcol.items():
+        sel = sub[sub["q"] == q]
+        ax.scatter(sel["fwd_RelNFI_pct"], sel["NFI_GSAx_per60"],
+                   s=140, color=c, edgecolor=NAVY, linewidth=1, zorder=3)
+
+    edm = sub[sub["team"] == "EDM"]
+    if not edm.empty:
+        ax.scatter(edm["fwd_RelNFI_pct"], edm["NFI_GSAx_per60"],
+                   s=300, facecolors="none", edgecolors=ORANGE,
+                   linewidth=3, zorder=4, label="EDM")
+
+    for _, r in sub.iterrows():
+        ax.annotate(r["team"], (r["fwd_RelNFI_pct"], r["NFI_GSAx_per60"]),
+                    xytext=(5, 5), textcoords="offset points",
+                    fontsize=9, color=NAVY, weight="bold")
+
+    ax.set_xlabel("Team Forwards RelNFI% (TOI-weighted)", color=NAVY)
+    ax.set_ylabel("Starter Goalie NFI-GSAx per 60", color=NAVY)
+    ax.set_title("Team Construction — Forwards × Goalie", color=NAVY,
+                 fontsize=14, weight="bold", pad=14)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.tick_params(colors=NAVY)
+    if not edm.empty:
+        ax.legend(loc="lower right", frameon=False)
+
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+    # Sortable rank table
+    rank_df = sub.copy()
+    rank_df["fwd_rank"] = rank_df["fwd_RelNFI_pct"].rank(ascending=False, method="min").astype(int)
+    rank_df["goalie_rank"] = rank_df["NFI_GSAx_per60"].rank(ascending=False, method="min").astype(int)
+    rank_df["combined_rank"] = (rank_df["fwd_rank"] + rank_df["goalie_rank"]).rank(method="min").astype(int)
+    rank_df = rank_df.sort_values("combined_rank")
+    out = rank_df[["team", "fwd_rank", "goalie_rank", "combined_rank", "q",
+                   "goalie_name", "fwd_RelNFI_pct", "NFI_GSAx_per60"]].rename(
+        columns={
+            "team": "Team",
+            "fwd_rank": "Forward RelNFI% rank",
+            "goalie_rank": "Goalie GSAx rank",
+            "combined_rank": "Combined rank",
+            "q": "Quadrant",
+            "goalie_name": "Starter",
+            "fwd_RelNFI_pct": "Forward RelNFI%",
+            "NFI_GSAx_per60": "Goalie GSAx /60",
+        }
+    )
+    st.dataframe(
+        out.style.format({
+            "Forward RelNFI%": "{:+.3f}",
+            "Goalie GSAx /60": "{:+.3f}",
+        }),
+        width="stretch", hide_index=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 def main() -> None:
+    # FIX 6 — initial_sidebar_state="auto"
     st.set_page_config(
         page_title="HockeyROI — Zone Time + Net Front Impact",
         page_icon="🏒",
         layout="wide",
-        initial_sidebar_state="expanded",
+        initial_sidebar_state="auto",
     )
+
+    # FIX 6 — mobile sidebar hint (rendered immediately after set_page_config)
+    st.markdown(
+        """
+        <div class="mobile-nav-hint">
+            ☰ Tap the arrow at top-left to open filters and switch between frameworks
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     inject_css()
     render_header()
 
-    # Sidebar framework selector — replaces the previous top-tab navigation.
-    # Renders above all framework-specific filters; the picked section drives
-    # which sidebar group + main content block is shown.
-    st.sidebar.markdown(
-        '<p style="color:#FF6B35; font-weight:700; font-size:1rem; margin-bottom:4px;">FRAMEWORK</p>',
-        unsafe_allow_html=True,
-    )
-    section = st.sidebar.selectbox(
-        "Framework",
-        ["Zone Impact (TNZI)", "Net Front Impact (NFI)"],
-        index=0,
-        key="framework_selector",
-        label_visibility="collapsed",
-    )
-    st.sidebar.markdown("---")
+    # FIX 11 — framework toggle buttons in main area (not sidebar)
+    if "framework" not in st.session_state:
+        st.session_state["framework"] = "NFI"
 
-    if section == "Zone Impact (TNZI)":
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        nfi_btn = st.button(
+            "Net Front Impact (NFI)",
+            use_container_width=True,
+            type="primary" if st.session_state.get("framework") == "NFI" else "secondary",
+            key="btn_nfi",
+        )
+    with col2:
+        tnzi_btn = st.button(
+            "Zone Impact (TNZI)",
+            use_container_width=True,
+            type="primary" if st.session_state.get("framework") == "TNZI" else "secondary",
+            key="btn_tnzi",
+        )
+    with col3:
+        team_btn = st.button(
+            "Team Construction",
+            use_container_width=True,
+            type="primary" if st.session_state.get("framework") == "TEAM" else "secondary",
+            key="btn_team",
+        )
+    if nfi_btn:
+        st.session_state["framework"] = "NFI"
+        st.rerun()
+    if tnzi_btn:
+        st.session_state["framework"] = "TNZI"
+        st.rerun()
+    if team_btn:
+        st.session_state["framework"] = "TEAM"
+        st.rerun()
+
+    framework = st.session_state["framework"]
+    st.markdown("<div style='margin-bottom:1rem;'></div>", unsafe_allow_html=True)
+
+    if framework == "TNZI":
         render_tnzi_disclaimer()
         render_tnzi_sidebar()
         render_tnzi_table()
         render_tnzi_explainers()
-    elif section == "Net Front Impact (NFI)":
+    elif framework == "NFI":
         render_nfi_disclaimer()
         render_nfi_sidebar()
         render_nfi_table()
         render_nfi_explainers()
+    elif framework == "TEAM":
+        render_team_construction_disclaimer()
+        render_team_construction_sidebar()
+        render_team_construction()
 
     render_footer()
 
