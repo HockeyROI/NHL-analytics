@@ -350,6 +350,35 @@ def main(limit_new: int | None = None):
 
     print(f"[4/5] writing current-season output ({len(nfi_state)} players touched, {successful} games successful) ...")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # ---- Per-team totals for off-ice / Rel calculations ----
+    # An ES event counts for ~5 on-ice skaters on each side, so the team total
+    # is sum(player on-ice counts) / 5. Same divisor applies to ES TOI: each ES
+    # second of game time contributes 5 skater-seconds per team. This mirrors
+    # the canonical pipeline in tnfi_relatives_pp_pk.py.
+    team_tot = defaultdict(lambda: {"toi_sec": 0.0, "cf_cm": 0, "ca_cm": 0,
+                                     "cf_fen": 0, "ca_fen": 0})
+    for pid, r in nfi_state.items():
+        if not r["team"]:
+            continue
+        t = team_tot[r["team"]]
+        t["toi_sec"] += r["toi_sec"]
+        t["cf_cm"]   += r["cf_cm"]
+        t["ca_cm"]   += r["ca_cm"]
+        t["cf_fen"]  += r["cf_fen"]
+        t["ca_fen"]  += r["ca_fen"]
+    for t in team_tot.values():
+        t["toi_sec"] /= 5.0
+        t["cf_cm"]   /= 5.0
+        t["ca_cm"]   /= 5.0
+        t["cf_fen"]  /= 5.0
+        t["ca_fen"]  /= 5.0
+
+    def per60(num, denom_sec):
+        if denom_sec is None or denom_sec <= 0:
+            return None
+        return num / denom_sec * 3600.0
+
     rows = []
     for pid, r in nfi_state.items():
         if r["toi_sec"] < MIN_TOI_MIN_DISPLAY * 60:
@@ -360,6 +389,32 @@ def main(limit_new: int | None = None):
         fo_total = r["fo_oz"] + r["fo_dz"]
         oz_ratio = (r["fo_oz"] / fo_total) if fo_total > 0 else 0.5
         nfi_za = nfi_pct - NFI_ZA_FACTOR * (oz_ratio - 0.5)
+
+        # Rel-NFI / Rel-FF: on-ice rate − off-ice rate (per 60 ES min)
+        rel_f = rel_a = rel_combined = None
+        rel_ff_f = rel_ff_a = rel_ff_combined = None
+        team_id = r.get("team", "")
+        if team_id and team_id in team_tot:
+            tt = team_tot[team_id]
+            off_toi_sec = tt["toi_sec"] - r["toi_sec"]
+            if off_toi_sec > 0 and r["toi_sec"] > 0:
+                on60_cf_cm  = per60(r["cf_cm"],  r["toi_sec"])
+                on60_ca_cm  = per60(r["ca_cm"],  r["toi_sec"])
+                off60_cf_cm = per60(tt["cf_cm"]  - r["cf_cm"],  off_toi_sec)
+                off60_ca_cm = per60(tt["ca_cm"]  - r["ca_cm"],  off_toi_sec)
+                if None not in (on60_cf_cm, on60_ca_cm, off60_cf_cm, off60_ca_cm):
+                    rel_f = on60_cf_cm - off60_cf_cm
+                    rel_a = off60_ca_cm - on60_ca_cm
+                    rel_combined = rel_f + rel_a
+                on60_cf_fen  = per60(r["cf_fen"], r["toi_sec"])
+                on60_ca_fen  = per60(r["ca_fen"], r["toi_sec"])
+                off60_cf_fen = per60(tt["cf_fen"] - r["cf_fen"], off_toi_sec)
+                off60_ca_fen = per60(tt["ca_fen"] - r["ca_fen"], off_toi_sec)
+                if None not in (on60_cf_fen, on60_ca_fen, off60_cf_fen, off60_ca_fen):
+                    rel_ff_f = on60_cf_fen - off60_cf_fen
+                    rel_ff_a = off60_ca_fen - on60_ca_fen
+                    rel_ff_combined = rel_ff_f + rel_ff_a
+
         rows.append({
             "player_id": int(pid),
             "player_name": name_map.get(int(pid), ""),
@@ -373,9 +428,10 @@ def main(limit_new: int | None = None):
             "NFI_pct_ZA": nfi_za,
             "NFI_pct_3A": None,
             "NFQOC":      None, "NFQOL": None,
-            "RelNFI_F_pct": None, "RelNFI_A_pct": None, "RelNFI_pct": None,
+            "RelNFI_F_pct": rel_f, "RelNFI_A_pct": rel_a, "RelNFI_pct": rel_combined,
             "NFI_pct_3A_MOM": None,
             "FF_pct":     ff_pct, "FF_pct_ZA": None, "FF_pct_3A": None,
+            "RelFF_F_pct": rel_ff_f, "RelFF_A_pct": rel_ff_a, "RelFF_pct": rel_ff_combined,
             "CF_pct":     None,   "CF_pct_ZA": None, "CF_pct_3A": None,
         })
 
@@ -395,6 +451,7 @@ def main(limit_new: int | None = None):
             "RelNFI_F_pct", "RelNFI_A_pct", "RelNFI_pct",
             "NFI_pct_3A_MOM",
             "FF_pct", "FF_pct_ZA", "FF_pct_3A",
+            "RelFF_F_pct", "RelFF_A_pct", "RelFF_pct",
             "CF_pct", "CF_pct_ZA", "CF_pct_3A",
         ])
     out_df.to_csv(existing, index=False)
