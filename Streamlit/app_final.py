@@ -174,25 +174,32 @@ def playoff_season_options(df: pd.DataFrame) -> list[str]:
     """Return the playoff season options to show in the Season dropdown.
     Always starts with 'All Playoffs (2022–2025)'. Per-year options follow,
     newest first. The 'all_playoffs' / 'playoffs' / empty values are pooled
-    markers and are excluded from the per-year list."""
+    markers and are excluded from the per-year list. The current-season
+    playoff option ('2025-26 Playoffs') is always appended at the end so
+    users see the bucket; the table renders a coming-soon note until games
+    are played."""
     options = list(PLAYOFF_SEASON_OPTIONS_BASE)
-    if df is None or df.empty or "season" not in df.columns:
-        return options
-    # Exclude pooled markers from the per-year set
-    distinct = set(df["season"].astype(str).unique()) - {"playoffs", "all_playoffs", ""}
-    # Sort newest first (descending int order on yearly keys like '20242025')
-    distinct = sorted(distinct, reverse=True)
     label_map = {
         "20222023": "2022-23 Playoffs",
         "20232024": "2023-24 Playoffs",
         "20242025": "2024-25 Playoffs",
         "20252026": "2025-26 Playoffs",
     }
-    for s in distinct:
-        lbl = label_map.get(s, f"{s} Playoffs")
-        if lbl not in options:
-            options.append(lbl)
+    if df is not None and not df.empty and "season" in df.columns:
+        distinct = set(df["season"].astype(str).unique()) - {"playoffs", "all_playoffs", ""}
+        distinct = sorted(distinct, reverse=True)
+        for s in distinct:
+            lbl = label_map.get(s, f"{s} Playoffs")
+            if lbl not in options:
+                options.append(lbl)
+    # FIX 1 — always expose the current-season playoff bucket
+    if "2025-26 Playoffs" not in options:
+        options.append("2025-26 Playoffs")
     return options
+
+
+CURRENT_PLAYOFF_LABEL = "2025-26 Playoffs"
+CURRENT_PLAYOFF_KEY = "20252026"
 
 
 @st.cache_data(show_spinner=False)
@@ -322,19 +329,50 @@ def load_goalie_nfi() -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def load_team_construction() -> pd.DataFrame:
-    """Per (team, season) starter goalie + forward RelNFI% (TOI-weighted)."""
-    players_fp = NFI_ADJ / "current_season_player_fully_adjusted.csv"
+def load_team_construction(season_choice: str = "Current Season (2025-26)") -> pd.DataFrame:
+    """Per-team forward RelNFI% (TOI-weighted) joined with the team's primary
+    goalie GSAx /60. Uses only player_fully_adjusted CSVs and goalie_nfi_gsax —
+    no shots_tagged dependency.
+
+    'Current Season (2025-26)' loads current_season_player_fully_adjusted.csv.
+    'Pooled (2022–2026)' loads the full multi-season player file and TOI-weights
+    across all seasons.
+
+    Starter goalie per team is identified from the lightweight
+    Goalies/Benchmarks Goalies/Data/goalie_team_lookup.csv (games_played per
+    goalie-team-season). The primary goalie = the one with the most
+    games_played for that team (current season) or summed across seasons
+    (pooled view).
+    """
+    # Resolve which file to load
+    cur_fp = NFI_ADJ / "current_season_player_fully_adjusted.csv"
     full_fp = NFI_ADJ / "player_fully_adjusted.csv"
-    shots_fp = REPO_ROOT / "NFI" / "output" / "shots_tagged.csv"
-    if not (full_fp.exists() and shots_fp.exists()):
+    players = pd.DataFrame()
+    if season_choice == "Current Season (2025-26)":
+        if cur_fp.exists():
+            players = pd.read_csv(cur_fp)
+            # The current-season export occasionally ships with all-NaN
+            # RelNFI columns (mid-pipeline state). If that's the case, fall
+            # back to the full file filtered to 20252026.
+            if "RelNFI_pct" not in players.columns or players["RelNFI_pct"].isna().all():
+                players = pd.DataFrame()
+        if players.empty and full_fp.exists():
+            full = pd.read_csv(full_fp)
+            full["season"] = full["season"].astype(str)
+            players = full[full["season"] == "20252026"].copy()
+    else:
+        if not full_fp.exists():
+            return pd.DataFrame()
+        players = pd.read_csv(full_fp)
+
+    if players.empty:
         return pd.DataFrame()
 
-    players = pd.read_csv(full_fp)
-    players["season"] = players["season"].astype(str)
-
-    # Forward team avg per season (TOI weighted)
-    fwd = players[(players["position"] == "F")].dropna(subset=["RelNFI_pct", "team"]).copy()
+    fwd = players[(players["position"] == "F")].dropna(
+        subset=["RelNFI_pct", "team"]
+    ).copy()
+    if fwd.empty:
+        return pd.DataFrame()
 
     def wmean(g: pd.DataFrame) -> float:
         toi = g["toi_min"].astype(float)
@@ -343,55 +381,44 @@ def load_team_construction() -> pd.DataFrame:
         return float(np.average(g["RelNFI_pct"], weights=toi))
 
     fwd_team = (
-        fwd.groupby(["team", "season"]).apply(wmean, include_groups=False)
-           .rename("fwd_RelNFI_pct").reset_index()
-    )
-
-    # Pooled view across seasons (TOI-weighted)
-    fwd_pool = (
         fwd.groupby("team").apply(wmean, include_groups=False)
            .rename("fwd_RelNFI_pct").reset_index()
     )
-    fwd_pool["season"] = "pooled"
-    fwd_team = pd.concat([fwd_team, fwd_pool], ignore_index=True)
 
-    # Starter goalie per (team, season) by ES shots faced
-    shots = pd.read_csv(shots_fp)
-    shots = shots.dropna(subset=["goalie_id"]).copy()
-    shots["goalie_id"] = shots["goalie_id"].astype("int64")
-    shots["season"] = shots["season"].astype(str)
-    shots["defending_team"] = np.where(
-        shots["shooting_team_abbrev"] == shots["home_team_abbrev"],
-        shots["away_team_abbrev"], shots["home_team_abbrev"],
-    )
-    shots = shots[
-        (shots["state"] == "ES") & shots["period"].between(1, 3)
-    ]
-    starter_season = (
-        shots.groupby(["defending_team", "season", "goalie_id"]).size().rename("faced").reset_index()
-            .sort_values(["defending_team", "season", "faced"], ascending=[True, True, False])
-            .drop_duplicates(["defending_team", "season"], keep="first")
-            .rename(columns={"defending_team": "team"})
-    )
-    starter_pool = (
-        shots.groupby(["defending_team", "goalie_id"]).size().rename("faced").reset_index()
-            .sort_values(["defending_team", "faced"], ascending=[True, False])
-            .drop_duplicates("defending_team", keep="first")
-            .rename(columns={"defending_team": "team"})
-    )
-    starter_pool["season"] = "pooled"
-    starter = pd.concat([starter_season, starter_pool], ignore_index=True)
-
-    # Attach goalie metric
+    # Goalie metric — pooled across seasons in goalie_nfi_gsax.csv
     g = load_goalie_nfi()
     if g.empty:
         return pd.DataFrame()
+
+    # Starter per team — use goalie_team_lookup.csv (in-repo, lightweight).
+    # If unavailable, fall back to assigning each goalie to the team listed
+    # in the goalie loader (latest team).
+    lookup_fp = REPO_ROOT / "Goalies" / "Benchmarks Goalies" / "Data" / "goalie_team_lookup.csv"
+    if lookup_fp.exists():
+        lk = pd.read_csv(lookup_fp)
+        if season_choice == "Current Season (2025-26)":
+            lk = lk[lk["season"].astype(str) == "20252026"]
+        # Highest games_played per (team, goalie) -> primary goalie for the team
+        starter = (
+            lk.groupby(["goalie_team", "goalie_id"])["games_played"].sum()
+              .rename("games").reset_index()
+              .sort_values(["goalie_team", "games"], ascending=[True, False])
+              .drop_duplicates("goalie_team", keep="first")
+              .rename(columns={"goalie_team": "team"})
+        )
+    else:
+        starter = (
+            g.dropna(subset=["team"])
+             .sort_values("ES_TOI_min", ascending=False)
+             .drop_duplicates("team", keep="first")[["team", "goalie_id"]]
+        )
+
     starter = starter.merge(
-        g[["goalie_id", "goalie_name", "NFI_GSAx_per60", "NFI_GSAx_cumulative"]],
+        g[["goalie_id", "goalie_name", "NFI_GSAx_cumulative", "NFI_GSAx_per60"]],
         on="goalie_id", how="left",
     )
 
-    out = fwd_team.merge(starter, on=["team", "season"], how="inner")
+    out = fwd_team.merge(starter, on="team", how="inner")
     return out
 
 
@@ -624,6 +651,16 @@ def inject_css() -> None:
             color: {PALETTE['text']} !important;
             border: 1px solid {PALETTE['blue']} !important;
         }}
+        /* FIX 4 — ensure buttons remain tappable on mobile (no overlay layer
+           is intercepting clicks; force pointer events + tap optimisations). */
+        [data-testid="stButton"] button {{
+            pointer-events: auto !important;
+            touch-action: manipulation !important;
+            -webkit-tap-highlight-color: rgba(0,0,0,0) !important;
+            cursor: pointer !important;
+            position: relative !important;
+            z-index: 100 !important;
+        }}
 
         /* FIX 6 — Mobile sidebar hint */
         @media (max-width: 768px) {{
@@ -637,6 +674,10 @@ def inject_css() -> None:
                 margin-bottom: 1rem;
                 text-align: center;
                 font-weight: bold;
+                /* FIX 4 — keep z-index low so it doesn't intercept taps on
+                   the framework toggle buttons that follow */
+                z-index: 1 !important;
+                position: relative;
             }}
         }}
         @media (min-width: 769px) {{
@@ -878,9 +919,20 @@ def render_tnzi_table() -> None:
     game_type = st.session_state.get("game_type_tnzi", "Regular Season")
     season = st.session_state.get("f_season", REGULAR_SEASON_OPTIONS[0])
     if game_type == "Playoffs":
+        # FIX 1 — current-season playoffs not yet started
+        if season == CURRENT_PLAYOFF_LABEL:
+            st.markdown(
+                '<p style="color:#F0F4F8;">2025-26 playoff data will populate '
+                'automatically as games are played.</p>',
+                unsafe_allow_html=True,
+            )
+            return
         data = load_combined_playoffs()
         if data.empty:
-            st.caption("🏒 TNZI playoff data coming soon — populates automatically as games are played")
+            st.markdown(
+                '<p style="color:#F0F4F8;">🏒 TNZI playoff data coming soon — populates automatically as games are played</p>',
+                unsafe_allow_html=True,
+            )
             return
         # Per-year playoff filter: match the dropdown label to the season
         # column written by build_playoff_data.py ('all_playoffs' or
@@ -1302,9 +1354,20 @@ def render_nfi_table() -> None:
     season = st.session_state.get("nfi_season", REGULAR_SEASON_OPTIONS[0])
 
     if game_type == "Playoffs":
+        # FIX 1 — current-season playoffs not yet started
+        if season == CURRENT_PLAYOFF_LABEL:
+            st.markdown(
+                '<p style="color:#F0F4F8;">2025-26 playoff data will populate '
+                'automatically as games are played.</p>',
+                unsafe_allow_html=True,
+            )
+            return
         if not nfi_playoffs_available():
-            st.caption("🏒 Playoff data coming soon — populates automatically as games are played")
-            st.stop()
+            st.markdown(
+                '<p style="color:#F0F4F8;">🏒 Playoff data coming soon — populates automatically as games are played</p>',
+                unsafe_allow_html=True,
+            )
+            return
         df = load_nfi_playoffs()
         if df.empty:
             st.error("NFI playoff file is empty.")
@@ -1378,15 +1441,18 @@ def render_nfi_goalie_table() -> None:
         st.error("Goalie file not found at `NFI/output/goalie_nfi_gsax.csv`.")
         return
 
-    # Filters
+    # Filters — goalies use a fixed 2000-min qualification regardless of the
+    # skater TOI slider; the slider exists only for skaters.
     teams = st.session_state.get("nfi_teams", [])
-    if teams:
+    if teams and "team" in df.columns:
         df = df[df["team"].isin(teams)]
     name_q = (st.session_state.get("nfi_name", "") or "").strip().lower()
     if name_q:
         df = df[df["goalie_name"].fillna("").str.lower().str.contains(name_q, na=False)]
-    min_toi = st.session_state.get("nfi_min_toi", NFI_TOI_DEFAULT["pooled"])
-    df = df[df["ES_TOI_min"].fillna(0) >= min_toi]
+
+    GOALIE_MIN_TOI = 2000
+    if "ES_TOI_min" in df.columns and df["ES_TOI_min"].notna().any():
+        df = df[df["ES_TOI_min"].fillna(0) >= GOALIE_MIN_TOI]
 
     if df.empty:
         st.markdown(
@@ -1501,31 +1567,31 @@ def render_team_construction_disclaimer() -> None:
 
 def render_team_construction_sidebar() -> None:
     st.sidebar.header("Team Construction Filters")
-    st.session_state.setdefault("tc_season", "Current Season")
+    st.session_state.setdefault("tc_season", "Current Season (2025-26)")
     st.sidebar.selectbox(
-        "Season", ["Current Season", "Pooled (2022–2026)"], key="tc_season"
+        "Season",
+        ["Current Season (2025-26)", "Pooled (2022–2026)"],
+        key="tc_season",
     )
     st.sidebar.caption(
-        "Forward RelNFI% is TOI-weighted across the team. Starter = goalie with most ES shots faced."
+        "Forward RelNFI% is TOI-weighted across the team. "
+        "Starter goalie is the one with the most games played for the team."
     )
 
 
 def render_team_construction() -> None:
     import matplotlib.pyplot as plt
 
-    df = load_team_construction()
+    season_choice = st.session_state.get("tc_season", "Current Season (2025-26)")
+    df = load_team_construction(season_choice)
     if df.empty:
         st.error(
             "Team construction data unavailable — required: "
-            "`player_fully_adjusted.csv`, `goalie_nfi_gsax.csv`, `shots_tagged.csv`."
+            "`player_fully_adjusted.csv` and `goalie_nfi_gsax.csv`."
         )
         return
 
-    season_pick = st.session_state.get("tc_season", "Current Season")
-    target = "20252026" if season_pick == "Current Season" else "pooled"
-    sub = df[df["season"] == target].dropna(
-        subset=["fwd_RelNFI_pct", "NFI_GSAx_per60"]
-    ).copy()
+    sub = df.dropna(subset=["fwd_RelNFI_pct", "NFI_GSAx_per60"]).copy()
     if sub.empty:
         st.markdown(
             '<p style="color:#F0F4F8;">No teams with both metrics available for this view.</p>',
@@ -1641,12 +1707,13 @@ def render_team_construction() -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 def main() -> None:
-    # FIX 6 — initial_sidebar_state="auto"
+    # FIX 4 — start with the sidebar collapsed so mobile users can immediately
+    # tap the framework toggle buttons without an open sidebar overlapping them.
     st.set_page_config(
         page_title="HockeyROI — Zone Time + Net Front Impact",
         page_icon="🏒",
         layout="wide",
-        initial_sidebar_state="auto",
+        initial_sidebar_state="collapsed",
     )
 
     # FIX 6 — mobile sidebar hint (rendered immediately after set_page_config)
