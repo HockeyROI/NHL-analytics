@@ -1707,13 +1707,15 @@ def render_team_construction() -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 def main() -> None:
-    # FIX 4 — start with the sidebar collapsed so mobile users can immediately
-    # tap the framework toggle buttons without an open sidebar overlapping them.
+    # Sidebar starts expanded on desktop (where filters need to be visible).
+    # On mobile, the orange .mobile-nav-hint banner instructs users to tap
+    # the arrow at top-left to open the sidebar — that's sufficient guidance
+    # without forcing 'collapsed' which would hide all filters on desktop.
     st.set_page_config(
         page_title="HockeyROI — Zone Time + Net Front Impact",
         page_icon="🏒",
         layout="wide",
-        initial_sidebar_state="collapsed",
+        initial_sidebar_state="expanded",
     )
 
     # FIX 6 — mobile sidebar hint (rendered immediately after set_page_config)
