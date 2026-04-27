@@ -50,27 +50,34 @@ GAME_TYPE_OPTIONS = ["Regular Season", "Playoffs"]
 PLAYOFF_POOLED_LABEL = "All Playoffs (2022–2026)"
 PLAYOFF_SEASON_OPTIONS_BASE = [PLAYOFF_POOLED_LABEL]
 
-SEASON_TO_DOZI_COL = {
-    "2025-26": "DOZI_25_26",
-    "2024-25": "DOZI_24_25",
-    "2023-24": "DOZI_23_24",
+SEASON_TO_DTNZI_COL = {
+    "2025-26": "DTNZI_25_26",
+    "2024-25": "DTNZI_24_25",
+    "2023-24": "DTNZI_23_24",
 }
 
 FLAG_EMOJI = {"RISING": "🟢", "STABLE": "🟡", "DECLINING": "🔴"}
 
-TERTILE_METRICS = ["OZI", "DZI", "NZI", "TNZI", "TNZI_C", "TNZI_L", "TNZI_CL"]
+# Spec colors for TNZI / TOZI / TDZI tertile shading + DTNZI_flag coloring.
+# Independent of the softer PALETTE['rising'/'stable'/'declining'] used elsewhere
+# in the app — keeping those untouched preserves NFI tab styling.
+TERTILE_COLORS = {
+    "high": "#44AA66",   # top third  — green
+    "mid":  "#FFB700",   # middle     — yellow
+    "low":  "#CC3333",   # bottom     — red
+}
+
+TERTILE_METRICS = ["TNZI_L", "TNZI", "TOZI", "TDZI"]
 
 DISPLAY_COLUMNS = [
-    "player_name", "team", "pos", "GP", "seasons_qualified",
-    # FIX 4 — TNZI_L is the primary metric and goes first; TNZI_CL right after,
-    # then the rest in priority order.
-    "TNZI_L", "TNZI_CL", "TNZI",
-    "OZI", "DZI", "NZI",
-    "TNZI_C",
+    "player_name", "team", "pos", "GP",
+    # FIX 4 — TNZI_L is the primary individual metric, surface it first.
+    # The remaining columns gracefully degrade if TNZI_L isn't present in
+    # the source CSV (fallback to TNZI/TOZI/TDZI driven views).
+    "TNZI_L",
+    "TNZI", "TOZI", "TDZI",
+    "DTNZI_recent", "DTNZI_flag",
     "ZQoC", "ZQoL",
-    "DOZI_23/24", "DOZI_24/25", "DOZI_25/26",
-    "DOZI_trend", "DOZI_recent",
-    "DOZI_flag",
 ]
 
 NFI_SEASON_KEY = {
@@ -126,6 +133,20 @@ def load_adjusted(position: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def load_tozi_tdzi(metric: str, position: str) -> pd.DataFrame:
+    """Read TOZI / TDZI CSVs from Zones/adjusted_rankings/.
+    Returns a slim 4-column frame: player_name, team, pos, <metric>."""
+    fp = ADJ / f"{metric.lower()}_adjusted_{position}.csv"
+    if not fp.exists():
+        return pd.DataFrame(columns=["player_name", "team", "pos", metric])
+    df = pd.read_csv(fp)
+    if metric not in df.columns:
+        return pd.DataFrame(columns=["player_name", "team", "pos", metric])
+    keep = ["player_name", "team", "pos", metric]
+    return df[[c for c in keep if c in df.columns]].copy()
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_combined_regular() -> pd.DataFrame:
     frames = []
     for pos_file in ("forwards", "defense"):
@@ -133,6 +154,13 @@ def load_combined_regular() -> pd.DataFrame:
         if not d.empty:
             d = d.copy()
             d["_pos_group"] = pos_file
+            # Merge TOZI / TDZI columns from their respective CSVs.
+            for new_metric in ("TOZI", "TDZI"):
+                add = load_tozi_tdzi(new_metric, pos_file)
+                if add.empty:
+                    d[new_metric] = pd.NA
+                    continue
+                d = d.merge(add, on=["player_name", "team", "pos"], how="left")
             frames.append(d)
     if not frames:
         return pd.DataFrame()
@@ -391,15 +419,17 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
     if players.empty:
         return pd.DataFrame()
 
-    # Pick X-axis metric: prefer RelNFI_pct, fall back to NFI_pct_ZA when
-    # RelNFI is missing (e.g. mid-pipeline current-season export). Carry the
-    # source label out via attribute so the renderer can label the axis.
-    if "RelNFI_pct" in players.columns and players["RelNFI_pct"].notna().any():
-        x_metric = "RelNFI_pct"
-        x_label = "Forward RelNFI%"
-    else:
+    # FIX 9 — X-axis = team-average NFI%_ZA (TOI-weighted). RelNFI% can't
+    # aggregate cleanly because it's defined as on-ice minus off-ice within
+    # each team and demean's to ~zero per team. NFI%_ZA is the correct
+    # team-level predictor. Fallback to RelNFI_pct only if NFI_pct_ZA is
+    # entirely missing.
+    if "NFI_pct_ZA" in players.columns and players["NFI_pct_ZA"].notna().any():
         x_metric = "NFI_pct_ZA"
-        x_label = "Forward NFI%_ZA (RelNFI unavailable)"
+        x_label = "Forward NFI%_ZA"
+    else:
+        x_metric = "RelNFI_pct"
+        x_label = "Forward RelNFI% (NFI%_ZA unavailable)"
 
     fwd = players[(players["position"] == "F")].dropna(
         subset=[x_metric, "team"]
@@ -766,8 +796,8 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         f = f[f["_pos_group"] == "defense"]
 
     season = st.session_state.get("f_season", SEASON_OPTIONS[0])
-    if season in SEASON_TO_DOZI_COL:
-        col = SEASON_TO_DOZI_COL[season]
+    if season in SEASON_TO_DTNZI_COL:
+        col = SEASON_TO_DTNZI_COL[season]
         if col in f.columns:
             f = f[f[col].notna()]
     elif season == "2022-23":
@@ -787,8 +817,8 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         f = f[pd.to_numeric(f["GP"], errors="coerce").fillna(0) >= min_gp]
 
     flag = st.session_state.get("f_flag", "All")
-    if flag != "All" and "DOZI_flag" in f.columns:
-        f = f[f["DOZI_flag"] == flag]
+    if flag != "All" and "DTNZI_flag" in f.columns:
+        f = f[f["DTNZI_flag"] == flag]
 
     return f
 
@@ -797,20 +827,12 @@ def prepare_display(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     out = df.copy()
-    rename = {
-        "DOZI_23_24": "DOZI_23/24",
-        "DOZI_24_25": "DOZI_24/25",
-        "DOZI_25_26": "DOZI_25/26",
-        "IOZC": "ZQoC",
-        "IOZL": "ZQoL",
-    }
-    out = out.rename(columns=rename)
-    if "DOZI_flag" in out.columns:
+    if "DTNZI_flag" in out.columns:
         def _fmt(v):
             if pd.isna(v) or v == "" or v is None:
                 return ""
             return f"{FLAG_EMOJI.get(v, '')} {v}".strip()
-        out["DOZI_flag"] = out["DOZI_flag"].apply(_fmt)
+        out["DTNZI_flag"] = out["DTNZI_flag"].apply(_fmt)
     cols = [c for c in DISPLAY_COLUMNS if c in out.columns]
     return out[cols]
 
@@ -833,11 +855,11 @@ def style_frame(display_df: pd.DataFrame, color_map: bool = True):
                 out.append("")
                 continue
             if x >= high:
-                out.append(f"background-color: {PALETTE['rising']}; color: white;")
+                out.append(f"background-color: {TERTILE_COLORS['high']}; color: white;")
             elif x >= low:
-                out.append(f"background-color: {PALETTE['stable']}; color: black;")
+                out.append(f"background-color: {TERTILE_COLORS['mid']}; color: black;")
             else:
-                out.append(f"background-color: {PALETTE['declining']}; color: white;")
+                out.append(f"background-color: {TERTILE_COLORS['low']}; color: white;")
         return out
 
     def color_flag(col):
@@ -845,17 +867,22 @@ def style_frame(display_df: pd.DataFrame, color_map: bool = True):
         for v in col:
             s = str(v) if v is not None else ""
             if "RISING" in s:
-                out.append(f"background-color: {PALETTE['rising']}; color: white;")
+                out.append(f"background-color: {TERTILE_COLORS['high']}; color: white;")
             elif "STABLE" in s:
-                out.append(f"background-color: {PALETTE['stable']}; color: black;")
+                out.append(f"background-color: {TERTILE_COLORS['mid']}; color: black;")
             elif "DECLINING" in s:
-                out.append(f"background-color: {PALETTE['declining']}; color: white;")
+                out.append(f"background-color: {TERTILE_COLORS['low']}; color: white;")
             else:
                 out.append("")
         return out
 
+    # FIX 4 — TNZI_L is the primary individual metric. Use brand-orange
+    # (strongest) heat map intensity, matching the RelNFI% treatment in NFI.
+    PRIMARY_TOP = "#FF6B35"
+    PRIMARY_MID = "#B07A14"
+    PRIMARY_LOW = "#8C2A2A"
+
     def color_primary(col_name):
-        # FIX 4 — strongest tertile heat map, always shown on the primary col.
         cut = cutoffs.get(col_name)
         if not cut:
             return [""] * len(display_df)
@@ -869,35 +896,35 @@ def style_frame(display_df: pd.DataFrame, color_map: bool = True):
                 continue
             if x >= high:
                 out.append(
-                    f"background-color: {PALETTE['rising']}; color: white;"
+                    f"background-color: {PRIMARY_TOP}; color: white;"
                     " font-weight: 700;"
                 )
             elif x >= low:
                 out.append(
-                    f"background-color: {PALETTE['stable']}; color: black;"
+                    f"background-color: {PRIMARY_MID}; color: white;"
                     " font-weight: 700;"
                 )
             else:
                 out.append(
-                    f"background-color: {PALETTE['declining']}; color: white;"
+                    f"background-color: {PRIMARY_LOW}; color: white;"
                     " font-weight: 700;"
                 )
         return out
 
     styler = display_df.style
-    # FIX 4 — TNZI_L (primary metric) always highlighted with strongest intensity
+    # FIX 4 — TNZI_L (primary metric) gets the strongest highlight always
     if "TNZI_L" in display_df.columns:
         styler = styler.apply(lambda _c: color_primary("TNZI_L"), subset=["TNZI_L"])
 
-    # FIX 7 — secondary heat map only on pooled view; otherwise plain text.
-    if color_map:
-        for m in TERTILE_METRICS:
-            if m == "TNZI_L":
-                continue  # already painted as primary
-            if m in display_df.columns:
-                styler = styler.apply(lambda _c, name=m: color_metric(name), subset=[m])
-        if "DOZI_flag" in display_df.columns:
-            styler = styler.apply(color_flag, subset=["DOZI_flag"])
+    # Standard tertile shading on the remaining metrics. color_map kept as a
+    # pass-through arg for back-compat with the playoff branch.
+    for m in TERTILE_METRICS:
+        if m == "TNZI_L":
+            continue  # already painted as primary
+        if m in display_df.columns:
+            styler = styler.apply(lambda _c, name=m: color_metric(name), subset=[m])
+    if "DTNZI_flag" in display_df.columns:
+        styler = styler.apply(color_flag, subset=["DTNZI_flag"])
 
     fmt = {}
     for m in TERTILE_METRICS:
@@ -906,9 +933,8 @@ def style_frame(display_df: pd.DataFrame, color_map: bool = True):
     for m in ("ZQoC", "ZQoL"):
         if m in display_df.columns:
             fmt[m] = "{:.3f}"
-    for m in ("DOZI_23/24", "DOZI_24/25", "DOZI_25/26", "DOZI_trend", "DOZI_recent"):
-        if m in display_df.columns:
-            fmt[m] = "{:+.3f}"
+    if "DTNZI_recent" in display_df.columns:
+        fmt["DTNZI_recent"] = "{:+.3f}"
     styler = styler.format(fmt, na_rep="—")
     return styler
 
@@ -949,13 +975,12 @@ def render_tnzi_disclaimer() -> None:
     st.markdown(
         """
         <div class="disclaimer-box">
-        <strong>Already sorted by TNZI_L — the most informative individual metric.</strong>
-        TNZI adjusted for linemate quality strips out teammate effects to reveal individual
-        contribution. Higher is better. Use it to find players who genuinely drive zone
-        time themselves rather than riding good linemates.<br><br>
-        <strong>Note:</strong> Zone time metrics do not outperform Corsi or xG% as team
-        winning predictors. These metrics excel at individual player context — decomposing
-        linemate effects and enabling clean same-team comparisons.
+        <strong>Primary Metric: TNZI_L</strong> — Zone impact adjusted for linemate
+        quality. Measures how well a player drives zone possession after neutral zone
+        faceoffs independent of their linemates. TNZI does not outperform Corsi or
+        xG% as a team winning predictor (r=0.603 pooled). It excels at individual
+        player context and same-team comparisons.<br><br>
+        Already sorted by TNZI_L — the most informative individual metric.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1008,7 +1033,7 @@ def render_tnzi_sidebar() -> None:
     st.sidebar.multiselect("Teams", NHL_TEAMS, key="f_teams")
     st.sidebar.text_input("Player name contains", key="f_name")
     st.sidebar.slider("Minimum GP", min_value=0, max_value=400, step=5, key="f_min_gp")
-    st.sidebar.selectbox("DOZI flag", ["All", "RISING", "STABLE", "DECLINING"], key="f_flag")
+    st.sidebar.selectbox("DTNZI flag", ["All", "RISING", "STABLE", "DECLINING"], key="f_flag")
 
 
 def render_tnzi_table() -> None:
@@ -1048,8 +1073,9 @@ def render_tnzi_table() -> None:
         return
 
     display_df = prepare_display(filtered)
-    # Hardcoded default sort: TNZI_L descending (best individual-contribution metric).
-    # Playoff data lacks TNZI_L/CL — fall back to TNZI, then to first column.
+    # FIX 4 — Default sort: TNZI_L descending (primary individual metric).
+    # Falls back to TNZI then to the first column if absent (e.g. playoff
+    # frames that don't carry TNZI_L yet).
     default_sort = next(
         (c for c in ("TNZI_L", "TNZI") if c in display_df.columns),
         display_df.columns[0],
@@ -1075,17 +1101,10 @@ def render_tnzi_explainers() -> None:
         st.markdown(EXPANDER_STYLE, unsafe_allow_html=True)
         st.markdown(
             f'<ul style="color:{W};">'
-            f'<li style="color:{W};"><strong>OZI</strong>: After an offensive zone faceoff, what % of the shift generated events in the offensive zone. Measures zone retention.</li>'
-            f'<li style="color:{W};"><strong>DZI</strong>: After a defensive zone faceoff, what % of the shift generated events in the offensive zone. Measures complete eventful transition from own end to attack.</li>'
-            f'<li style="color:{W};"><strong>NZI</strong>: After a neutral zone faceoff, what % of the shift generated events in the offensive zone. Measures offensive zone reach from equal footing.</li>'
-            f'<li style="color:{W};"><strong>TNZI</strong>: After a neutral zone faceoff, net difference between offensive and defensive zone events. Positive = net offensive driver. Negative = net drag.</li>'
-            f'<li style="color:{W};"><strong>TNZI_C</strong>: TNZI adjusted for quality of competition faced. Higher competition = more credit.</li>'
-            f'<li style="color:{W};"><strong>TNZI_L</strong>: TNZI adjusted for quality of linemates. Better linemates = score adjusted down. Best measure of individual contribution.</li>'
-            f'<li style="color:{W};"><strong>TNZI_CL</strong>: TNZI adjusted for both competition and linemates.</li>'
-            f'<li style="color:{W};"><strong>ZQoC</strong>: Zone Quality of Competition — weighted average zone metric score of opponents faced. Higher = tougher competition.</li>'
-            f'<li style="color:{W};"><strong>ZQoL</strong>: Zone Quality of Linemates — weighted average zone metric score of teammates. Higher = better linemates.</li>'
-            f'<li style="color:{W};"><strong>DOZI</strong>: Delta on Zone Impact — year over year change in TNZI score. Positive = improving. Negative = declining.</li>'
-            f'<li style="color:#F0F4F8;"><strong>DOZI vs NFI%_3A_MOM</strong>: DOZI (Zone Impact) and NFI%_3A_MOM (Net Front Impact) both measure year-over-year player trajectory but through different frameworks. DOZI tracks zone possession change. NFI%_3A_MOM tracks dangerous zone shot quality change. Use both together for the most complete picture of player momentum.</li>'
+            f'<li style="color:{W};"><strong>TNZI</strong>: Net zone driving from neutral ice faceoffs. OZ event time% minus DZ event time% after NZ starts. Best single zone time predictor of team winning (r=0.490 pooled).</li>'
+            f'<li style="color:{W};"><strong>TOZI</strong>: Net zone sustain after offensive zone faceoffs. OZ minus DZ event time% after OZ starts. Did you hold the zone or give it back?</li>'
+            f'<li style="color:{W};"><strong>TDZI</strong>: Net zone transition after defensive zone faceoffs. OZ minus DZ event time% after DZ starts. Did you fully escape your own end and transition to attack? (r=0.448 pooled)</li>'
+            f'<li style="color:{W};"><strong>DTNZI</strong>: Delta on TNZI — year over year change in zone driving score. RISING = improving. DECLINING = deteriorating. STABLE = consistent.</li>'
             f'</ul>',
             unsafe_allow_html=True,
         )
@@ -1132,15 +1151,13 @@ def render_nfi_disclaimer() -> None:
     st.markdown(
         """
         <div class="disclaimer-box">
-        <strong>Primary Metric: RelNFI%</strong> — Two-way dangerous zone impact combined.
-        RelNFI% = RelNFI_F% (generation) + RelNFI_A% (suppression). The individual metric
-        that predicts winning — r=0.764 against standings, beating xG% (0.733), HD Fenwick
-        (0.694), and Corsi (0.631) across 126 team-seasons.<br><br>
-        Sort by <strong>RelNFI%</strong> for most complete two-way players.
+        <strong>Primary Metric: RelNFI%</strong> — Two-way dangerous zone impact
+        (generation + suppression). r=0.769 vs standings across 126 team-seasons.
+        Beats xG% (r=0.731), HD Fenwick (r=0.732), and Corsi (r=0.650).<br><br>
+        Sort by <strong>RelNFI%</strong> for most complete players.
         Sort by <strong>RelNFI_F%</strong> for pure generators.
         Sort by <strong>RelNFI_A%</strong> for pure suppressors.
-        <strong>NFI%_3A</strong> is the fairest individual comparison — fully adjusted for
-        deployment, competition quality, and linemate quality simultaneously.
+        Zone adjustment applied using <strong>3.5pp conventional factor</strong>.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1423,9 +1440,13 @@ def _style_nfi(display_df: pd.DataFrame, color_map: bool = True):
                 out.append(f"background-color: {PALETTE['declining']}; color: white;")
         return out
 
-    # FIX 3 — RelNFI% is the primary metric. Use a higher-intensity tertile
-    # heat map on it; the other metric columns get the standard tertile
-    # treatment only on the pooled view.
+    # FIX 3 — RelNFI% is the primary metric. Top tertile gets the brand
+    # orange (strongest possible visual emphasis), middle tertile a darker
+    # gold, bottom tertile a darker red. Bold weight throughout.
+    PRIMARY_TOP = "#FF6B35"   # brand orange
+    PRIMARY_MID = "#B07A14"   # darker gold for mid tier
+    PRIMARY_LOW = "#8C2A2A"   # darker red for bottom tier
+
     def color_primary(col):
         vals = pd.to_numeric(col, errors="coerce")
         clean = vals.dropna()
@@ -1438,17 +1459,17 @@ def _style_nfi(display_df: pd.DataFrame, color_map: bool = True):
                 out.append("")
             elif v >= high:
                 out.append(
-                    f"background-color: {PALETTE['rising']}; color: white;"
+                    f"background-color: {PRIMARY_TOP}; color: white;"
                     " font-weight: 700;"
                 )
             elif v >= low:
                 out.append(
-                    f"background-color: {PALETTE['stable']}; color: black;"
+                    f"background-color: {PRIMARY_MID}; color: white;"
                     " font-weight: 700;"
                 )
             else:
                 out.append(
-                    f"background-color: {PALETTE['declining']}; color: white;"
+                    f"background-color: {PRIMARY_LOW}; color: white;"
                     " font-weight: 700;"
                 )
         return out
@@ -1534,29 +1555,26 @@ def render_nfi_table() -> None:
     display_df = _nfi_display(filtered)
     display_df.insert(0, "#", filtered["Rank"].values)
 
-    # FIX 5 — three summary stat boxes above the table
-    # FIX 2 — NaN guard so playoff data (RelNFI all NaN) shows N/A not +nan
+    # FIX 8 — three summary stat boxes above the table; show 0.00 instead
+    # of NaN so playoff data (RelNFI all NaN) doesn't display "+nan".
     def _avg(col):
         if col not in display_df.columns:
-            return None
+            return 0.0
         v = display_df[col].mean()
-        return None if pd.isna(v) else float(v)
+        return 0.0 if pd.isna(v) else float(v)
 
     avg_f = _avg("RelNFI_F%")
     avg_a = _avg("RelNFI_A%")
     avg_rel = _avg("RelNFI%")
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Avg Generation",
-                  "N/A" if avg_f is None else f"{avg_f:+.2f}",
+        st.metric("Avg Generation", f"{avg_f:+.2f}",
                   help="Average RelNFI_F% for filtered players")
     with col2:
-        st.metric("Avg Suppression",
-                  "N/A" if avg_a is None else f"{avg_a:+.2f}",
+        st.metric("Avg Suppression", f"{avg_a:+.2f}",
                   help="Average RelNFI_A% for filtered players")
     with col3:
-        st.metric("Avg Two-Way",
-                  "N/A" if avg_rel is None else f"{avg_rel:+.2f}",
+        st.metric("Avg Two-Way", f"{avg_rel:+.2f}",
                   help="Average RelNFI% for filtered players")
 
     is_pooled_view = season == DEFAULT_SEASON
@@ -1680,7 +1698,7 @@ def render_nfi_explainers() -> None:
             f'<li style="color:{W};"><strong>NFQOC</strong> — <strong>Net Front Quality of Competition</strong> — shared-TOI weighted mean of opponents\' NFI%, computed linemate-without-me to avoid shared-event collinearity.</li>'
             f'<li style="color:{W};"><strong>NFQOL</strong> — <strong>Net Front Quality of Linemates</strong> — same approach for teammates.</li>'
             f'<li style="color:{W};"><strong>NFI%_3A_MOM</strong> — year-over-year change in NFI%_3A. Positive = ascending.</li>'
-            f'<li style="color:#F0F4F8;"><strong>NFI%_3A_MOM vs DOZI</strong>: NFI%_3A_MOM tracks year-over-year change in quality-adjusted dangerous zone performance. DOZI in the Zone Impact tab tracks zone possession change. They measure analogous momentum concepts through different methodologies — check both tabs for the most complete player trajectory picture.</li>'
+            f'<li style="color:#F0F4F8;"><strong>NFI%_3A_MOM vs DTNZI</strong>: NFI%_3A_MOM tracks year-over-year change in quality-adjusted dangerous zone performance. DTNZI in the Zone Impact tab tracks zone possession change. They measure analogous momentum concepts through different methodologies — check both tabs for the most complete player trajectory picture.</li>'
             f'</ul>',
             unsafe_allow_html=True,
         )
@@ -1738,15 +1756,14 @@ def render_team_construction_sidebar() -> None:
     st.sidebar.header("Team Construction Filters")
     st.sidebar.markdown("### Season")
     st.session_state.setdefault("tc_season", "Current Season (2025-26)")
+    # FIX 9 — two options only, current vs pooled
     st.sidebar.selectbox(
         "Season",
-        # FIX 9 — most-recent first, pooled at the bottom
-        ["Current Season (2025-26)", "2024-25", "2023-24", "2022-23",
-         "Pooled (2022–2026)"],
+        ["Current Season (2025-26)", "Pooled (2022–2026)"],
         key="tc_season",
     )
     st.sidebar.caption(
-        "Forward RelNFI% is TOI-weighted across the team. "
+        "Forward NFI%_ZA is TOI-weighted across the team. "
         "Starter goalie is the one with the most games played for the team."
     )
 
