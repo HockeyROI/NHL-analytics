@@ -426,11 +426,15 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
     x_metric = "NFI_pct_ZA"
     x_label = "Forward NFI%_ZA"
 
-    fwd = players[(players["position"] == "F")].dropna(
+    # FIX 8 — include ALL skaters (forwards + defensemen). Goalies are the
+    # only thing we exclude; the player file uses 'position' values F / D / G
+    # (some files also carry L / R / C which all map to forwards).
+    skaters = players[players["position"] != "G"].dropna(
         subset=[x_metric, "team"]
     ).copy()
-    if fwd.empty:
+    if skaters.empty:
         return pd.DataFrame()
+    fwd = skaters  # rename kept downstream for minimal diff
 
     def wmean(g: pd.DataFrame) -> float:
         toi = g["toi_min"].astype(float)
@@ -1035,24 +1039,20 @@ def render_tnzi_table() -> None:
     game_type = st.session_state.get("game_type_tnzi", "Regular Season")
     season = st.session_state.get("f_season", REGULAR_SEASON_OPTIONS[0])
     if game_type == "Playoffs":
-        # FIX 4 — 2025-26 playoffs not yet started
+        # FIX 1a — 2025-26 playoffs not yet started: dedicated coming-soon msg
         if season == CURRENT_PLAYOFF_LABEL:
             st.info("2025-26 playoff data will populate automatically as games are played.")
             return
-        data = load_combined_playoffs()
-        if data.empty:
-            st.markdown(
-                '<p style="color:#F0F4F8;">🏒 TNZI playoff data coming soon — populates automatically as games are played</p>',
-                unsafe_allow_html=True,
-            )
-            return
-        # Per-year playoff filter: match the dropdown label to the season
-        # column written by build_playoff_data.py ('all_playoffs' or
-        # int year like 20242025).
-        target_key = PLAYOFF_SEASON_LABEL_TO_KEY.get(season)
-        if target_key is not None and "season" in data.columns:
-            # Same defensive cast as the NFI playoff filter
-            data = data[data["season"].astype("string").astype(str) == str(target_key)]
+        # FIX 1b — for ALL other playoff selections, show the context-only
+        # message instead of player rankings; samples are too small for
+        # reliable per-player rankings in playoffs.
+        st.info(
+            "Playoff data is available but individual player samples are too small "
+            "for reliable rankings (median 7–28 games per player). Use the Team "
+            "Construction tab to evaluate playoff performance at the team level."
+        )
+        st.markdown("For goalie playoff performance see the Goalies position filter.")
+        return
     else:
         data = load_combined_regular()
         if data.empty:
@@ -1091,6 +1091,11 @@ def render_tnzi_table() -> None:
         display_df = display_df.sort_values(
             default_sort, ascending=False, na_position="last"
         )
+
+    # FIX 6 — prepend an integer Rank column (no heat map). Reset index so
+    # the rank lines up with the post-sort row order.
+    display_df = display_df.reset_index(drop=True)
+    display_df.insert(0, "Rank", np.arange(1, len(display_df) + 1))
 
     is_pooled_view = season == DEFAULT_SEASON
     st.dataframe(
@@ -1164,8 +1169,9 @@ def render_nfi_disclaimer() -> None:
         Beats xG% (r=0.731), HD Fenwick (r=0.732), and Corsi (r=0.650).<br><br>
         Sort by <strong>RelNFI%</strong> for most complete players.
         Sort by <strong>RelNFI_F%</strong> for pure generators.
-        Sort by <strong>RelNFI_A%</strong> for pure suppressors.
-        Zone adjustment applied using <strong>3.5pp conventional factor</strong>.
+        Sort by <strong>RelNFI_A%</strong> for pure suppressors.<br><br>
+        <em>Zone adjustment not applied to individual rankings — RelNFI% is
+        zone-adjustment-invariant by construction.</em>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1398,16 +1404,15 @@ def _nfi_display(df: pd.DataFrame) -> pd.DataFrame:
         "CF_pct_ZA": "CF%_ZA", "FF_pct_ZA": "FF%_ZA",
     })
     show_cf_ff = bool(st.session_state.get("nfi_show_corsi_fenwick", False))
-    # FIX 5 — display only the columns the spec requires:
-    # Player, Team, Position, TOI, RelNFI%, RelNFI_F%, RelNFI_A%, NFI%, NFI%_ZA.
-    # NFI%_3A, NFQOC, NFQOL, NFI%_3A_MOM dropped from the displayed table.
+    # FIX 5 — drop NFI%_ZA from the player table; raw NFI% only.
+    # RelNFI% is zone-adjustment-invariant so the ZA flavour adds no signal
+    # for individual rankings.
     cols = ["Player", "Pos", "Team", "TOI",
             "RelNFI%", "RelNFI_F%", "RelNFI_A%",
-            "NFI%", "NFI%_ZA"]
+            "NFI%"]
     if show_cf_ff:
-        # Insert CF/FF right next to NFI%_ZA for direct comparison
-        idx = cols.index("NFI%_ZA")
-        cols = cols[:idx] + ["CF%_ZA", "FF%_ZA"] + cols[idx:]
+        # CF/FF comparison still useful — append after NFI%
+        cols += ["CF%_ZA", "FF%_ZA"]
     cols = [c for c in cols if c in out.columns]
     return out[cols]
 
@@ -1526,21 +1531,20 @@ def render_nfi_table() -> None:
         return
 
     if game_type == "Playoffs":
-        # FIX 4 — 2025-26 playoffs not yet started
+        # FIX 1a — 2025-26 playoffs not yet started: dedicated coming-soon msg
         if season == CURRENT_PLAYOFF_LABEL:
             st.info("2025-26 playoff data will populate automatically as games are played.")
             return
-        if not nfi_playoffs_available():
-            st.markdown(
-                '<p style="color:#F0F4F8;">🏒 Playoff data coming soon — populates automatically as games are played</p>',
-                unsafe_allow_html=True,
-            )
-            return
-        df = load_nfi_playoffs()
-        if df.empty:
-            st.error("NFI playoff file is empty.")
-            return
-        filtered = _filter_nfi_playoffs(df, season)
+        # FIX 1b — for ALL other playoff selections, show the context-only
+        # message instead of player rankings; samples are too small for
+        # reliable per-player rankings in playoffs.
+        st.info(
+            "Playoff data is available but individual player samples are too small "
+            "for reliable rankings (median 7–28 games per player). Use the Team "
+            "Construction tab to evaluate playoff performance at the team level."
+        )
+        st.markdown("For goalie playoff performance see the Goalies position filter.")
+        return
     else:
         df = load_nfi_player()
         if df.empty:
@@ -1642,14 +1646,13 @@ def render_nfi_goalie_table(game_type: str | None = None,
         st.error("Goalie file not found at `NFI/output/goalie_nfi_gsax.csv`.")
         return
 
-    # Per-season caption — the underlying CSV is pooled across seasons, so
-    # per-season views show the pooled table with a heads-up caption.
-    season_caption = None
-    if season != DEFAULT_SEASON:
-        season_caption = (
-            f"Showing pooled multi-season goalie data — "
-            f"per-season goalie breakdown for {season} coming soon."
-        )
+    # FIX 3 — Goalie tab always shows pooled career totals regardless of
+    # the season selector (no season filtering for goalies); a single caption
+    # explains it.
+    season_caption = (
+        "Goalie rankings show pooled career totals (2022-23 through 2025-26). "
+        "Per-season goalie breakdown coming soon."
+    )
 
     # Filters — goalies use a fixed 2000-min qualification regardless of the
     # skater TOI slider; the slider exists only for skaters.
@@ -1767,7 +1770,7 @@ def render_team_construction_disclaimer() -> None:
         """
         <div class="disclaimer-box">
         <strong>Team Construction (Two Pillar)</strong> — Pairs each team's
-        forward group RelNFI% (TOI-weighted) against its starter goalie's NFI-GSAx
+        skater group NFI%_ZA (forwards + defensemen, TOI-weighted) against its starter goalie's NFI-GSAx
         per 60. Quadrants reveal which teams are complete, which lean entirely on
         their goalie, which are exposed when the goalie struggles, and which are
         rebuilding.
@@ -1784,11 +1787,13 @@ def render_team_construction_sidebar() -> None:
     # FIX 9 — two options only, current vs pooled
     st.sidebar.selectbox(
         "Season",
-        ["Current Season (2025-26)", "Pooled (2022–2026)"],
+        # FIX 4 — five season options: current + three historical years + pooled
+        ["Current Season (2025-26)", "2024-25", "2023-24", "2022-23",
+         "Pooled (2022–2026)"],
         key="tc_season",
     )
     st.sidebar.caption(
-        "Forward NFI%_ZA is TOI-weighted across the team. "
+        "NFI%_ZA is TOI-weighted across all skaters (forwards and defensemen). "
         "Starter goalie is the one with the most games played for the team."
     )
 
@@ -1882,7 +1887,7 @@ def render_team_construction() -> None:
                     xytext=(5, 5), textcoords="offset points",
                     fontsize=9, color=NAVY, weight="bold")
 
-    ax.set_xlabel(f"Team Forwards {x_label} (TOI-weighted)", color=NAVY)
+    ax.set_xlabel("Team NFI%_ZA (Forwards + D, TOI-weighted)", color=NAVY)
     ax.set_ylabel("Starter Goalie NFI-GSAx per 60", color=NAVY)
     ax.set_title("Team Construction — Forwards × Goalie", color=NAVY,
                  fontsize=14, weight="bold", pad=14)
@@ -1893,6 +1898,15 @@ def render_team_construction() -> None:
         ax.legend(loc="lower right", frameon=False)
 
     st.pyplot(fig, clear_figure=True, use_container_width=True)
+
+    # FIX 7 — caveat caption: scatter shows construction quality, not standings
+    st.caption(
+        "Note: This scatter shows two-pillar construction quality — not "
+        "current standings. A team can rank highly here while underperforming "
+        "in standings due to goaltending variance, special teams, or PDO. "
+        "Columbus (CBJ) ranks highly due to strong goalie GSAx combined with "
+        "above-average NFI%_ZA."
+    )
 
     # Sortable rank table
     rank_df = sub.copy()
