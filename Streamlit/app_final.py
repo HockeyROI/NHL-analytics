@@ -70,14 +70,14 @@ TERTILE_COLORS = {
 TERTILE_METRICS = ["TNZI_L", "TNZI", "TOZI", "TDZI"]
 
 DISPLAY_COLUMNS = [
+    # Bio: name, team, pos, GP (TNZI source CSVs use 'pos' / 'GP', not the
+    # NFI-side 'position' / 'toi_min').
     "player_name", "team", "pos", "GP",
-    # FIX 4 — TNZI_L is the primary individual metric, surface it first.
-    # The remaining columns gracefully degrade if TNZI_L isn't present in
-    # the source CSV (fallback to TNZI/TOZI/TDZI driven views).
-    "TNZI_L",
-    "TNZI", "TOZI", "TDZI",
+    # FIX 2 / FIX 4 — TNZI_L first metric column. Only the six metric columns
+    # the user wants displayed: TNZI_L, TNZI, TOZI, TDZI, DTNZI_recent,
+    # DTNZI_flag. ZQoC / ZQoL removed.
+    "TNZI_L", "TNZI", "TOZI", "TDZI",
     "DTNZI_recent", "DTNZI_flag",
-    "ZQoC", "ZQoL",
 ]
 
 NFI_SEASON_KEY = {
@@ -419,17 +419,12 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
     if players.empty:
         return pd.DataFrame()
 
-    # FIX 9 — X-axis = team-average NFI%_ZA (TOI-weighted). RelNFI% can't
-    # aggregate cleanly because it's defined as on-ice minus off-ice within
-    # each team and demean's to ~zero per team. NFI%_ZA is the correct
-    # team-level predictor. Fallback to RelNFI_pct only if NFI_pct_ZA is
-    # entirely missing.
-    if "NFI_pct_ZA" in players.columns and players["NFI_pct_ZA"].notna().any():
-        x_metric = "NFI_pct_ZA"
-        x_label = "Forward NFI%_ZA"
-    else:
-        x_metric = "RelNFI_pct"
-        x_label = "Forward RelNFI% (NFI%_ZA unavailable)"
+    # FIX 8 — X-axis is ALWAYS NFI_pct_ZA. RelNFI% can't aggregate cleanly
+    # (it's defined as on-ice minus off-ice within each team and demeans to
+    # ~zero per team), so NFI%_ZA is the correct team-level predictor — no
+    # fallback.
+    x_metric = "NFI_pct_ZA"
+    x_label = "Forward NFI%_ZA"
 
     fwd = players[(players["position"] == "F")].dropna(
         subset=[x_metric, "team"]
@@ -1073,16 +1068,29 @@ def render_tnzi_table() -> None:
         return
 
     display_df = prepare_display(filtered)
-    # FIX 4 — Default sort: TNZI_L descending (primary individual metric).
-    # Falls back to TNZI then to the first column if absent (e.g. playoff
-    # frames that don't carry TNZI_L yet).
-    default_sort = next(
-        (c for c in ("TNZI_L", "TNZI") if c in display_df.columns),
-        display_df.columns[0],
-    )
-    display_df = display_df.sort_values(
-        by=default_sort, ascending=False, na_position="last"
-    )
+    # FIX 3 — Default sort: TNZI_L descending. If a row is missing TNZI_L,
+    # fall back to that row's TNZI (per-row fallback, not just per-column).
+    # Build a synthetic "_sort" key that prefers TNZI_L and uses TNZI when
+    # TNZI_L is NaN.
+    if "TNZI_L" in display_df.columns:
+        primary = pd.to_numeric(display_df["TNZI_L"], errors="coerce")
+        fallback = (pd.to_numeric(display_df["TNZI"], errors="coerce")
+                    if "TNZI" in display_df.columns else primary)
+        display_df = display_df.assign(_sort=primary.fillna(fallback))
+        display_df = display_df.sort_values(
+            "_sort", ascending=False, na_position="last"
+        ).drop(columns=["_sort"])
+        default_sort = "TNZI_L"
+    elif "TNZI" in display_df.columns:
+        display_df = display_df.sort_values(
+            "TNZI", ascending=False, na_position="last"
+        )
+        default_sort = "TNZI"
+    else:
+        default_sort = display_df.columns[0]
+        display_df = display_df.sort_values(
+            default_sort, ascending=False, na_position="last"
+        )
 
     is_pooled_view = season == DEFAULT_SEASON
     st.dataframe(
@@ -1273,6 +1281,7 @@ def _aggregate_nfi_pooled(df: pd.DataFrame) -> pd.DataFrame:
             "position": pos,
             "team": g.sort_values("season")["team"].iloc[-1],
             "toi_min": toi_total,
+            "NFI_pct":    tw("NFI_pct"),
             "NFI_pct_ZA": tw("NFI_pct_ZA"),
             "NFI_pct_3A": tw("NFI_pct_3A"),
             "RelNFI_F_pct": tw("RelNFI_F_pct"),
@@ -1304,7 +1313,7 @@ def _filter_nfi(df: pd.DataFrame, season_opt: str) -> pd.DataFrame:
         sub = df[df["season"] == season_key].copy()
         keep_cols = [
             "player_id", "player_name", "position", "team", "toi_min",
-            "NFI_pct_ZA", "NFI_pct_3A",
+            "NFI_pct", "NFI_pct_ZA", "NFI_pct_3A",
             "RelNFI_F_pct", "RelNFI_A_pct", "RelNFI_pct",
             "NFQOC", "NFQOL",
             "NFI_pct_3A_MOM",
@@ -1381,6 +1390,7 @@ def _nfi_display(df: pd.DataFrame) -> pd.DataFrame:
         )
     out = out.rename(columns={
         "player_name": "Player", "position": "Pos", "team": "Team", "toi_min": "TOI",
+        "NFI_pct": "NFI%",
         "NFI_pct_ZA": "NFI%_ZA", "NFI_pct_3A": "NFI%_3A",
         "RelNFI_F_pct": "RelNFI_F%", "RelNFI_A_pct": "RelNFI_A%", "RelNFI_pct": "RelNFI%",
         "NFQOC": "NFQOC", "NFQOL": "NFQOL",
@@ -1388,10 +1398,12 @@ def _nfi_display(df: pd.DataFrame) -> pd.DataFrame:
         "CF_pct_ZA": "CF%_ZA", "FF_pct_ZA": "FF%_ZA",
     })
     show_cf_ff = bool(st.session_state.get("nfi_show_corsi_fenwick", False))
-    # FIX 3 — RelNFI% is now the primary metric, surfaced first
-    cols = ["Player", "Pos", "Team", "TOI", "RelNFI%",
-            "RelNFI_F%", "RelNFI_A%",
-            "NFI%_ZA", "NFI%_3A", "NFQOC", "NFQOL", "NFI%_3A_MOM"]
+    # FIX 5 — display only the columns the spec requires:
+    # Player, Team, Position, TOI, RelNFI%, RelNFI_F%, RelNFI_A%, NFI%, NFI%_ZA.
+    # NFI%_3A, NFQOC, NFQOL, NFI%_3A_MOM dropped from the displayed table.
+    cols = ["Player", "Pos", "Team", "TOI",
+            "RelNFI%", "RelNFI_F%", "RelNFI_A%",
+            "NFI%", "NFI%_ZA"]
     if show_cf_ff:
         # Insert CF/FF right next to NFI%_ZA for direct comparison
         idx = cols.index("NFI%_ZA")
@@ -1488,7 +1500,7 @@ def _style_nfi(display_df: pd.DataFrame, color_map: bool = True):
                 styler = styler.apply(color_pct_tertile, subset=[c])
 
     fmt = {}
-    for c in ("NFI%_ZA", "NFI%_3A", "NFQOC", "NFQOL", "CF%_ZA", "FF%_ZA"):
+    for c in ("NFI%", "NFI%_ZA", "NFI%_3A", "NFQOC", "NFQOL", "CF%_ZA", "FF%_ZA"):
         if c in display_df.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
     for c in ("RelNFI_F%", "RelNFI_A%", "RelNFI%"):
@@ -1504,13 +1516,14 @@ def _style_nfi(display_df: pd.DataFrame, color_map: bool = True):
 
 
 def render_nfi_table() -> None:
-    # FIX 7 — Goalies branch
-    if st.session_state.get("nfi_position", "All") == "Goalies":
-        render_nfi_goalie_table()
-        return
-
     game_type = st.session_state.get("game_type_nfi", "Regular Season")
     season = st.session_state.get("nfi_season", REGULAR_SEASON_OPTIONS[0])
+
+    # FIX 6 — Goalies branch: pass current game_type + season so the goalie
+    # table refreshes when either selector changes.
+    if st.session_state.get("nfi_position", "All") == "Goalies":
+        render_nfi_goalie_table(game_type=game_type, season=season)
+        return
 
     if game_type == "Playoffs":
         # FIX 4 — 2025-26 playoffs not yet started
@@ -1555,17 +1568,17 @@ def render_nfi_table() -> None:
     display_df = _nfi_display(filtered)
     display_df.insert(0, "#", filtered["Rank"].values)
 
-    # FIX 8 — three summary stat boxes above the table; show 0.00 instead
-    # of NaN so playoff data (RelNFI all NaN) doesn't display "+nan".
-    def _avg(col):
-        if col not in display_df.columns:
+    # FIX 9 — safe_avg: NaN guard so playoff data (RelNFI all NaN) renders
+    # +0.00 instead of +nan in the three summary boxes.
+    def safe_avg(series):
+        if series is None:
             return 0.0
-        v = display_df[col].mean()
-        return 0.0 if pd.isna(v) else float(v)
+        val = series.mean()
+        return 0.0 if pd.isna(val) else float(val)
 
-    avg_f = _avg("RelNFI_F%")
-    avg_a = _avg("RelNFI_A%")
-    avg_rel = _avg("RelNFI%")
+    avg_f = safe_avg(display_df["RelNFI_F%"]) if "RelNFI_F%" in display_df.columns else 0.0
+    avg_a = safe_avg(display_df["RelNFI_A%"]) if "RelNFI_A%" in display_df.columns else 0.0
+    avg_rel = safe_avg(display_df["RelNFI%"]) if "RelNFI%" in display_df.columns else 0.0
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Avg Generation", f"{avg_f:+.2f}",
@@ -1595,7 +1608,27 @@ def render_nfi_table() -> None:
 # ---------------------------------------------------------------------------
 # FIX 7 — Goalie NFI-GSAx table
 # ---------------------------------------------------------------------------
-def render_nfi_goalie_table() -> None:
+def render_nfi_goalie_table(game_type: str | None = None,
+                            season: str | None = None) -> None:
+    """FIX 6 — reactive to game_type and season selectors.
+
+    - Playoffs → "Goalie playoff data coming soon." (always, regardless of
+      which playoff year is selected).
+    - Regular Season → renders the goalie table; per-season views show pooled
+      multi-season data with a caption noting per-season breakdown is upcoming.
+    """
+    # If the caller didn't pass them, read from session state. Reading state
+    # here also makes Streamlit re-run this function whenever the toggles
+    # change, so the table refreshes with each switch.
+    if game_type is None:
+        game_type = st.session_state.get("game_type_nfi", "Regular Season")
+    if season is None:
+        season = st.session_state.get("nfi_season", DEFAULT_SEASON)
+
+    if game_type == "Playoffs":
+        st.info("Goalie playoff data coming soon.")
+        return
+
     st.markdown(
         f"<p style='color:{PALETTE['text']}; font-size:0.95rem; line-height:1.5;'>"
         "Goalie NFI-GSAx measures goals saved above expected from dangerous zones. "
@@ -1604,21 +1637,13 @@ def render_nfi_goalie_table() -> None:
         unsafe_allow_html=True,
     )
 
-    # FIX 5 — react to game type / season selectors
-    game_type = st.session_state.get("game_type_nfi", "Regular Season")
-    season = st.session_state.get("nfi_season", DEFAULT_SEASON)
-    if game_type == "Playoffs":
-        st.info("Goalie playoff data coming soon — populates automatically as games are played.")
-        return
-
     df = load_goalie_nfi()
     if df.empty:
         st.error("Goalie file not found at `NFI/output/goalie_nfi_gsax.csv`.")
         return
 
-    # Pooled view always uses the file as-is. Per-season views are based on
-    # the same pooled file with a caption noting that per-season goalie
-    # breakdowns aren't yet wired through (the underlying CSV is pooled).
+    # Per-season caption — the underlying CSV is pooled across seasons, so
+    # per-season views show the pooled table with a heads-up caption.
     season_caption = None
     if season != DEFAULT_SEASON:
         season_caption = (
@@ -1902,8 +1927,6 @@ def render_team_construction() -> None:
 # ---------------------------------------------------------------------------
 def main() -> None:
     # FIX 11 — sidebar always starts expanded so desktop users see filters.
-    # Mobile users get a small hint near the top of the main column directing
-    # them to the sidebar arrow.
     st.set_page_config(
         page_title="HockeyROI — Zone Time + Net Front Impact",
         page_icon="🏒",
@@ -1911,58 +1934,43 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
 
-    # FIX 2 — session-state defaults must be set before any widget runs,
-    # otherwise the first render shows an empty NFI table while widgets
-    # settle on their own defaults.
-    st.session_state.setdefault("framework",     "NFI")
-    st.session_state.setdefault("nfi_season",    "Pooled (2022–2026)")
-    st.session_state.setdefault("nfi_game_type", "Regular Season")
-    st.session_state.setdefault("game_type_nfi", "Regular Season")
-    st.session_state.setdefault("nfi_position",  "All")
+    # FIX 1 — session-state defaults set BEFORE any widget renders, so the
+    # very first paint of the NFI tab has the right season / game type / pos.
+    for key, val in {
+        "framework":     "NFI",
+        "nfi_season":    "Pooled (2022–2026)",
+        "nfi_game_type": "Regular Season",
+        "nfi_position":  "All",
+        "game_type_nfi": "Regular Season",
+    }.items():
+        st.session_state.setdefault(key, val)
+    # Per-tab widget defaults — also seeded before any widget runs.
+    for key, val in {
+        "nfi_teams": [], "nfi_name": "",
+        "nfi_min_toi": NFI_TOI_DEFAULT["pooled"],
+        "nfi_last_season": "Pooled (2022–2026)",
+        "nfi_show_corsi_fenwick": False,
+        "f_position": "All", "game_type_tnzi": "Regular Season",
+        "f_season": REGULAR_SEASON_OPTIONS[0], "f_teams": [],
+        "f_name": "", "f_min_gp": 0, "f_flag": "All",
+        "tc_season": "Current Season (2025-26)",
+    }.items():
+        st.session_state.setdefault(key, val)
+
+    # FIX 1 — load NFI pooled data unconditionally before framework selector.
+    # The cache_data on _preload_nfi / load_nfi_player keeps this O(0) on
+    # subsequent reruns.
+    _nfi_preload = _preload_nfi()
+    _prefetch_all()
 
     inject_css()
     render_header()
 
-    # FIX 2 — Pre-load NFI data at startup so the very first click on the
-    # NFI tab is instant (no flash of empty / no loading delay).
-    _nfi_preload = _preload_nfi()
-
-    # Warm every other cached loader too (TNZI, goalies, team construction)
-    # so framework switches don't pay a load penalty either.
-    _prefetch_all()
-
-    # FIX 11 — small, mobile-only filter hint (replaces the old orange banner)
+    # Small mobile-only filter hint
     st.markdown(
         '<p class="mobile-filter-hint">← Use the sidebar arrow to access filters</p>',
         unsafe_allow_html=True,
     )
-
-    # ----- explicit session-state init (defaults need to be set before any
-    # widget reads them, otherwise the very first render produces an empty
-    # NFI table while the sidebar widgets settle on their defaults) -----
-    _DEFAULTS = {
-        "framework":         "NFI",
-        "nfi_position":      "All",
-        "game_type_nfi":     "Regular Season",
-        "nfi_game_type":     "Regular Season",  # alias kept for safety
-        "nfi_season":        "Pooled (2022–2026)",
-        "nfi_teams":         [],
-        "nfi_name":          "",
-        "nfi_min_toi":       NFI_TOI_DEFAULT["pooled"],
-        "nfi_last_season":   "Pooled (2022–2026)",
-        "nfi_show_corsi_fenwick": False,
-        "f_position":        "All",
-        "game_type_tnzi":    "Regular Season",
-        "f_season":          REGULAR_SEASON_OPTIONS[0],
-        "f_teams":           [],
-        "f_name":            "",
-        "f_min_gp":          0,
-        "f_flag":            "All",
-        "tc_season":         "Current Season (2025-26)",
-    }
-    for _k, _v in _DEFAULTS.items():
-        if _k not in st.session_state:
-            st.session_state[_k] = _v
 
     # FIX 11 — framework toggle buttons in main area (not sidebar)
 
