@@ -1,4 +1,22 @@
 #!/usr/bin/env python3
+# ──────────────────────────────────────────────────────────────────────
+# STATUS: One-time audit/migration tool (May 2026).
+# Last run: May 1, 2026. Output CSVs (team_metrics_base.csv,
+# team_level_all_metrics.csv, metrics_team.csv) are frozen snapshots.
+#
+# WARNING: This script defines NFI_ZONES = {CNFI, MNFI, FNFI} (line ~47)
+# and produces a TNFI_pct column that INCLUDES FNFI. Per the May 2026
+# framework decision, FNFI is dropped from all headline NFI metrics.
+#
+# DO NOT rerun this script without first updating NFI_ZONES to
+# {CNFI, MNFI} only and reviewing the TNFI_pct aggregation at line ~583.
+# Rerunning as-is would regenerate FNFI-contaminated columns.
+#
+# Live canonical pipeline (PIPELINE.md) does not read TNFI_pct or
+# FNFI_* columns from the output of this script — only points/gp.
+# Contamination is therefore inert with respect to active workflows.
+# See Master Handoff line 386 and METHODOLOGY.md for context.
+# ──────────────────────────────────────────────────────────────────────
 """Definitional cleanup — pick one ES definition, audit + migrate.
 
 Two coexisting "ES" definitions in the codebase:
