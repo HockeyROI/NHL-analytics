@@ -142,3 +142,18 @@ NFI/Output/**/complete_breakdown_horse_race.csv
 NFI/Output/**/pp_pk_horse_race.csv
 NFI/Output/**/team_construction_model*.csv
 NFI/Output/**/team_archetypes*.csv
+
+# === Post-Phase-5 R-framing-adjacent script triage (May 4, 2026 evening) ===
+
+# Audit-era variant top50 scripts (V3/V5 decision-tree variants, Corsi/HD-Corsi leaderboards)
+NFI/scripts/38_top50_v3_v5.py
+NFI/scripts/39_corsi_top50_current.py
+NFI/scripts/40_hd_corsi_top50_current.py
+
+# Audit-era zone-factor investigation (superseded by factor_first_principles.py)
+NFI/scripts/41_zone_factor_investigation.py
+
+# Post/paper chart-generation scripts (tied to specific publication layouts, not framework)
+NFI/scripts/42_publication_charts_7.py
+NFI/scripts/build_8_charts.py
+NFI/scripts/build_post_charts.py
