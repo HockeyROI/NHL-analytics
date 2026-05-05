@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Conversion rate (goals/attempts) by shot_type and zone.
 ES regulation only, 5-season pool, min 500 attempts per cell."""
+import os
 import math
 import numpy as np
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 SHOT = f"{ROOT}/Data/nhl_shot_events.csv"
 OUT = f"{ROOT}/NFI/output/shot_type_by_zone.csv"
 SEASONS = {"20212022","20222023","20232024","20242025","20252026"}

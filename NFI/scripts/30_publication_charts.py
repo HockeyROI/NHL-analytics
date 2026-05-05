@@ -19,8 +19,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.cm import ScalarMappable
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT  = f"{ROOT}/NFI/output"
 CHART_DIR = f"{OUT}/charts"
 os.makedirs(CHART_DIR, exist_ok=True)

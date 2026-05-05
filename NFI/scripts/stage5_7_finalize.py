@@ -148,8 +148,8 @@ def r2(x, y):
 
 stage5 = []
 for metric, raw_col, za_col, za_trad_col, fa_col, fa_trad_col, zone_method, factor_pp in [
-    ("V5 (NFI% on-ice all skaters)", "NFI_pct", "ZA_NFI_emp", None, "FA_NFI_emp", None, "ZA empirical", 10.71),
-    ("V1b (NFI% on-ice forwards)",    "V1b_raw", "V1b_ZA", None, "FA_V1b", None, "ZA empirical", 10.71),
+    ("V5 (NFI% on-ice all skaters)", "NFI_pct", "ZA_NFI_emp", None, "FA_NFI_emp", None, "ZA empirical", 3.5),
+    ("V1b (NFI% on-ice forwards)",    "V1b_raw", "V1b_ZA", None, "FA_V1b", None, "ZA empirical", 3.5),
     ("Fenwick CF%",                   "FF_pct", "ZA_FF_emp", "ZA_FF_trad", "FA_FF_emp", "FA_FF_trad", "ZA empirical", 11.91),
     ("Corsi CF%",                     "CF_pct", "ZA_CF_emp", "ZA_CF_trad", "FA_CF_emp", "FA_CF_trad", "ZA empirical", 3.89),
 ]:

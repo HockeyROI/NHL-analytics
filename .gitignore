@@ -52,3 +52,93 @@ gitignore.txt
 gitignore_alternate.txt
 Referees/Ref Cache/
 gitignore.txt
+
+# === Added May 2026 audit cleanup ===
+
+# Audit snapshots from any cycle (Phase 1 archive lives under _legacy/)
+*.pre*.csv
+
+# Legacy archives
+**/_legacy/
+**/_pre_corsi_backup/
+
+# Charts (stale numbers from pre-audit; do not push)
+**/Charts/
+
+# Raw NHL API dumps (NFI side; Zones/raw/ already ignored above)
+NFI/data/raw/
+
+# Working scratch and temp
+.ipynb_checkpoints/
+*.pyo
+*.swp
+/tmp/
+/tmp/dt_team_zone_agg.pkl
+/tmp/fa_factors.json
+/tmp/s4_ppdf.pkl
+
+# Environment-specific
+.env
+
+# OS
+Thumbs.db
+
+# === Added Phase 4.5 cleanup ===
+
+# Path C backup files
+*.pre_phase2.bak
+*.pre_phase3.bak
+*.prePhase3.json.bak2
+
+# Claude Code runtime
+.claude/
+
+# Audit v2 of shot-events file (95MB, too large for GitHub)
+Data/nhl_shot_events.v2.csv
+
+# === Phase 5 final exclusions ===
+
+# R-framing scripts kept locally, excluded from public scope
+NFI/scripts/05_horse_race.py
+NFI/scripts/18_team_construction_model.py
+NFI/scripts/19_team_archetypes_quartile.py
+NFI/scripts/35_complete_horse_race.py
+NFI/scripts/decision_tree_stage123_v1v2.py
+NFI/scripts/post2_horserace_consistent.py
+
+# Post-specific R-framing-adjacent scripts (kept locally only)
+NFI/scripts/post1_corsi_horserace.py
+NFI/scripts/post1_relmetrics_horserace.py
+NFI/scripts/post2_horserace_cohort_sweep.py
+NFI/scripts/regenerate_post1_charts.py
+Zones/build_blocked_shot_heatmap.py
+Zones/build_corsi_dose_response.py
+
+# Pre-fix data backups (any extension)
+*.bak_pre_*
+
+# Stray top-level directories from accidental script execution
+/Output/
+/scripts/
+
+# === Final Phase 5 cleanup — winning-correlation outputs and diagnostics ===
+
+# Winning-correlation outputs (regenerated each run, excluded from public scope)
+Zones/adjusted_rankings/rel_tnzi_winning_correlation.csv
+Zones/adjusted_rankings/tnzi_winning_correlation.csv
+Zones/adjusted_rankings/tozi_tdzi_winning_correlation.csv
+Zones/zone_variations/summary_correlations.csv
+
+# Diagnostic scripts (kept locally only, not part of public framework)
+NFI/scripts/block_rate_decomposition.py
+NFI/scripts/dz_counter_shot_diagnosis.py
+NFI/scripts/post2_block_coord_origin.py
+NFI/scripts/post2_hd_nfi_recon.py
+
+# Case-collision orphan R-framing CSVs (capital-O Output/ path, recursive)
+NFI/Output/**/horse_race*.csv
+NFI/Output/**/stage*_r2*.csv
+NFI/Output/**/complete_breakdown_horse_race.csv
+NFI/Output/**/pp_pk_horse_race.csv
+NFI/Output/**/team_construction_model*.csv
+NFI/Output/**/team_archetypes*.csv

@@ -131,7 +131,10 @@ xd = xd[(xd["season"].isin(POOLED)) & (xd["state"]=="ES")]
 xd["shooting_team_abbrev"] = xd["shooting_team_abbrev"].astype(str).map(norm_team)
 xd["is_fen"] = xd["event_type"].isin(FEN)
 xd["is_cor"] = xd["event_type"].isin(COR)
-xd["is_cm"]  = xd["zone"].isin(["CNFI","MNFI"])
+# NFI is a SPATIAL FENWICK metric per framework: zone in CNFI/MNFI AND event in Fenwick.
+# Without the Fenwick filter, blocked-shot attribution would feed into NFI_pct, contradicting
+# the locked rule that all spatial metrics are Fenwick-based (no blocks).
+xd["is_cm"]  = xd["zone"].isin(["CNFI","MNFI"]) & xd["is_fen"]
 xd = xd.sort_values(["game_id","abs_time"]).reset_index(drop=True)
 shots_by_game = {}
 for gid, g in xd.groupby("game_id", sort=False):

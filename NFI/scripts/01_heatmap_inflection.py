@@ -4,11 +4,11 @@ Step 1 - Foundation: 5x5 ft save% heat map + center-lane inflection points.
 
 Regulation periods only (1-3). 3+ seasons pooled: 20222023, 20232024, 20242025.
 """
+import os
 import csv, os, math
 import pandas as pd
 import numpy as np
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 SHOT = f"{ROOT}/Data/nhl_shot_events.csv"
 OUT_DIR = f"{ROOT}/NFI/output"
 SEASONS = {"20212022", "20222023", "20232024", "20242025", "20252026"}

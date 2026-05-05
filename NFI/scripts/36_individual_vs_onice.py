@@ -18,13 +18,13 @@ Two-variable models (7-8) regress points on offense + suppression.
 
 Output: NFI/output/individual_vs_onice_comparison.csv
 """
+import os
 import time
 from collections import defaultdict
 import numpy as np
 import pandas as pd
 from scipy import stats
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT  = f"{ROOT}/NFI/output"
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"
 SHIFT_CSV = f"{ROOT}/NFI/Geometry_post/Data/shift_data.csv"

@@ -7,8 +7,7 @@ import os, math
 from collections import defaultdict
 import pandas as pd
 import numpy as np
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 SHIFT = f"{ROOT}/NFI/Geometry_post/Data/shift_data.csv"
 OUT = f"{ROOT}/NFI/output"
 SEASONS = {"20212022","20222023","20232024","20242025","20252026"}

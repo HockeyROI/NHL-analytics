@@ -4,6 +4,7 @@ Output: NFI/output/charts/chart_*.png
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
@@ -22,8 +23,10 @@ plt.rcParams.update({
     "ytick.color": "#222222",
     "axes.titleweight": "bold",
 })
-
-CHARTS = Path("/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis/NFI/output/charts")
+CHARTS = Path(os.environ.get(
+    "HOCKEYROI_CHARTS",
+    f"{os.environ.get('HOCKEYROI_ROOT', '/Users/ashgarg/Documents/HockeyROI')}/NFI/output/charts",
+))
 CHARTS.mkdir(parents=True, exist_ok=True)
 
 # Brand colors

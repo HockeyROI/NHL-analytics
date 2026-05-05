@@ -39,11 +39,11 @@ Adds these columns (prefix PK_) to existing NFI/output/player_block_rates.csv:
   PK_TNFI_blocks_per60_rank
   PK_xG_prevented_per60_rank
 """
+import os
 import math
 import numpy as np
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT  = f"{ROOT}/NFI/output"
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"
 TOI_CSV  = f"{OUT}/player_toi.csv"

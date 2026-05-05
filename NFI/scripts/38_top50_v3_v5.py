@@ -5,8 +5,7 @@ import os, math, time
 from collections import defaultdict
 import numpy as np
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT  = f"{ROOT}/NFI/output"
 TOP30_DIR = f"{OUT}/top30_variations"
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """League-wide conversion rate (goals/attempts) by zone.
 ES regulation only, 5 seasons pooled."""
+import os
 import math
 import pandas as pd
-
-OUT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis/NFI/output"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
+OUT = os.environ.get("HOCKEYROI_OUT", f"{ROOT}/NFI/output")
 sh = pd.read_csv(f"{OUT}/shots_tagged.csv")
 
 # filter ES only (regulation + empty-net-dropped already applied upstream)

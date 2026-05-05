@@ -147,7 +147,13 @@ xd = xd[(xd["season"].isin(POOLED)) & (xd["state"]=="ES")]
 xd["shooting_team_abbrev"] = xd["shooting_team_abbrev"].astype(str).map(norm)
 xd["is_cor"] = xd["event_type"].isin(COR)
 xd["is_fen"] = xd["event_type"].isin(FEN)
-xd["is_cm"]  = xd["zone"].isin(["CNFI","MNFI"])
+# Fenwick filter applied to NFI zone flag — matches framework rule that all
+# NFI metrics are Fenwick-only. Without this filter, blocked shots (which have
+# wrong-frame coordinates) corrupt the metric. Same bug fixed earlier in
+# decision_tree_stage4.py:134, decision_tree_stage123.py:179,
+# factor_comparison_5metrics.py:79, and build_playoff_data.py:104.
+# Standardized 2026-05-01 (5th and final production instance).
+xd["is_cm"]  = xd["zone"].isin(["CNFI","MNFI"]) & xd["is_fen"]
 xd = xd.sort_values(["game_id","abs_time"]).reset_index(drop=True)
 shots_by_game = {gid:{"t":g["abs_time"].to_numpy(),
                       "team":g["shooting_team_abbrev"].to_numpy(),

@@ -1,0 +1,19 @@
+{
+  "counters": {
+    "OZ": {
+      "shifts": 158464,
+      "for_corsi": 203083,
+      "for_fenwick": 140467,
+      "against_corsi": 133473,
+      "against_fenwick": 96252
+    },
+    "DZ": {
+      "shifts": 158464,
+      "for_corsi": 133473,
+      "for_fenwick": 96252,
+      "against_corsi": 203083,
+      "against_fenwick": 140467
+    }
+  },
+  "n_games": 5510
+}

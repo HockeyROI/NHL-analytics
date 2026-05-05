@@ -35,12 +35,12 @@ Outputs (NFI/output/):
   P7_PP.csv P7_PK.csv
   pp_pk_horse_race.csv  (R^2 vs standings points and GA/game)
 """
+import os
 import math, time
 from collections import defaultdict
 import numpy as np
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT  = f"{ROOT}/NFI/output"
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"
 SHIFT_CSV = f"{ROOT}/NFI/Geometry_post/Data/shift_data.csv"

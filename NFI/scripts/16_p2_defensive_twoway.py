@@ -38,8 +38,7 @@ import os, math
 from collections import defaultdict
 import numpy as np
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"
 SHIFT_CSV = f"{ROOT}/NFI/Geometry_post/Data/shift_data.csv"
 TOI_CSV = f"{ROOT}/NFI/output/player_toi.csv"

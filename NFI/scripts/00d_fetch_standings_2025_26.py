@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Fetch 20252026 standings and append to standings_5seasons.csv,
 producing standings_pool5.csv covering 20212022..20252026."""
+import os
 import urllib.request, json, csv, os
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 IN = f"{ROOT}/NFI/Geometry_post/Data/standings_5seasons.csv"
 OUT = f"{ROOT}/NFI/output/standings_pool5.csv"
 

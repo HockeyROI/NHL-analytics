@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Check how many players appear in shift_data for 20212022/20252026 that are
 NOT in the 2022+ pbp-derived position lookup."""
+import os
 import pandas as pd
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 SHIFT = f"{ROOT}/NFI/Geometry_post/Data/shift_data.csv"
 POS = f"{ROOT}/NFI/output/player_positions.csv"
 GAMES = f"{ROOT}/Data/game_ids.csv"

@@ -22,11 +22,11 @@ Output: /Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis/
         Data/rebound_sequences.csv
 Sorted by game_id, period, time_secs (of original).
 """
+import os
 import time
 import numpy as np
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"
 OUT_CSV  = f"{ROOT}/Data/rebound_sequences.csv"
 

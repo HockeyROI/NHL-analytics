@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Build side-by-side comparison of 3-season vs 5-season results."""
+import os
 import pandas as pd
-
-OUT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis/NFI/output"
-
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
+OUT = os.environ.get("HOCKEYROI_OUT", f"{ROOT}/NFI/output")
 u3 = pd.read_csv(f"{OUT}/horse_race_univariate_3season.csv").rename(columns={"R":"R_3s","var_explained":"R2_3s","n":"n_3s","p":"p_3s"})
 u5 = pd.read_csv(f"{OUT}/horse_race_univariate.csv").rename(columns={"R":"R_5s","var_explained":"R2_5s","n":"n_5s","p":"p_5s"})
 u = u3.merge(u5, on="metric", how="outer")

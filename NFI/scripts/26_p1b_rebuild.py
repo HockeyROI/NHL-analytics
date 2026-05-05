@@ -21,11 +21,11 @@ Wilson 95% CIs on the proportion (k/n).
 
 Output: NFI/output/P1b_rebound_arrival.csv
 """
+import os
 import math
 import numpy as np
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 SEQ_CSV = f"{ROOT}/Data/rebound_sequences.csv"
 POS_CSV = f"{ROOT}/NFI/output/player_positions.csv"
 OLD_CSV = f"{ROOT}/NFI/output/_pre_corsi_backup/P1b_rebound_arrival_OLD.csv"

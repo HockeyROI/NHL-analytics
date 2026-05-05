@@ -3,10 +3,11 @@
 Rebuilds goalie save% directly from shots_tagged.csv (SOG + goal events only).
 Overwrites pillar_6_goalie_FNFI_MNFI.csv, pillar_7_goalie_CNFI.csv, and
 updates pillar_ci_flagging.csv."""
+import os
 import math
 import pandas as pd
-
-OUT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis/NFI/output"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
+OUT = os.environ.get("HOCKEYROI_OUT", f"{ROOT}/NFI/output")
 MIN_SHOTS = 300
 STATES = ["ES","PP","PK"]
 

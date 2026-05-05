@@ -28,7 +28,7 @@ import requests
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
 BASE_URL   = "https://api-web.nhle.com/v1"
-DATA_DIR   = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis/Data"
+DATA_DIR   = os.path.join(os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI"), "Data")
 CHUNK_SIZE = 500      # write to CSV every N games
 SLEEP_OK   = 0.1     # seconds between successful requests
 SLEEP_RETRY = 2.0    # seconds before retry on failure
@@ -43,6 +43,7 @@ SEASON_SEEDS = {
     "20222023": "2022-10-07",
     "20232024": "2023-10-10",
     "20242025": "2024-10-04",
+    "20252026": "2025-10-07",
 }
 
 EVENT_TYPES = {"shot-on-goal", "goal", "missed-shot", "blocked-shot"}
@@ -210,26 +211,20 @@ def extract_events(game_meta, pbp_data):
         period_desc = play.get("periodDescriptor", {})
 
         # ── Shooting team ─────────────────────────────────────────────────────
+        # eventOwnerTeamId is the shooter's team for every shot event type
+        # (shot-on-goal, missed-shot, blocked-shot, goal). Verified empirically
+        # against boxscore rosters on a sample of 29+ blocked shots from
+        # game 2025021312 (April 2026). The previous special-case branch
+        # for blocked shots flipped to the wrong team; removed.
         owner_id = details.get("eventOwnerTeamId")
-        if etype == "blocked-shot":
-            # eventOwnerTeamId = blocker's team → shooter is the OTHER team
-            if owner_id == home_id:
-                shooting_team_id     = away_id
-                shooting_team_abbrev = away_abbrev
-                shooting_is_home     = False
-            else:
-                shooting_team_id     = home_id
-                shooting_team_abbrev = home_abbrev
-                shooting_is_home     = True
+        if owner_id == home_id:
+            shooting_team_id     = home_id
+            shooting_team_abbrev = home_abbrev
+            shooting_is_home     = True
         else:
-            if owner_id == home_id:
-                shooting_team_id     = home_id
-                shooting_team_abbrev = home_abbrev
-                shooting_is_home     = True
-            else:
-                shooting_team_id     = away_id
-                shooting_team_abbrev = away_abbrev
-                shooting_is_home     = False
+            shooting_team_id     = away_id
+            shooting_team_abbrev = away_abbrev
+            shooting_is_home     = False
 
         # ── Shooter player ID ─────────────────────────────────────────────────
         if etype == "goal":

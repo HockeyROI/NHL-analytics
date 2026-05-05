@@ -176,7 +176,11 @@ shots_df["is_fenwick"] = shots_df["event_type"].isin(FENWICK_TYPES)
 shots_df["is_corsi"]   = shots_df["event_type"].isin(CORSI_TYPES)
 shots_df["is_cnfi"]    = shots_df["zone"] == "CNFI"
 shots_df["is_mnfi"]    = shots_df["zone"] == "MNFI"
-shots_df["is_cnfi_mnfi"] = shots_df["is_cnfi"] | shots_df["is_mnfi"]
+# NFI is a SPATIAL FENWICK metric per framework: zone in CNFI/MNFI AND event in Fenwick.
+# Without the Fenwick filter, blocks in those zones would feed into the NFI factor and
+# downstream NFI_pct computations, contradicting the locked rule that all spatial metrics
+# are Fenwick-based (no blocks).
+shots_df["is_cnfi_mnfi"] = (shots_df["is_cnfi"] | shots_df["is_mnfi"]) & shots_df["is_fenwick"]
 print(f"    ES shots in scope: {len(shots_df)}")
 shots_df = shots_df.sort_values(["game_id","abs_time"]).reset_index(drop=True)
 

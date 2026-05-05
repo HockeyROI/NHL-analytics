@@ -34,8 +34,7 @@ import os, math
 import pandas as pd
 import numpy as np
 from collections import defaultdict
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT_DIR = f"{ROOT}/NFI/output"
 SHOT_T = f"{OUT_DIR}/shots_tagged.csv"
 TOI = f"{OUT_DIR}/player_toi.csv"
@@ -82,8 +81,17 @@ sh["season"] = sh["season"].astype(str)
 seasons = sorted(sh["season"].unique())
 print(f"  seasons: {seasons}")
 
-# ---- High-danger definition (conventional): x>69, y in [-22,22] ----
-sh["is_HD"] = ((sh["x_coord_norm"]>69) & (sh["y_coord_norm"].between(-22,22))).astype(int)
+# ---- High-danger definition: NST home-plate trapezoid (public standard) ----
+# Standardized 2026-05-01 to match Natural Stat Trick's published HD geometry,
+# replacing the prior rectangle (x>69, |y|≤22) which extended past x=89 and
+# included corner shots that NST excludes. Definition replicated exactly from
+# post2_horserace_consistent.py so all HockeyROI HD metrics use one geometry.
+_hd_x  = sh["x_coord_norm"]
+_hd_ay = sh["y_coord_norm"].abs()
+sh["is_HD"] = (
+    ((_hd_x >= 69) & (_hd_x < 85) & (_hd_ay <= 22)) |
+    ((_hd_x >= 85) & (_hd_x <= 89) & (_hd_ay <= 18))
+).astype(int)
 
 # ---- Score weight per shot ----
 sh["sw"] = sh["score_bucket"].map(SCORE_W).fillna(1.0)
@@ -102,6 +110,19 @@ sh["is_TNFI"] = sh["zone"].isin(NFI_ZONES).astype(int)
 sh["is_CNFI"] = (sh["zone"]=="CNFI").astype(int)
 sh["is_MNFI"] = (sh["zone"]=="MNFI").astype(int)
 sh["is_FNFI"] = (sh["zone"]=="FNFI").astype(int)
+
+# ---- Fenwick filter (excludes blocks). NFI is a SPATIAL FENWICK metric per the
+# locked framework rule: zone in CNFI/MNFI/FNFI AND event in Fenwick. We aggregate
+# parallel *_FF / *_FA columns (Fenwick) alongside the existing *_CF / *_CA (Corsi)
+# columns, then compute the NFI percentages from the Fenwick counts. Corsi columns
+# remain unchanged for downstream consumers that legitimately want Corsi.
+FEN_TYPES = {"shot-on-goal","missed-shot","goal"}
+sh["is_fen"]      = sh["event_type"].isin(FEN_TYPES).astype(int)
+sh["is_HD_fen"]   = (sh["is_HD"]   * sh["is_fen"]).astype(int)
+sh["is_TNFI_fen"] = (sh["is_TNFI"] * sh["is_fen"]).astype(int)
+sh["is_CNFI_fen"] = (sh["is_CNFI"] * sh["is_fen"]).astype(int)
+sh["is_MNFI_fen"] = (sh["is_MNFI"] * sh["is_fen"]).astype(int)
+sh["is_FNFI_fen"] = (sh["is_FNFI"] * sh["is_fen"]).astype(int)
 
 # Team for = shooting_team; team against = defending team
 # Build defending team abbreviation
@@ -177,6 +198,14 @@ for_cols = {
     "CNFI_CF":("shooting_team_abbrev", shES["is_CNFI"].values),
     "MNFI_CF":("shooting_team_abbrev", shES["is_MNFI"].values),
     "FNFI_CF":("shooting_team_abbrev", shES["is_FNFI"].values),
+    # Fenwick parallels (NFI = Fenwick + spatial). Corsi columns above unchanged.
+    "HD_FF":("shooting_team_abbrev", shES["is_HD_fen"].values),
+    "HD_FF_adj":("shooting_team_abbrev", (shES["is_HD_fen"]*shES["sw"]).values),
+    "TNFI_FF":("shooting_team_abbrev", shES["is_TNFI_fen"].values),
+    "TNFI_FF_adj":("shooting_team_abbrev", (shES["is_TNFI_fen"]*shES["sw"]).values),
+    "CNFI_FF":("shooting_team_abbrev", shES["is_CNFI_fen"].values),
+    "MNFI_FF":("shooting_team_abbrev", shES["is_MNFI_fen"].values),
+    "FNFI_FF":("shooting_team_abbrev", shES["is_FNFI_fen"].values),
 }
 ag_cols = {
     "CA":   ("def_team", np.ones(len(shES))),
@@ -188,6 +217,14 @@ ag_cols = {
     "CNFI_CA":("def_team", shES["is_CNFI"].values),
     "MNFI_CA":("def_team", shES["is_MNFI"].values),
     "FNFI_CA":("def_team", shES["is_FNFI"].values),
+    # Fenwick parallels (NFI = Fenwick + spatial). Corsi columns above unchanged.
+    "HD_FA":("def_team", shES["is_HD_fen"].values),
+    "HD_FA_adj":("def_team", (shES["is_HD_fen"]*shES["sw"]).values),
+    "TNFI_FA":("def_team", shES["is_TNFI_fen"].values),
+    "TNFI_FA_adj":("def_team", (shES["is_TNFI_fen"]*shES["sw"]).values),
+    "CNFI_FA":("def_team", shES["is_CNFI_fen"].values),
+    "MNFI_FA":("def_team", shES["is_MNFI_fen"].values),
+    "FNFI_FA":("def_team", shES["is_FNFI_fen"].values),
 }
 team = {}
 for col, (tc, vals) in for_cols.items():
@@ -214,11 +251,17 @@ team_df["CF_pct"] = pct(team_df["CF"], team_df["CA"])
 team_df["CF_score_adj_pct"] = pct(team_df["CF_adj"], team_df["CA_adj"])
 team_df["HD_CF_pct"] = pct(team_df["HD_CF"], team_df["HD_CA"])
 team_df["HD_CF_score_adj_pct"] = pct(team_df["HD_CF_adj"], team_df["HD_CA_adj"])
-team_df["TNFI_pct"] = pct(team_df["TNFI_CF"], team_df["TNFI_CA"])
-team_df["TNFI_score_adj_pct"] = pct(team_df["TNFI_CF_adj"], team_df["TNFI_CA_adj"])
-team_df["CNFI_pct"] = pct(team_df["CNFI_CF"], team_df["CNFI_CA"])
-team_df["MNFI_pct"] = pct(team_df["MNFI_CF"], team_df["MNFI_CA"])
-team_df["FNFI_pct"] = pct(team_df["FNFI_CF"], team_df["FNFI_CA"])
+# Fenwick HD parallel (matches the framework "spatial = Fenwick" rule). HD_CF_pct
+# above is correctly Corsi-based per its name; HD_FF_pct is the Fenwick analogue.
+team_df["HD_FF_pct"] = pct(team_df["HD_FF"], team_df["HD_FA"])
+team_df["HD_FF_score_adj_pct"] = pct(team_df["HD_FF_adj"], team_df["HD_FA_adj"])
+# NFI percentages are now Fenwick-only per framework (no blocks). Bug-fix: previously
+# computed from Corsi *_CF / *_CA, which silently included blocked-shot events.
+team_df["TNFI_pct"] = pct(team_df["TNFI_FF"], team_df["TNFI_FA"])
+team_df["TNFI_score_adj_pct"] = pct(team_df["TNFI_FF_adj"], team_df["TNFI_FA_adj"])
+team_df["CNFI_pct"] = pct(team_df["CNFI_FF"], team_df["CNFI_FA"])
+team_df["MNFI_pct"] = pct(team_df["MNFI_FF"], team_df["MNFI_FA"])
+team_df["FNFI_pct"] = pct(team_df["FNFI_FF"], team_df["FNFI_FA"])
 
 # Zone-adjustment: approximate by league-avg share of TNFI shots per total CF
 # Without face-off data, use a proxy re-weight: normalize so the team TNFI share matches league average.

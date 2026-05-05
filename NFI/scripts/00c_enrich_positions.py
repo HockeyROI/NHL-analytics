@@ -7,8 +7,7 @@ Flags any players that still have no position to player_positions_unknown.csv.
 """
 import os, json, urllib.request, urllib.error, time, csv
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 POS = f"{ROOT}/NFI/output/player_positions.csv"
 SHIFT = f"{ROOT}/2026 posts/Geometry_post/Data/shift_data.csv"
 GAMES = f"{ROOT}/Data/game_ids.csv"

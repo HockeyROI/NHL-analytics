@@ -1,4 +1,4 @@
-"""IOZC / IOZL / DOZI adjustments on four V1 zone-time metrics.
+"""IOZC / IOZL / DTNZI adjustments on four V1 zone-time metrics.
 
 Reads:
   Zones/_player_meta.json
@@ -10,7 +10,7 @@ Reads:
 
 Writes:
   Zones/adjusted_rankings/{ozi|dzi|nzi|tnzi}_adjusted_{forwards|defense}.csv
-  Zones/adjusted_rankings/dozi_{forwards|defense}.csv
+  Zones/adjusted_rankings/dtnzi_{forwards|defense}.csv
   Zones/adjusted_rankings/tnzi_winning_correlation.csv
 """
 
@@ -47,9 +47,9 @@ Z = 1.96
 Z2 = Z * Z
 MIN_SHIFTS = 50
 MIN_GP = 20
-MIN_SEASONS_FOR_DOZI = 2
-DOZI_RISING = 0.05
-DOZI_DECLINING = -0.05
+MIN_SEASONS_FOR_DTNZI = 2
+DTNZI_RISING = 0.05
+DTNZI_DECLINING = -0.05
 
 SEASONS = ["20222023", "20232024", "20242025", "20252026"]
 POOLED = "pooled"
@@ -618,39 +618,39 @@ def main():
             for pid, val in s.items():
                 raw_scores_pool_10[metric][pid] = val
 
-    # ---- DOZI: year-over-year of per-season 0-1 normalised -------------
-    print("    computing DOZI ...")
+    # ---- DTNZI: year-over-year of per-season 0-1 normalised -------------
+    print("    computing DTNZI ...")
     # per-season 0-1 scores already in norm01[season][metric][pid]
-    dozi = {metric: {} for metric in METRICS}
+    dtnzi = {metric: {} for metric in METRICS}
     for metric in METRICS:
         for pid in set().union(*(set(norm01[s][metric]) for s in SEASONS)):
             per = {s: norm01[s][metric].get(pid) for s in SEASONS}
             qualified = {s: v for s, v in per.items() if v is not None}
             deltas = {}
-            pairs = [("20222023", "20232024", "DOZI_23_24"),
-                     ("20232024", "20242025", "DOZI_24_25"),
-                     ("20242025", "20252026", "DOZI_25_26")]
+            pairs = [("20222023", "20232024", "DTNZI_23_24"),
+                     ("20232024", "20242025", "DTNZI_24_25"),
+                     ("20242025", "20252026", "DTNZI_25_26")]
             for a, b, label in pairs:
                 if per.get(a) is not None and per.get(b) is not None:
                     deltas[label] = per[b] - per[a]
-            if len(qualified) < MIN_SEASONS_FOR_DOZI:
-                dozi[metric][pid] = {"deltas": deltas, "trend": None,
+            if len(qualified) < MIN_SEASONS_FOR_DTNZI:
+                dtnzi[metric][pid] = {"deltas": deltas, "trend": None,
                                      "recent": None, "flag": None}
                 continue
             vals = [v for v in deltas.values()]
             trend = mean(vals) if vals else None
-            recent = (deltas.get("DOZI_25_26")
-                      if "DOZI_25_26" in deltas
-                      else deltas.get("DOZI_24_25"))
+            recent = (deltas.get("DTNZI_25_26")
+                      if "DTNZI_25_26" in deltas
+                      else deltas.get("DTNZI_24_25"))
             if recent is None:
                 flag = None
-            elif recent > DOZI_RISING:
+            elif recent > DTNZI_RISING:
                 flag = "RISING"
-            elif recent < DOZI_DECLINING:
+            elif recent < DTNZI_DECLINING:
                 flag = "DECLINING"
             else:
                 flag = "STABLE"
-            dozi[metric][pid] = {"deltas": deltas, "trend": trend,
+            dtnzi[metric][pid] = {"deltas": deltas, "trend": trend,
                                  "recent": recent, "flag": flag}
 
     # ---- TNZI winning correlation ---------------------------------------
@@ -728,20 +728,20 @@ def main():
     print("[9/9] writing CSVs ...")
     write_adjusted_csvs(
         OUT_DIR, player_meta, scenario_gp[POOLED], scenario_shifts[POOLED],
-        norm01, raw_scores_pool_10, iozc, iozl, adj_scores, adj_raw, dozi,
+        norm01, raw_scores_pool_10, iozc, iozl, adj_scores, adj_raw, dtnzi,
     )
-    write_dozi_csvs(OUT_DIR, player_meta, scenario_gp[POOLED], dozi,
+    write_dtnzi_csvs(OUT_DIR, player_meta, scenario_gp[POOLED], dtnzi,
                     raw_scores_pool_10)
     write_corr_csv(OUT_DIR, tnzi_corr_rows)
 
     # ---- Print reports --------------------------------------------------
     print_tnzi_corr_table(tnzi_corr_rows)
     print_top_tnzi(player_meta, scenario_gp[POOLED], adj_scores,
-                   adj_raw, norm01, iozc, iozl, dozi)
-    print_dozi_leaders(player_meta, scenario_gp[POOLED], dozi,
+                   adj_raw, norm01, iozc, iozl, dtnzi)
+    print_dtnzi_leaders(player_meta, scenario_gp[POOLED], dtnzi,
                        raw_scores_pool_10)
     print_key_players(player_meta, scenario_gp[POOLED], scenario_shifts[POOLED],
-                      norm01, adj_scores, iozc, iozl, dozi)
+                      norm01, adj_scores, iozc, iozl, dtnzi)
 
 # ---------------------------------------------------------------------------
 # Output
@@ -754,8 +754,8 @@ OUT_COLS = [
     "DZI", "DZI_C", "DZI_L", "DZI_CL",
     "NZI", "NZI_C", "NZI_L", "NZI_CL",
     "TNZI", "TNZI_C", "TNZI_L", "TNZI_CL",
-    "DOZI_23_24", "DOZI_24_25", "DOZI_25_26",
-    "DOZI_trend", "DOZI_recent", "DOZI_flag",
+    "DTNZI_23_24", "DTNZI_24_25", "DTNZI_25_26",
+    "DTNZI_trend", "DTNZI_recent", "DTNZI_flag",
 ]
 
 def _fmt(v, d=4):
@@ -767,7 +767,7 @@ def _fmt(v, d=4):
         return v
 
 def write_adjusted_csvs(out_dir, meta, gp_map, shifts_map, norm01,
-                        raw_scores_pool_10, iozc, iozl, adj_scores, adj_raw, dozi):
+                        raw_scores_pool_10, iozc, iozl, adj_scores, adj_raw, dtnzi):
     """Write one adjusted CSV per metric per position group. Each CSV has all
     OUT_COLS so downstream inspection is easy."""
     # Identify qualifying players: those with at least one metric POOLED.
@@ -796,14 +796,14 @@ def write_adjusted_csvs(out_dir, meta, gp_map, shifts_map, norm01,
             r[f"{metric}_C"] = adj_scores[metric]["C"].get(pid, "")
             r[f"{metric}_L"] = adj_scores[metric]["L"].get(pid, "")
             r[f"{metric}_CL"] = adj_scores[metric]["CL"].get(pid, "")
-        # DOZI — use the file's headline metric for the deltas
-        d = dozi[sort_metric].get(pid, {"deltas": {}, "trend": None, "recent": None, "flag": None})
-        r["DOZI_23_24"] = _fmt(d["deltas"].get("DOZI_23_24"), 4)
-        r["DOZI_24_25"] = _fmt(d["deltas"].get("DOZI_24_25"), 4)
-        r["DOZI_25_26"] = _fmt(d["deltas"].get("DOZI_25_26"), 4)
-        r["DOZI_trend"] = _fmt(d["trend"])
-        r["DOZI_recent"] = _fmt(d["recent"])
-        r["DOZI_flag"] = d["flag"] or ""
+        # DTNZI — use the file's headline metric for the deltas
+        d = dtnzi[sort_metric].get(pid, {"deltas": {}, "trend": None, "recent": None, "flag": None})
+        r["DTNZI_23_24"] = _fmt(d["deltas"].get("DTNZI_23_24"), 4)
+        r["DTNZI_24_25"] = _fmt(d["deltas"].get("DTNZI_24_25"), 4)
+        r["DTNZI_25_26"] = _fmt(d["deltas"].get("DTNZI_25_26"), 4)
+        r["DTNZI_trend"] = _fmt(d["trend"])
+        r["DTNZI_recent"] = _fmt(d["recent"])
+        r["DTNZI_flag"] = d["flag"] or ""
         return r
 
     for metric in METRICS:
@@ -830,14 +830,14 @@ def write_adjusted_csvs(out_dir, meta, gp_map, shifts_map, norm01,
                     w.writerow([r.get(c, "") for c in OUT_COLS])
     print(f"    wrote adjusted CSVs in {out_dir}")
 
-def write_dozi_csvs(out_dir, meta, gp_map, dozi, raw_scores_pool_10):
+def write_dtnzi_csvs(out_dir, meta, gp_map, dtnzi, raw_scores_pool_10):
     for group_name, pos_set in (("forwards", POS_FORWARD),
                                  ("defense", POS_DEFENSE)):
-        path = out_dir / f"dozi_{group_name}.csv"
+        path = out_dir / f"dtnzi_{group_name}.csv"
         rows = []
         seen = set()
         for metric in METRICS:
-            for pid, d in dozi[metric].items():
+            for pid, d in dtnzi[metric].items():
                 if pid in seen: continue
                 pos = (meta.get(pid, {}).get("position") or "").upper()
                 if pos not in pos_set: continue
@@ -849,11 +849,11 @@ def write_dozi_csvs(out_dir, meta, gp_map, dozi, raw_scores_pool_10):
                     "GP": gp_map.get(pid, 0),
                 }
                 for m in METRICS:
-                    dx = dozi[m].get(pid, {"deltas": {}, "trend": None,
+                    dx = dtnzi[m].get(pid, {"deltas": {}, "trend": None,
                                            "recent": None, "flag": None})
-                    row[f"{m}_23_24"] = _fmt(dx["deltas"].get("DOZI_23_24"))
-                    row[f"{m}_24_25"] = _fmt(dx["deltas"].get("DOZI_24_25"))
-                    row[f"{m}_25_26"] = _fmt(dx["deltas"].get("DOZI_25_26"))
+                    row[f"{m}_23_24"] = _fmt(dx["deltas"].get("DTNZI_23_24"))
+                    row[f"{m}_24_25"] = _fmt(dx["deltas"].get("DTNZI_24_25"))
+                    row[f"{m}_25_26"] = _fmt(dx["deltas"].get("DTNZI_25_26"))
                     row[f"{m}_trend"] = _fmt(dx["trend"])
                     row[f"{m}_recent"] = _fmt(dx["recent"])
                     row[f"{m}_flag"] = dx["flag"] or ""
@@ -868,7 +868,7 @@ def write_dozi_csvs(out_dir, meta, gp_map, dozi, raw_scores_pool_10):
             w = csv.writer(f); w.writerow(cols)
             for r in rows:
                 w.writerow([r.get(c, "") for c in cols])
-    print(f"    wrote DOZI CSVs in {out_dir}")
+    print(f"    wrote DTNZI CSVs in {out_dir}")
 
 def write_corr_csv(out_dir, rows):
     path = out_dir / "tnzi_winning_correlation.csv"
@@ -923,7 +923,7 @@ def print_tnzi_corr_table(rows):
     print(f"\nCorsi benchmark ≈ {corsi:+.3f}")
     print(f"  best TNZI vs Corsi : Δ = {best[1] - corsi:+.3f}")
 
-def print_top_tnzi(meta, gp_map, adj_scores, adj_raw, norm01, iozc, iozl, dozi):
+def print_top_tnzi(meta, gp_map, adj_scores, adj_raw, norm01, iozc, iozl, dtnzi):
     print("\n" + "=" * 80)
     print("Top 20 by TNZI_CL (both-adjusted, pooled)")
     print("=" * 80)
@@ -943,21 +943,21 @@ def print_top_tnzi(meta, gp_map, adj_scores, adj_raw, norm01, iozc, iozl, dozi):
             vC = adj_scores["TNZI"]["C"].get(pid) or 0
             vL = adj_scores["TNZI"]["L"].get(pid) or 0
             ic = iozc["TNZI"].get(pid); il = iozl["TNZI"].get(pid)
-            fl = (dozi["TNZI"].get(pid) or {}).get("flag") or ""
+            fl = (dtnzi["TNZI"].get(pid) or {}).get("flag") or ""
             print(f"  {i:>3} {meta.get(pid, {}).get('name', '')[:22]:<22} {tm:<4} "
                   f"{gp_map.get(pid, 0):>4} {raw:>5.1f} {vC:>7.1f} {vL:>7.1f} {v:>8.1f} "
                   f"{(ic if ic is not None else 0):>6.3f} {(il if il is not None else 0):>6.3f} "
                   f"{fl:<10}")
 
-def print_dozi_leaders(meta, gp_map, dozi, raw_scores_pool_10):
+def print_dtnzi_leaders(meta, gp_map, dtnzi, raw_scores_pool_10):
     print("\n" + "=" * 80)
-    print("DOZI — top 10 RISING / DECLINING by DOZI_recent on TNZI (pooled)")
+    print("DTNZI — top 10 RISING / DECLINING by DTNZI_recent on TNZI (pooled)")
     print("=" * 80)
     for group_name, pos_set in (("forwards", POS_FORWARD),
                                  ("defense", POS_DEFENSE)):
         print(f"\n-- {group_name} --")
         rows = []
-        for pid, d in dozi["TNZI"].items():
+        for pid, d in dtnzi["TNZI"].items():
             if d.get("recent") is None: continue
             pos = (meta.get(pid, {}).get("position") or "").upper()
             if pos not in pos_set: continue
@@ -970,16 +970,16 @@ def print_dozi_leaders(meta, gp_map, dozi, raw_scores_pool_10):
             print(f"    {meta.get(pid, {}).get('name', '')[:24]:<24} {tm:<4} "
                   f"GP={gp_map.get(pid, 0):<4} "
                   f"TNZI_pooled={raw_scores_pool_10['TNZI'].get(pid, '-'):<4} "
-                  f"DOZI_recent={rec:+.3f}  [{fl}]")
+                  f"DTNZI_recent={rec:+.3f}  [{fl}]")
         print("  DECLINING (top 10):")
         for pid, rec, fl in declining:
             tm = norm_team(meta.get(pid, {}).get("team_abbrev", "") or "")
             print(f"    {meta.get(pid, {}).get('name', '')[:24]:<24} {tm:<4} "
                   f"GP={gp_map.get(pid, 0):<4} "
                   f"TNZI_pooled={raw_scores_pool_10['TNZI'].get(pid, '-'):<4} "
-                  f"DOZI_recent={rec:+.3f}  [{fl}]")
+                  f"DTNZI_recent={rec:+.3f}  [{fl}]")
 
-def print_key_players(meta, gp_map, shifts_map, norm01, adj_scores, iozc, iozl, dozi):
+def print_key_players(meta, gp_map, shifts_map, norm01, adj_scores, iozc, iozl, dtnzi):
     print("\n" + "=" * 80)
     print("Key players — full pooled rows (all four metrics + adjustments)")
     print("=" * 80)
@@ -1007,7 +1007,7 @@ def print_key_players(meta, gp_map, shifts_map, norm01, adj_scores, iozc, iozl, 
                          f"{fmt10(metric, 'C'):<4}/"
                          f"{fmt10(metric, 'L'):<4}/"
                          f"{fmt10(metric, 'CL'):<4}")
-        fl = (dozi["TNZI"].get(pid) or {}).get("flag") or ""
+        fl = (dtnzi["TNZI"].get(pid) or {}).get("flag") or ""
         print(f"{label:<14} {tm:<4} {gp:>4}  " + "  ".join(cells) + f"  {fl:<10}")
 
 if __name__ == "__main__":

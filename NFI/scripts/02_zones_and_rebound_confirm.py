@@ -7,11 +7,11 @@ Outputs:
   - zones_shot_counts.csv (raw zone distribution by state)
   - rebound_confirmation.csv (conversion rate to rebound/tip/deflection within 2s)
 """
+import os
 import csv, math, os
 import pandas as pd
 import numpy as np
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"
 REB_CSV = f"{ROOT}/NFI/Geometry_post/Data/rebound_sequences.csv"
 OUT_DIR = f"{ROOT}/NFI/output"

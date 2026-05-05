@@ -4,12 +4,12 @@ Top 50 individual on-ice Corsi-For % (CF%) for current season 2025-26.
 ES regulation only, full Corsi (SOG + missed + blocked + goal).
 Min 200 ES TOI minutes for current season; age filter applied.
 """
+import os
 import math, time
 from collections import defaultdict
 import numpy as np
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT  = f"{ROOT}/NFI/output"
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"
 SHIFT_CSV = f"{ROOT}/NFI/Geometry_post/Data/shift_data.csv"

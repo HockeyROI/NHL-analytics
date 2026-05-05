@@ -2,10 +2,9 @@
 """Build player_id -> position lookup from pbp JSON roster spots."""
 import os, json, csv, glob
 from collections import defaultdict, Counter
-
-PBP_DIR = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis/Zones/raw/pbp"
-OUT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis/NFI/output/player_positions.csv"
-
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
+PBP_DIR = f"{ROOT}/Zones/raw/pbp"
+OUT = f"{ROOT}/NFI/output/player_positions.csv"
 pos_counts = defaultdict(Counter)  # pid -> Counter of positionCode
 name_map = {}
 

@@ -44,7 +44,9 @@ CURRENT_SEASON = "20252026"
 SEASON_START = "2025-10-07"
 SEASON_END   = "2026-04-30"
 FENWICK_TYPES = {"shot-on-goal", "missed-shot", "goal"}
-NFI_ZA_FACTOR = 0.10710
+NFI_ZA_FACTOR = 0.035  # Tulsky 2013 (3.5pp). Mirrored in
+                       #   NFI/scripts/build_fa_factors.py  (factors["NFI"])
+                       #   NFI/scripts/build_playoff_data.py (NFI_ZA_FACTOR)
 MIN_TOI_MIN_DISPLAY = 100  # only show players with ≥100 ES TOI minutes
 HTTP_TIMEOUT = 25
 

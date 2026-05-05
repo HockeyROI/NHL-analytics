@@ -12,10 +12,10 @@ Method:
 
 Output: NFI/output/twoway_D_score_QoT_adjusted.csv  (NEW file, no overwrites)
 """
+import os
 import numpy as np
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT  = f"{ROOT}/NFI/output"
 
 twd = pd.read_csv(f"{OUT}/twoway_D_score.csv")

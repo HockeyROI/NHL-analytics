@@ -25,12 +25,12 @@ Outputs (NFI/output):
   twoway_forward_score.csv  (overwritten)
   twoway_D_score.csv         (overwritten)
 """
+import os
 import math
 from collections import defaultdict
 import numpy as np
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT  = f"{ROOT}/NFI/output"
 BK   = f"{OUT}/_pre_corsi_backup"  # holds Fenwick P2/P4 from before Corsi rerun
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"

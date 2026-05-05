@@ -1,4 +1,13 @@
-"""Fully Adjusted (FA) metric pipeline — Steps 2-5.
+"""[DEPRECATED — naive linemate IOL, superseded by fa_linemate_without_me.py]
+
+This script's outputs are immediately overwritten by NFI/scripts/fa_linemate_without_me.py,
+which corrects shared-event collinearity in the IOL term. Both scripts produce the same
+8 output filenames; running this one before fa_linemate_without_me.py is wasted compute.
+Skip in regen pipelines. Kept for reference / methodology comparison.
+
+────────────────────────────────────────────────────────────────────
+
+Fully Adjusted (FA) metric pipeline — Steps 2-5.
 
 Methodology (confirmed):
   FA_metric = ZA_metric − β_IOC × (IOC − mean IOC) − β_IOL × (IOL − mean IOL)

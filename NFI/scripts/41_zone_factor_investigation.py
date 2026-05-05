@@ -21,11 +21,11 @@ This isn't the textbook faceoff-based zone adjustment, but it tests the
 underlying claim — does block prevalence differ in a way that would create
 a Fenwick > Corsi zone-factor gap.
 """
+import os
 import math
 import pandas as pd
 import numpy as np
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"
 SEASONS = {"20212022","20222023","20232024","20242025","20252026"}
 

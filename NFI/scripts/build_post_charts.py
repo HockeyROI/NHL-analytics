@@ -13,6 +13,7 @@ Outputs to NFI/output/charts/:
 """
 from __future__ import annotations
 
+import os
 from bisect import bisect_left
 from collections import defaultdict
 from pathlib import Path
@@ -24,7 +25,7 @@ import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
 
-ROOT = Path("/Users/ashgarg/Documents/HockeyROI")
+ROOT = Path(os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI"))
 OUT = ROOT / "NFI/output/charts"
 OUT.mkdir(parents=True, exist_ok=True)
 

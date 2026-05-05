@@ -72,11 +72,21 @@ xd = pd.read_csv(SHOTS_CSV,
 xd["season"] = xd["season"].astype(str)
 xd = xd[(xd["season"].isin(POOLED)) & (xd["state"]=="ES")]
 xd["shooting_team_abbrev"] = xd["shooting_team_abbrev"].astype(str).map(norm)
-xd["x_shooter"] = np.where(xd["event_type"]=="blocked-shot", -xd["x_coord_norm"], xd["x_coord_norm"])
+# Block coordinates: used as-is. The upstream block-attribution fix in
+# build_shot_db.py (Apr 30, 2026) places blocked-shot events in the shooter's
+# frame with coordinates already correct (99.7% have positive x), so no further
+# sign manipulation is needed. The previous (x,y) → (-x,-y) rotation was correct
+# against pre-blockfix data but is now wrong on current data — removed 2026-05-01.
+xd["x_shooter"] = xd["x_coord_norm"]
 xd["is_fen"] = xd["event_type"].isin(FEN)
 xd["is_cor"] = xd["event_type"].isin(COR)
 xd["is_hd"]  = (xd["x_shooter"] > 69) & (xd["y_coord_norm"].abs() <= 22)
-xd["is_cm"]  = xd["zone"].isin(["CNFI","MNFI"])
+# Fenwick filter applied to NFI zone flag — matches framework rule that all
+# NFI metrics are Fenwick-only. Without this filter, blocked shots (which have
+# wrong-frame coordinates) corrupt the metric. Same bug fixed earlier in
+# decision_tree_stage4.py:134 and decision_tree_stage123.py:179.
+# Standardized 2026-05-01.
+xd["is_cm"]  = xd["zone"].isin(["CNFI","MNFI"]) & xd["is_fen"]
 # Derived flags
 xd["is_hd_cor"] = xd["is_hd"] & xd["is_cor"]
 xd["is_hd_fen"] = xd["is_hd"] & xd["is_fen"]

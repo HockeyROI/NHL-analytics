@@ -39,6 +39,19 @@ print("[0] loading ...")
 # Full player table with all FA/ZA metrics
 pp = pd.read_csv(OUT / "player_fully_adjusted.csv")
 pp["season"] = pp["season"].astype(str)
+
+# Fail-fast schema check. tnfi_relatives_pp_pk MUST run between fa_linemate_without_me
+# and rename_and_momentum. After rename_and_momentum, the canonical FA columns are
+# renamed to publication aliases (e.g. FA_NFI_emp -> NFI_pct_3A) and this script can
+# no longer find them. If you hit this error, rerun fa_linemate_without_me first.
+_required = ["FA_NFI_emp", "IOC_NFI", "IOL_NFI", "ZA_NFI_emp", "toi_sec"]
+_missing  = [c for c in _required if c not in pp.columns]
+if _missing:
+    raise RuntimeError(
+        f"tnfi_relatives_pp_pk.py expects pre-rename schema. Missing: {_missing}. "
+        f"This script must run BEFORE rename_and_momentum.py. Run in this order: "
+        f"fa_linemate_without_me.py -> tnfi_relatives_pp_pk.py -> rename_and_momentum.py"
+    )
 # Raw attribution pickle has per-player cf_fen, ca_fen, cf_cor, ca_cor, cf_cm, ca_cm, toi_sec
 raw = pd.read_pickle("/tmp/s4_ppdf.pkl")
 raw["season"] = raw["season"].astype(str)

@@ -19,11 +19,11 @@ Outputs (NFI/output):
   twoway_forward_score.csv    (REBUILT — z(P1a_w_total) - z(P2_weighted))
   twoway_D_score.csv          (REBUILT — z(P5_weighted) - z(P4_weighted))
 """
+import os
 import shutil
 import numpy as np
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT = f"{ROOT}/NFI/output"
 BK  = f"{OUT}/_pre_corsi_backup"
 

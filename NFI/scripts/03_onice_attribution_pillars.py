@@ -24,7 +24,7 @@ from collections import defaultdict
 import pandas as pd
 import numpy as np
 
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"
 SHIFT_CSV = f"{ROOT}/NFI/Geometry_post/Data/shift_data.csv"
 POS_CSV = f"{ROOT}/NFI/output/player_positions.csv"

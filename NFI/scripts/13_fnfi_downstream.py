@@ -9,10 +9,10 @@ FNFI downstream danger analysis:
 
 Rebound_sequences uses RAW coords; we classify CNFI via |x|>=74,|y|<=9.
 """
+import os
 import math
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 SHOT = f"{ROOT}/Data/nhl_shot_events.csv"
 REB  = f"{ROOT}/NFI/Geometry_post/Data/rebound_sequences.csv"
 OUT  = f"{ROOT}/NFI/output/fnfi_downstream_analysis.csv"

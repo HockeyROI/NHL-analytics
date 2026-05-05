@@ -11,8 +11,7 @@ import os, math
 import pandas as pd
 import numpy as np
 from scipy import stats
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT = f"{ROOT}/NFI/output"
 
 # ---------- heat map + inflection flag ----------

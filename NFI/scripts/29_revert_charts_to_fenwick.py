@@ -16,11 +16,11 @@ Save_pct in the heatmap continues to use (SOG + goal) as denominator
 goalie regardless of Corsi/Fenwick choice). The Fenwick filter only changes
 conversion_rate.
 """
+import os
 import math
 import numpy as np
 import pandas as pd
-
-ROOT = "/Users/ashgarg/Library/CloudStorage/OneDrive-Personal/NHL analysis"
+ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT  = f"{ROOT}/NFI/output"
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"
 BK   = f"{OUT}/_pre_fenwick_backup"

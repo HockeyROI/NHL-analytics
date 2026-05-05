@@ -50,6 +50,23 @@ GAME_TYPE_OPTIONS = ["Regular Season", "Playoffs"]
 PLAYOFF_POOLED_LABEL = "All Playoffs (2022–2026)"
 PLAYOFF_SEASON_OPTIONS_BASE = [PLAYOFF_POOLED_LABEL]
 
+# Goalie tab season selector — independent from the skater season selector
+# because the goalie pipeline goes back to 2021-22 and uses its own pooled
+# label (and the canonical pooled CSV uses a different denominator than the
+# per-season file by design).
+GOALIE_POOLED_LABEL = "Pooled (2021-22 → 2025-26)"
+GOALIE_SEASON_OPTIONS = [
+    GOALIE_POOLED_LABEL,
+    "2025-26", "2024-25", "2023-24", "2022-23", "2021-22",
+]
+GOALIE_SEASON_TO_KEY = {
+    "2025-26": 20252026,
+    "2024-25": 20242025,
+    "2023-24": 20232024,
+    "2022-23": 20222023,
+    "2021-22": 20212022,
+}
+
 SEASON_TO_DTNZI_COL = {
     "2025-26": "DTNZI_25_26",
     "2024-25": "DTNZI_24_25",
@@ -298,46 +315,39 @@ def load_nfi_player() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_goalie_nfi() -> pd.DataFrame:
-    """Goalie NFI-GSAx + team + ES TOI + tier (joined from publication file)."""
-    base = REPO_ROOT / "NFI" / "output" / "goalie_nfi_gsax.csv"
+    """Pooled goalie GSAx — canonical source.
+
+    Reads the v2 pooled file (NFI/output/goalie_nfi_gsax_pooled_v2.csv)
+    built by NFI/scripts/22_pool_goalie_gsax.py. The v2 file is itself
+    aggregated up from goalie_nfi_gsax_by_season.csv so the pooled view
+    and per-season view share the same CNFI+MNFI denominator and the
+    same shots-faced threshold (300 pooled / 100 per season).
+
+    Native columns of the v2 file:
+        goalie_id, goalie_name, team, n_seasons, games, total_faced,
+        es_toi_min, GSAx, GSAx_per60
+
+    Optional Tier joined from publication_goalies_top60.csv.
+    Optional CNFI_rebound_goal_rate / rebound_z joined from
+    goalie_rebound_control.csv when present.
+    """
+    base = REPO_ROOT / "NFI" / "output" / "goalie_nfi_gsax_pooled_v2.csv"
     if not base.exists():
         return pd.DataFrame()
     df = pd.read_csv(base)
 
-    # ES TOI
-    toi_fp = REPO_ROOT / "NFI" / "output" / "player_toi.csv"
-    if toi_fp.exists():
-        toi = pd.read_csv(toi_fp)
-        toi = toi[toi["position"] == "G"][["player_id", "toi_ES_sec"]].copy()
-        toi["ES_TOI_min"] = (toi["toi_ES_sec"] / 60.0).round(2)
-        df = df.merge(toi.rename(columns={"player_id": "goalie_id"})[
-            ["goalie_id", "ES_TOI_min"]
-        ], on="goalie_id", how="left")
-    else:
-        df["ES_TOI_min"] = np.nan
+    # Backwards-compatible alias so any caller still expecting the legacy
+    # column names doesn't break (the live goalie renderer uses GSAx /
+    # GSAx_per60 directly, but external consumers may still reference the
+    # old NFI_GSAx_cumulative / NFI_GSAx_per60 / ES_TOI_min names).
+    if "GSAx" in df.columns:
+        df["NFI_GSAx_cumulative"] = df["GSAx"]
+    if "GSAx_per60" in df.columns:
+        df["NFI_GSAx_per60"] = df["GSAx_per60"]
+    if "es_toi_min" in df.columns:
+        df["ES_TOI_min"] = df["es_toi_min"]
 
-    # Per-60 (goalie_nfi_gsax doesn't carry it directly)
-    df["NFI_GSAx_per60"] = np.where(
-        df["ES_TOI_min"].fillna(0) > 0,
-        df["NFI_GSAx_calibrated"] / df["ES_TOI_min"] * 60.0,
-        np.nan,
-    )
-    df = df.rename(columns={"NFI_GSAx_calibrated": "NFI_GSAx_cumulative"})
-
-    # Team — latest known
-    team_fp = REPO_ROOT / "Goalies" / "Benchmarks Goalies" / "Data" / "goalie_team_lookup.csv"
-    if team_fp.exists():
-        teams = pd.read_csv(team_fp)
-        teams_latest = (
-            teams.sort_values("season").drop_duplicates("goalie_id", keep="last")[
-                ["goalie_id", "goalie_team"]
-            ].rename(columns={"goalie_team": "team"})
-        )
-        df = df.merge(teams_latest, on="goalie_id", how="left")
-    else:
-        df["team"] = ""
-
-    # Tier from publication file
+    # Tier from publication file (still useful colour-tagging)
     pub_fp = REPO_ROOT / "NFI" / "output" / "publication_goalies_top60.csv"
     if pub_fp.exists():
         pub = pd.read_csv(pub_fp)
@@ -359,6 +369,23 @@ def load_goalie_nfi() -> pd.DataFrame:
             on="goalie_id", how="left",
         )
 
+    return df
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_goalie_nfi_by_season() -> pd.DataFrame:
+    """Per-season goalie GSAx (one row per goalie-season).
+
+    Source: NFI/output/goalie_nfi_gsax_by_season.csv (built by
+    NFI/scripts/21_goalie_gsax_by_season.py). CNFI+MNFI denominator,
+    minimum 100 dangerous-zone shots-faced per season.
+    """
+    fp = REPO_ROOT / "NFI" / "output" / "goalie_nfi_gsax_by_season.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    if "season" in df.columns:
+        df["season"] = df["season"].astype(int)
     return df
 
 
@@ -449,7 +476,7 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
     fwd_team.attrs["x_metric"] = x_metric
     fwd_team.attrs["x_label"] = x_label
 
-    # Goalie metric — pooled across seasons in goalie_nfi_gsax.csv
+    # Goalie metric — pooled v2 (CNFI+MNFI, aggregated from per-season file)
     g = load_goalie_nfi()
     if g.empty:
         return pd.DataFrame()
@@ -460,23 +487,43 @@ def load_team_construction(season_choice: str = "Current Season (2025-26)") -> p
     lookup_fp = REPO_ROOT / "Goalies" / "Benchmarks Goalies" / "Data" / "goalie_team_lookup.csv"
     if lookup_fp.exists():
         lk = pd.read_csv(lookup_fp)
+        # FIX 2 — Normalise legacy team codes (UTA == ARI for 2022-23/23-24).
+        lk["goalie_team"] = lk["goalie_team"].replace({"ARI": "UTA"})
+
+        def _starter_from(frame: pd.DataFrame) -> pd.DataFrame:
+            return (
+                frame.groupby(["goalie_team", "goalie_id"])["games_played"].sum()
+                     .rename("games").reset_index()
+                     .sort_values(["goalie_team", "games"], ascending=[True, False])
+                     .drop_duplicates("goalie_team", keep="first")
+            )
+
         if season_key is not None:
-            lk = lk[lk["season"].astype(str) == season_key]
-        # Highest games_played per (team, goalie) -> primary goalie for the team
-        starter = (
-            lk.groupby(["goalie_team", "goalie_id"])["games_played"].sum()
-              .rename("games").reset_index()
-              .sort_values(["goalie_team", "games"], ascending=[True, False])
-              .drop_duplicates("goalie_team", keep="first")
-              .rename(columns={"goalie_team": "team"})
-        )
+            lk_season = lk[lk["season"].astype(str) == season_key]
+            starter_season = _starter_from(lk_season)
+            # FIX 2 — Some historical seasons are missing from the lookup
+            # (e.g. 2022-23 has 0 rows; 2023-24 lacks UTA). Backfill any
+            # missing teams using the pooled lookup so the team panel
+            # always returns a full 32-team frame.
+            present = set(starter_season["goalie_team"].unique())
+            missing = set(lk["goalie_team"].unique()) - present
+            if missing:
+                pool = lk[lk["goalie_team"].isin(missing)]
+                starter = pd.concat(
+                    [starter_season, _starter_from(pool)], ignore_index=True
+                )
+            else:
+                starter = starter_season
+        else:
+            starter = _starter_from(lk)
+        starter = starter.rename(columns={"goalie_team": "team"})
     else:
         starter = (
             g.dropna(subset=["team"])
              .sort_values("ES_TOI_min", ascending=False)
              .drop_duplicates("team", keep="first")[["team", "goalie_id"]]
         )
-    # FIX (EDM dedup) — guarantee one starter row per team
+    # FIX 2 — guarantee one starter row per team after the season + fallback merge
     starter = starter.drop_duplicates(subset=["team"], keep="first")
 
     starter = starter.merge(
@@ -501,6 +548,31 @@ def _preload_nfi():
         return load_nfi_player()
     except Exception:
         return None
+
+
+# FIX 3 — display NaN guard. Every dataframe that goes into st.dataframe()
+# / st.table() runs through this first so users never see bare 'nan' or
+# 'None' in any cell. Numeric columns also get rounded to 2 decimals as a
+# uniform default; column-specific formatters (e.g. percent / per-60 / TOI
+# integer) still take precedence at the styler level.
+def _prep_for_display(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    for col in out.columns:
+        if pd.api.types.is_numeric_dtype(out[col]):
+            out[col] = out[col].fillna(0.0)
+            # 2dp default rounding — column-specific formatters override
+            try:
+                if pd.api.types.is_float_dtype(out[col]):
+                    out[col] = out[col].round(2)
+            except (TypeError, ValueError):
+                pass
+        else:
+            out[col] = out[col].fillna("—").astype(str).replace(
+                {"nan": "—", "None": "—", "": "—"}
+            )
+    return out
 
 
 def _prefetch_all() -> None:
@@ -1039,19 +1111,14 @@ def render_tnzi_table() -> None:
     game_type = st.session_state.get("game_type_tnzi", "Regular Season")
     season = st.session_state.get("f_season", REGULAR_SEASON_OPTIONS[0])
     if game_type == "Playoffs":
-        # FIX 1a — 2025-26 playoffs not yet started: dedicated coming-soon msg
-        if season == CURRENT_PLAYOFF_LABEL:
-            st.info("2025-26 playoff data will populate automatically as games are played.")
-            return
-        # FIX 1b — for ALL other playoff selections, show the context-only
-        # message instead of player rankings; samples are too small for
-        # reliable per-player rankings in playoffs.
+        # FIX 1 — every playoff selection (including 2025-26) shows the
+        # canonical context-only message and nothing else.
         st.info(
-            "Playoff data is available but individual player samples are too small "
-            "for reliable rankings (median 7–28 games per player). Use the Team "
-            "Construction tab to evaluate playoff performance at the team level."
+            "Playoff data is available but samples are too small for "
+            "reliable individual rankings (median 7–28 games per player). "
+            "Use the Team Construction tab to evaluate playoff performance "
+            "at the team level."
         )
-        st.markdown("For goalie playoff performance see the Goalies position filter.")
         return
     else:
         data = load_combined_regular()
@@ -1098,6 +1165,8 @@ def render_tnzi_table() -> None:
     display_df.insert(0, "Rank", np.arange(1, len(display_df) + 1))
 
     is_pooled_view = season == DEFAULT_SEASON
+    # FIX 3 — fillna numeric→0.0, object→"—" + 2dp default before styling.
+    display_df = _prep_for_display(display_df)
     st.dataframe(
         style_frame(display_df, color_map=is_pooled_view),
         width="stretch", hide_index=True,
@@ -1253,6 +1322,31 @@ def render_nfi_sidebar() -> None:
             key="nfi_show_corsi_fenwick",
             value=st.session_state.get("nfi_show_corsi_fenwick", False),
             help="Adds CF%_ZA and FF%_ZA next to NFI%_ZA for direct comparison.",
+        )
+
+    # Goalie-specific season selector — only shown when Goalies position is
+    # active. Independent from the skater nfi_season selector because the
+    # goalie pipeline goes back to 2021-22 and has its own pooled label.
+    if st.session_state.get("nfi_position", "All") == "Goalies":
+        st.session_state.setdefault("goalie_season_view", GOALIE_POOLED_LABEL)
+        st.sidebar.selectbox(
+            "Goalie Season",
+            GOALIE_SEASON_OPTIONS,
+            key="goalie_season_view",
+            help=("Pooled = goalie_nfi_gsax_pooled_v2.csv (min 300 dangerous-"
+                  "zone shots over 2021-22 → 2025-26). Per-season = "
+                  "goalie_nfi_gsax_by_season.csv (min 100 per season)."),
+        )
+        # Min Shots Faced — applies to both pooled and per-season views.
+        # Defaults to 500 to filter out the small-sample tail (Greaves 102,
+        # Aaron Dell 107, etc.) without hiding mid-volume backups.
+        st.session_state.setdefault("goalie_min_shots", 500)
+        st.sidebar.slider(
+            "Min Shots Faced",
+            min_value=100, max_value=3000, step=100,
+            key="goalie_min_shots",
+            help=("Filters the displayed goalies by total dangerous-zone "
+                  "shots-faced. Higher = fewer small-sample anomalies."),
         )
 
 
@@ -1531,19 +1625,14 @@ def render_nfi_table() -> None:
         return
 
     if game_type == "Playoffs":
-        # FIX 1a — 2025-26 playoffs not yet started: dedicated coming-soon msg
-        if season == CURRENT_PLAYOFF_LABEL:
-            st.info("2025-26 playoff data will populate automatically as games are played.")
-            return
-        # FIX 1b — for ALL other playoff selections, show the context-only
-        # message instead of player rankings; samples are too small for
-        # reliable per-player rankings in playoffs.
+        # FIX 1 — every playoff selection (including 2025-26) shows the
+        # canonical context-only message and nothing else.
         st.info(
-            "Playoff data is available but individual player samples are too small "
-            "for reliable rankings (median 7–28 games per player). Use the Team "
-            "Construction tab to evaluate playoff performance at the team level."
+            "Playoff data is available but samples are too small for "
+            "reliable individual rankings (median 7–28 games per player). "
+            "Use the Team Construction tab to evaluate playoff performance "
+            "at the team level."
         )
-        st.markdown("For goalie playoff performance see the Goalies position filter.")
         return
     else:
         df = load_nfi_player()
@@ -1595,6 +1684,8 @@ def render_nfi_table() -> None:
                   help="Average RelNFI% for filtered players")
 
     is_pooled_view = season == DEFAULT_SEASON
+    # FIX 3 — fillna before NFI styler too
+    display_df = _prep_for_display(display_df)
     st.dataframe(
         _style_nfi(display_df, color_map=is_pooled_view),
         width="stretch", hide_index=True,
@@ -1614,101 +1705,127 @@ def render_nfi_table() -> None:
 # ---------------------------------------------------------------------------
 def render_nfi_goalie_table(game_type: str | None = None,
                             season: str | None = None) -> None:
-    """FIX 6 — reactive to game_type and season selectors.
+    """Goalie tab — playoff short-circuit, then either pooled or per-season.
 
-    - Playoffs → "Goalie playoff data coming soon." (always, regardless of
-      which playoff year is selected).
-    - Regular Season → renders the goalie table; per-season views show pooled
-      multi-season data with a caption noting per-season breakdown is upcoming.
+    - Playoffs (any year) → canonical playoff context message and nothing
+      else (matches the player tabs).
+    - Regular Season → toggles on the new sidebar selector
+      `goalie_season_view` between Pooled and a single season:
+        * Pooled  → NFI/output/goalie_nfi_gsax_pooled_v2.csv (min 300
+                    shots-faced, CNFI+MNFI, aggregated from the per-season
+                    file — single source of truth)
+        * Season  → NFI/output/goalie_nfi_gsax_by_season.csv filtered to
+                    the chosen season (min 100 shots-faced, CNFI+MNFI,
+                    pooled-share TOI proxy)
+
+    Both branches render the same column set (Rank, Goalie, Team, Games,
+    Faced, GSAx, GSAx/60), sort descending by GSAx/60, and run through
+    _prep_for_display() before the styler.
     """
-    # If the caller didn't pass them, read from session state. Reading state
-    # here also makes Streamlit re-run this function whenever the toggles
-    # change, so the table refreshes with each switch.
+    # Reading state here makes Streamlit re-run the function whenever any
+    # toggle changes, so the table refreshes on every switch.
     if game_type is None:
         game_type = st.session_state.get("game_type_nfi", "Regular Season")
     if season is None:
         season = st.session_state.get("nfi_season", DEFAULT_SEASON)
 
     if game_type == "Playoffs":
-        st.info("Goalie playoff data coming soon.")
+        st.info(
+            "Playoff data is available but samples are too small for "
+            "reliable individual rankings (median 7–28 games per player). "
+            "Use the Team Construction tab to evaluate playoff performance "
+            "at the team level."
+        )
         return
+
+    goalie_view = st.session_state.get("goalie_season_view", GOALIE_POOLED_LABEL)
+    is_pooled = goalie_view == GOALIE_POOLED_LABEL
 
     st.markdown(
         f"<p style='color:{PALETTE['text']}; font-size:0.95rem; line-height:1.5;'>"
         "Goalie NFI-GSAx measures goals saved above expected from dangerous zones. "
-        "Validated against MoneyPuck GSAx at r=0.858. "
-        "Minimum 2000 ES minutes for qualification.</p>",
+        "Validated against MoneyPuck GSAx at r=0.858.</p>",
         unsafe_allow_html=True,
     )
 
-    df = load_goalie_nfi()
-    if df.empty:
-        st.error("Goalie file not found at `NFI/output/goalie_nfi_gsax.csv`.")
-        return
+    # ---------------- Build the display frame for either branch ----------------
+    if is_pooled:
+        df = load_goalie_nfi()
+        if df.empty:
+            st.error("Goalie file not found at "
+                     "`NFI/output/goalie_nfi_gsax_pooled_v2.csv`.")
+            return
+        # The v2 file already has games + total_faced + GSAx + GSAx_per60
+        # natively — just rename total_faced for the shared display schema.
+        df = df.rename(columns={"total_faced": "faced"})
+        caption = (
+            "Pooled across 2021-22 → 2025-26. "
+            "Minimum 300 dangerous-zone shots-faced (CNFI+MNFI) to qualify."
+        )
+    else:
+        season_key = GOALIE_SEASON_TO_KEY.get(goalie_view)
+        df_all = load_goalie_nfi_by_season()
+        if df_all.empty or season_key is None:
+            st.error(
+                "Per-season goalie file not found at "
+                "`NFI/output/goalie_nfi_gsax_by_season.csv`."
+            )
+            return
+        df = df_all[df_all["season"] == season_key].copy()
+        # Already named: goalie_name, team, games, total_faced, GSAx, GSAx_per60
+        df = df.rename(columns={"total_faced": "faced"})
+        caption = (
+            "Single season data. Minimum 100 dangerous-zone shots-faced to "
+            "qualify. Per-season TOI estimated from pooled allocation."
+        )
 
-    # FIX 3 — Goalie tab always shows pooled career totals regardless of
-    # the season selector (no season filtering for goalies); a single caption
-    # explains it.
-    season_caption = (
-        "Goalie rankings show pooled career totals (2022-23 through 2025-26). "
-        "Per-season goalie breakdown coming soon."
-    )
-
-    # Filters — goalies use a fixed 2000-min qualification regardless of the
-    # skater TOI slider; the slider exists only for skaters.
+    # ---------------- Sidebar filters (team / name / min shots) ----------------
     teams = st.session_state.get("nfi_teams", [])
     if teams and "team" in df.columns:
         df = df[df["team"].isin(teams)]
     name_q = (st.session_state.get("nfi_name", "") or "").strip().lower()
-    if name_q:
+    if name_q and "goalie_name" in df.columns:
         df = df[df["goalie_name"].fillna("").str.lower().str.contains(name_q, na=False)]
 
-    GOALIE_MIN_TOI = 2000
-    if "ES_TOI_min" in df.columns and df["ES_TOI_min"].notna().any():
-        df = df[df["ES_TOI_min"].fillna(0) >= GOALIE_MIN_TOI]
+    # Min Shots Faced — filters the small-sample tail in both views
+    min_shots = int(st.session_state.get("goalie_min_shots", 500))
+    if "faced" in df.columns:
+        df = df[df["faced"].fillna(0) >= min_shots]
 
     if df.empty:
-        st.markdown(
-            '<p style="color:#F0F4F8;">No goalies match the current filters.</p>',
-            unsafe_allow_html=True,
-        )
+        st.info("No goalie data available for this season.")
         return
 
-    df = df.sort_values("NFI_GSAx_cumulative", ascending=False, na_position="last").reset_index(drop=True)
-    df.insert(0, "#", np.arange(1, len(df) + 1))
+    # ---------------- Sort + rank + project to display columns ----------------
+    df = df.sort_values("GSAx_per60", ascending=False, na_position="last").reset_index(drop=True)
+    df.insert(0, "Rank", np.arange(1, len(df) + 1))
 
-    show_cols = {
-        "#": "#",
+    disp = df[[
+        "Rank", "goalie_name", "team", "games", "faced", "GSAx", "GSAx_per60",
+    ]].rename(columns={
         "goalie_name": "Goalie",
-        "team": "Team",
-        "ES_TOI_min": "TOI",
-        "NFI_GSAx_cumulative": "NFI_GSAx_cumulative",
-        "NFI_GSAx_per60": "NFI_GSAx_per60",
-        "Tier": "Tier",
+        "team":        "Team",
+        "games":       "Games",
+        "faced":       "Faced",
+        "GSAx_per60":  "GSAx/60",
+    })
+
+    # ---------------- Format + render ----------------
+    fmt = {
+        "Games":   lambda x: "—" if pd.isna(x) else f"{int(x):,}",
+        "Faced":   lambda x: "—" if pd.isna(x) else f"{int(x):,}",
+        "GSAx":    lambda x: "—" if pd.isna(x) else f"{x:+.2f}",
+        "GSAx/60": lambda x: "—" if pd.isna(x) else f"{x:+.3f}",
     }
-    if "CNFI_rebound_goal_rate" in df.columns:
-        show_cols["CNFI_rebound_goal_rate"] = "CNFI_rebound_goal_rate"
-        show_cols["rebound_z"] = "z_score"
-
-    disp = df[[c for c in show_cols if c in df.columns]].rename(columns=show_cols)
-
-    fmt = {}
-    if "TOI" in disp.columns:
-        fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
-    if "NFI_GSAx_cumulative" in disp.columns:
-        fmt["NFI_GSAx_cumulative"] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
-    if "NFI_GSAx_per60" in disp.columns:
-        fmt["NFI_GSAx_per60"] = lambda x: "—" if pd.isna(x) else f"{x:+.3f}"
-    if "CNFI_rebound_goal_rate" in disp.columns:
-        fmt["CNFI_rebound_goal_rate"] = lambda x: "—" if pd.isna(x) else f"{x:.3f}"
-    if "z_score" in disp.columns:
-        fmt["z_score"] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
-
+    disp = _prep_for_display(disp)
     styler = disp.style.format(fmt, na_rep="—")
     st.dataframe(styler, width="stretch", hide_index=True)
-    if season_caption:
-        st.caption(season_caption)
-    st.caption(f"Showing {len(disp):,} goalies — sorted by NFI_GSAx_cumulative descending")
+    st.caption(caption)
+    st.caption(
+        f"Showing {len(disp):,} goalies — "
+        f"{'pooled view' if is_pooled else goalie_view} · "
+        "sorted by GSAx/60 descending"
+    )
 
 
 def render_nfi_explainers() -> None:
@@ -1806,7 +1923,8 @@ def render_team_construction() -> None:
     if df.empty:
         st.error(
             "Team construction data unavailable — required: "
-            "`player_fully_adjusted.csv` and `goalie_nfi_gsax.csv`."
+            "`player_fully_adjusted.csv` and "
+            "`goalie_nfi_gsax_pooled_v2.csv`."
         )
         return
 
@@ -1927,6 +2045,8 @@ def render_team_construction() -> None:
             "NFI_GSAx_per60": "Goalie GSAx /60",
         }
     )
+    # FIX 3 — fillna before TC rank table
+    out = _prep_for_display(out)
     st.dataframe(
         out.style.format({
             x_label: "{:+.3f}",
@@ -1968,6 +2088,8 @@ def main() -> None:
         "f_season": REGULAR_SEASON_OPTIONS[0], "f_teams": [],
         "f_name": "", "f_min_gp": 0, "f_flag": "All",
         "tc_season": "Current Season (2025-26)",
+        "goalie_season_view": GOALIE_POOLED_LABEL,
+        "goalie_min_shots":   500,
     }.items():
         st.session_state.setdefault(key, val)
 

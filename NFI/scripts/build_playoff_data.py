@@ -47,7 +47,9 @@ OUT_NFI.mkdir(parents=True, exist_ok=True)
 ABBR_MAP = {"ARI": "UTA"}
 FLIP = {"O":"D","D":"O","N":"N"}
 FENWICK_TYPES = {"shot-on-goal","missed-shot","goal"}
-NFI_ZA_FACTOR = 0.10710  # empirical OZ-DZ pct-pt gap for NFI%
+NFI_ZA_FACTOR = 0.035  # Tulsky 2013 (3.5pp). Mirrored in
+                       #   NFI/scripts/build_fa_factors.py  (factors["NFI"])
+                       #   NFI/scripts/update_current_season.py (NFI_ZA_FACTOR)
 
 def norm(a): return ABBR_MAP.get(a, a) if a else a
 
@@ -101,7 +103,12 @@ xd = xd[xd["game_id"].isin(gids)]
 xd = xd[xd["state"] == "ES"]
 xd["shooting_team_abbrev"] = xd["shooting_team_abbrev"].astype(str).map(norm)
 xd["is_fen"] = xd["event_type"].isin(FENWICK_TYPES)
-xd["is_cm"]  = xd["zone"].isin(["CNFI","MNFI"])
+# Fenwick filter applied to NFI zone flag — matches framework rule that all
+# NFI metrics are Fenwick-only. Without this filter, blocked shots (which have
+# wrong-frame coordinates) corrupt the metric. Same bug fixed earlier in
+# decision_tree_stage4.py:134, decision_tree_stage123.py:179, and
+# factor_comparison_5metrics.py:79. Standardized 2026-05-01.
+xd["is_cm"]  = xd["zone"].isin(["CNFI","MNFI"]) & xd["is_fen"]
 xd = xd.sort_values(["game_id","abs_time"]).reset_index(drop=True)
 print(f"    playoff ES shots: {len(xd):,}")
 shots_by_game = {gid:{"t": g["abs_time"].to_numpy(),
