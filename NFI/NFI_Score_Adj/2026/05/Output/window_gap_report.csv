@@ -1,0 +1,13 @@
+key,value
+source_file,/Users/ashgarg/Documents/HockeyROI/Data/nhl_shot_events.csv
+source_seasons,"20202021,20212022,20222023,20232024,20242025,20252026"
+shots_tagged_seasons,"20212022,20222023,20232024,20242025,20252026"
+shots_tagged_missing_seasons,20202021
+shots_tagged_builder,/Users/ashgarg/Documents/HockeyROI/NFI/scripts/03_onice_attribution_pillars.py
+step1_total_events,921874
+step3_kept_events,174937
+step3_recon_max_pct_off,0.000402
+step3_recon_max_pct_def,0.000397
+step3_recon_failures,0
+crosscheck_median_ratio_off,1.026810
+crosscheck_median_ratio_def,1.026813
