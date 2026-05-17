@@ -20,3 +20,6 @@ Format: `YYYY-MM-DD — [link] — one-sentence summary.`
 - 2026-04-24 — [link](https://hockeyroi.substack.com/p/how-to-beat-lukas-dostal-a-shot-by) — Goalie analysis: shot-by-shot breakdown of Dostal.
 - 2026-04-28 — [link](https://hockeyroi.substack.com/p/whats-hiding-in-the-hd-shot-map) — Second NFI post; more detailed treatment of the HD zone redefinition.
 - 2026-05-03 — [link](https://hockeyroi.substack.com/p/what-net-front-impact-told-us-about) — NFI applied at team level; pre-playoff team rankings covering Round 1 and 2.
+- 2026-05-08 — [link](https://hockeyroi.substack.com/p/oilers-true-goalie-problem) — Oilers' goaltending struggles framed as a team-defense problem, not just a goalie problem.
+- 2026-05-11 — [link](https://hockeyroi.substack.com/p/a-deep-dive-into-the-edm-goalie-options) — Realistic goalie options for the Oilers.
+- 2026-05-14 — [link](https://hockeyroi.substack.com/p/why-raw-stats-lie-the-case-for-relative) — Methodology: why RelNFI/RelCorsi beat raw stats for player evaluation.
