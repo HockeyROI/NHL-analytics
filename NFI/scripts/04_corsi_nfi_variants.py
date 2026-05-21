@@ -46,7 +46,12 @@ SCORE_W = {"trail2plus":1.40,"trail1":1.20,"tied":1.00,"lead1":0.85,"lead2plus":
 
 print("Loading tagged shots...")
 sh = pd.read_csv(SHOT_T)
-print(f"  {len(sh):,} shots")
+print(f"  {len(sh):,} shots (pre-game_type filter)")
+# Bug fix May 2026 (moved from 03_onice_attribution_pillars.py): restrict team-level
+# aggregation to regular-season games. Playoff games remain in shots_tagged.csv for
+# the playoff pipeline (build_playoff_data.py). game_id digits 4-5 == '02' = regular.
+sh = sh[sh["game_id"].astype(str).str[4:6] == "02"].copy()
+print(f"  {len(sh):,} shots (regular season only)")
 
 # per-shot: we need on-ice players for Corsi%; but we didn't write those in shots_tagged.
 # Instead, re-use player-level counts (player_counts_by_state_zone.csv) for on-ice tallies.

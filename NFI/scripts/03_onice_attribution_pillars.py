@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Step 4 - On-ice attribution (shift <-> shot join).
-Step 5 - Compute Pillars 1-7 with Wilson 95% CIs.
+Step 5 - Compute Pillars 1-7. Wilson 95% CIs on proportions (save%);
+        exact Poisson 95% CIs on per-60 rates (chi-square / Garwood).
 
 Seasons: 20222023, 20232024, 20242025 (3 pooled).
 Regulation periods only (1-3).
@@ -23,6 +24,7 @@ import os, csv, math, json
 from collections import defaultdict
 import pandas as pd
 import numpy as np
+from scipy.stats import chi2
 
 ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 SHOT_CSV = f"{ROOT}/Data/nhl_shot_events.csv"
@@ -46,12 +48,25 @@ def wilson(k, n, z=1.96):
     return (p, max(0.0, center-halfw), min(1.0, center+halfw))
 
 def rate_ci(events, minutes, z=1.96):
-    """Per-60 rate with Wilson-style CI (treat per-minute as binomial)."""
+    """Per-60 rate with exact Poisson 95% CI on the event count.
+
+    Uses the chi-square (Garwood) exact Poisson interval on the count k, then
+    scales to per-60 by dividing by the time exposure (minutes/60). Replaces
+    a prior Wilson-on-rate misuse: Wilson is a binomial-proportion interval
+    in [0, 1]; per-60 rates are unbounded Poisson rates over time exposure.
+    Signature preserved so callers don't change; the z arg is kept for API
+    stability but the level is fixed at 95% via the chi-square method.
+    """
     if minutes <= 0:
         return (0.0, 0.0, 0.0)
-    p, lo, hi = wilson(events, max(events, int(round(minutes))))
-    # scale to per-60
-    return (events/minutes*60.0, lo*60.0, hi*60.0)
+    k = int(round(events))
+    rate = events / minutes * 60.0
+    if k <= 0:
+        hi_count = chi2.ppf(0.975, 2) / 2.0
+        return (rate, 0.0, hi_count * 60.0 / minutes)
+    lo_count = chi2.ppf(0.025, 2 * k) / 2.0
+    hi_count = chi2.ppf(0.975, 2 * (k + 1)) / 2.0
+    return (rate, lo_count * 60.0 / minutes, hi_count * 60.0 / minutes)
 
 def classify_zone(x, y):
     if pd.isna(x) or pd.isna(y):
@@ -67,8 +82,8 @@ def classify_zone(x, y):
     return "Wide"
 
 def state_from_code(sc, shoot_home):
-    """ES/PP/PK from 4-digit code: away_g, away_sk, home_sk, home_g.
-    None if empty net."""
+    """5v5 ('ES') / 4v4 / 3v3 / PP / PK from 4-digit code: away_g, away_sk, home_sk, home_g.
+    None if empty net. (Bug fix May 2026: 'ES' previously conflated 5v5 + 4v4 + 3v3.)"""
     if pd.isna(sc):
         return None
     s = str(int(sc)).zfill(4)
@@ -78,7 +93,11 @@ def state_from_code(sc, shoot_home):
     if ag == 0 or hg == 0:
         return None
     sh, op = (hsk, ask) if shoot_home else (ask, hsk)
-    if sh == op: return "ES"
+    if sh == op:
+        if sh == 5: return "ES"     # strict 5v5
+        if sh == 4: return "4v4"
+        if sh == 3: return "3v3"
+        return "ES_other"
     if sh > op:  return "PP"
     return "PK"
 
@@ -115,7 +134,11 @@ hsk = sc_str.str[2].astype(int); hg = sc_str.str[3].astype(int)
 empty_net = (ag==0) | (hg==0)
 sh = np.where(shots["_shoot_home"], hsk, ask)
 op = np.where(shots["_shoot_home"], ask, hsk)
-state = np.where(sh==op, "ES", np.where(sh>op, "PP", "PK"))
+# Bug fix May 2026: "ES" now means strict 5v5; 4v4 and 3v3 are separate labels.
+state = np.where((sh==op) & (sh==5), "ES",
+         np.where((sh==op) & (sh==4), "4v4",
+         np.where((sh==op) & (sh==3), "3v3",
+         np.where(sh>op, "PP", "PK"))))
 shots["state"] = state
 shots = shots[~empty_net].copy()
 
@@ -387,11 +410,12 @@ def agg_zone(dct, state, zone):
         return sum(dct.get((state,z),0) for z in ZONES_NFI)
     return dct.get((state,zone),0)
 
-# Helper: build pillar rows with Wilson CIs
+# Helper: build pillar rows with exact Poisson 95% CIs on per-60 rates
 def build_pillar(pid_dict, gl_dict, label, allowed_positions, onice=False):
     """pid_dict[pid][(state,zone)] = attempts. gl_dict same for goals.
        If onice: rate measured vs on-ice TOI. Else: individual rate also vs TOI.
-       Wilson CIs for per-60 rates treated as shots per minute binomial scaled x60."""
+       Per-60 CIs use the chi-square (Garwood) exact Poisson interval on the
+       count, scaled to per-60 via rate_ci()."""
     rows = []
     for pid in sorted(set(pid_dict.keys()) | set(gl_dict.keys())):
         if pos_map.get(pid,"") not in allowed_positions:

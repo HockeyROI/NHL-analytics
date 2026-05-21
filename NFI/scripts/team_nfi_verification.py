@@ -57,7 +57,7 @@ print(f"  last-modified: {pd.Timestamp(os.path.getmtime(TLM_CSV), unit='s')}")
 # ----- Load events -----
 print("\nLoading shots ...")
 df = pd.read_csv(SHOT_CSV,
-                 usecols=["season","period","situation_code","event_type",
+                 usecols=["season","period","situation_code","event_type","game_type",
                           "shooting_team_id","shooting_team_abbrev",
                           "home_team_id","home_team_abbrev","away_team_abbrev",
                           "x_coord_norm","y_coord_norm"],
@@ -65,8 +65,9 @@ df = pd.read_csv(SHOT_CSV,
 print(f"  raw rows loaded: {len(df):,}")
 
 # Filter to 2025-26 regulation 5v5 ES
-sub = df[(df["season"]=="20252026") & (df["period"].between(1,3)) &
-         (df["situation_code"].astype(str)=="1551")].copy()
+# Bug fix May 2026: add game_type filter to prevent playoff contamination for prior-season extensions.
+sub = df[(df["season"]=="20252026") & (df["game_type"]=="regular") &
+         (df["period"].between(1,3)) & (df["situation_code"].astype(str)=="1551")].copy()
 print(f"  after season/period/state filter (5v5 ES, reg, 2025-26): {len(sub):,}")
 
 # Event-type counts BEFORE Fenwick filter
