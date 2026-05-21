@@ -47,6 +47,49 @@ gm  = pd.read_csv(f"{OUT}/goalie_metric_comparison.csv")
 pos = pd.read_csv(f"{OUT}/player_positions.csv", dtype={"player_id":int})
 pos["pos_detail"] = pos["position"].map({"C":"C","L":"LW","R":"RW","D":"D","G":"G"})
 
+# ---- Per-player career-pool RelNFI point estimates and 95% CIs --------------
+# RelNFI values in player_fully_adjusted are season-level (post rename_and_
+# momentum). For publication output we report a per-player career aggregate:
+#   point  = TOI-weighted mean across seasons
+#   SE     = sqrt( Σ (w_i^2 · SE_i^2) ) / Σ w_i        (variance of weighted mean
+#            assuming season-level estimates are independent)
+#   CI95   = point ± 1.96·SE
+# Season-level SE_i is recovered from the (lo95, hi95) interval width: SE = (hi-lo)/(2·1.96).
+_pfa = pd.read_csv(f"{OUT}/fully_adjusted/player_fully_adjusted.csv")
+_pfa["toi_min"] = pd.to_numeric(_pfa.get("toi_min", _pfa.get("toi_sec", 0)/60), errors="coerce")
+
+def _pool_rel(df, point_col, lo_col, hi_col):
+    """Per-player pooled point and 95% CI from season-level estimates."""
+    sub = df.dropna(subset=[point_col, lo_col, hi_col, "toi_min"]).copy()
+    sub["se_i"] = (sub[hi_col] - sub[lo_col]) / (2 * 1.96)
+    sub["w_x"]  = sub["toi_min"] * sub[point_col]
+    sub["w2_v"] = (sub["toi_min"] ** 2) * (sub["se_i"] ** 2)
+    g = sub.groupby("player_id").agg(
+        sum_w   =("toi_min", "sum"),
+        sum_w_x =("w_x",     "sum"),
+        sum_w2_v=("w2_v",    "sum"),
+    ).reset_index()
+    g["point"] = g["sum_w_x"] / g["sum_w"].replace(0, np.nan)
+    g["se"]    = np.sqrt(g["sum_w2_v"]) / g["sum_w"].replace(0, np.nan)
+    g["lo95"]  = g["point"] - 1.96 * g["se"]
+    g["hi95"]  = g["point"] + 1.96 * g["se"]
+    return g[["player_id", "point", "lo95", "hi95"]]
+
+_rel_F  = _pool_rel(_pfa, "RelNFI_F_pct", "RelNFI_F_lo95", "RelNFI_F_hi95"
+                    ).rename(columns={"point":"RelNFI_F_pct",
+                                       "lo95":"RelNFI_F_lo95",
+                                       "hi95":"RelNFI_F_hi95"})
+_rel_A  = _pool_rel(_pfa, "RelNFI_A_pct", "RelNFI_A_lo95", "RelNFI_A_hi95"
+                    ).rename(columns={"point":"RelNFI_A_pct",
+                                       "lo95":"RelNFI_A_lo95",
+                                       "hi95":"RelNFI_A_hi95"})
+_rel_N  = _pool_rel(_pfa, "RelNFI_pct",   "RelNFI_lo95",   "RelNFI_hi95"
+                    ).rename(columns={"point":"RelNFI_pct",
+                                       "lo95":"RelNFI_lo95",
+                                       "hi95":"RelNFI_hi95"})
+rel_pool = _rel_F.merge(_rel_A, on="player_id", how="outer") \
+                 .merge(_rel_N, on="player_id", how="outer")
+
 # ---- Forwards top 100 ----
 fwd = twf.head(100).copy()
 # Rename for publication clarity
@@ -57,6 +100,8 @@ fwd = fwd.merge(pos[["player_id","pos_detail"]], on="player_id", how="left")
 p1b_keep = ["player_id","P1b_pct","P1b_lo_pct","P1b_hi_pct",
             "P1b_per60","P1b_per60_lo95","P1b_per60_hi95"]
 fwd = fwd.merge(p1b[p1b_keep], on="player_id", how="left")
+# RelNFI pooled point + Poisson-differential 95% CIs (career-pool)
+fwd = fwd.merge(rel_pool, on="player_id", how="left")
 # P2_weighted already in twf via earlier join. Rename for clarity.
 # P1a CIs not available (weighted aggregate), so leave None.
 fwd["small_sample_flag"] = np.where(fwd["es_toi_min"] < 2000.0, "<2000_ES_min", "")
@@ -64,6 +109,9 @@ fwd["small_sample_flag"] = np.where(fwd["es_toi_min"] < 2000.0, "<2000_ES_min", 
 fwd_cols = ["rank","player_name","pos_detail","es_toi_min",
             "P1a_weighted_total","P1b_pct","P1b_lo_pct","P1b_hi_pct",
             "P1b_per60","P1b_per60_lo95","P1b_per60_hi95",
+            "RelNFI_F_pct","RelNFI_F_lo95","RelNFI_F_hi95",
+            "RelNFI_A_pct","RelNFI_A_lo95","RelNFI_A_hi95",
+            "RelNFI_pct","RelNFI_lo95","RelNFI_hi95",
             "P2_weighted","z_P1a_weighted","z_P2_weighted","twoway_score",
             "off_rank","def_rank","small_sample_flag"]
 fwd = fwd[fwd_cols].rename(columns={"pos_detail":"position",

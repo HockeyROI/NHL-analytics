@@ -116,7 +116,43 @@ twf_renamed = twf_renamed.merge(pos[["player_id","pos_detail"]], on="player_id",
 # Pull P1b columns (P1b_pct, P1b_per60) from p1b file
 p1b = pd.read_csv(f"{OUT}/P1b_rebound_arrival.csv")
 twf_renamed = twf_renamed.merge(
-    p1b[["player_id","P1b_pct","P1b_per60"]], on="player_id", how="left")
+    p1b[["player_id","P1b_pct","P1b_per60","P1b_per60_lo95","P1b_per60_hi95"]],
+    on="player_id", how="left")
+
+# Pool RelNFI to per-player career aggregate (TOI-weighted point;
+# variance-pooled 95% CI from season-level SEs assuming independence across seasons).
+_pfa = pd.read_csv(f"{OUT}/fully_adjusted/player_fully_adjusted.csv")
+_pfa["toi_min"] = pd.to_numeric(_pfa.get("toi_min", _pfa.get("toi_sec", 0)/60), errors="coerce")
+def _pool_rel(df, point_col, lo_col, hi_col):
+    sub = df.dropna(subset=[point_col, lo_col, hi_col, "toi_min"]).copy()
+    sub["se_i"] = (sub[hi_col] - sub[lo_col]) / (2 * 1.96)
+    sub["w_x"]  = sub["toi_min"] * sub[point_col]
+    sub["w2_v"] = (sub["toi_min"] ** 2) * (sub["se_i"] ** 2)
+    g = sub.groupby("player_id").agg(
+        sum_w   =("toi_min", "sum"),
+        sum_w_x =("w_x",     "sum"),
+        sum_w2_v=("w2_v",    "sum"),
+    ).reset_index()
+    g["point"] = g["sum_w_x"] / g["sum_w"].replace(0, np.nan)
+    g["se"]    = np.sqrt(g["sum_w2_v"]) / g["sum_w"].replace(0, np.nan)
+    g["lo95"]  = g["point"] - 1.96 * g["se"]
+    g["hi95"]  = g["point"] + 1.96 * g["se"]
+    return g[["player_id", "point", "lo95", "hi95"]]
+_rel_F = _pool_rel(_pfa, "RelNFI_F_pct", "RelNFI_F_lo95", "RelNFI_F_hi95"
+                   ).rename(columns={"point":"RelNFI_F_pct",
+                                      "lo95":"RelNFI_F_lo95",
+                                      "hi95":"RelNFI_F_hi95"})
+_rel_A = _pool_rel(_pfa, "RelNFI_A_pct", "RelNFI_A_lo95", "RelNFI_A_hi95"
+                   ).rename(columns={"point":"RelNFI_A_pct",
+                                      "lo95":"RelNFI_A_lo95",
+                                      "hi95":"RelNFI_A_hi95"})
+_rel_N = _pool_rel(_pfa, "RelNFI_pct",   "RelNFI_lo95",   "RelNFI_hi95"
+                   ).rename(columns={"point":"RelNFI_pct",
+                                      "lo95":"RelNFI_lo95",
+                                      "hi95":"RelNFI_hi95"})
+_rel_pool = _rel_F.merge(_rel_A, on="player_id", how="outer") \
+                  .merge(_rel_N, on="player_id", how="outer")
+twf_renamed = twf_renamed.merge(_rel_pool, on="player_id", how="left")
 
 # Use the FULL twoway_forward_score.csv as the candidate pool, sorted by score
 twf_pool = twf_renamed.sort_values("two_way_score", ascending=False).reset_index(drop=True)
@@ -139,7 +175,11 @@ new_pub_f = new_pub_f.rename(columns={
 })
 new_pub_f_cols = ["rank","player_name","position","es_toi_min","two_way_score",
                    "z_offensive","z_defensive","P1a_weighted","P1b_pct",
-                   "P1b_per60","P2_weighted","small_sample_flag"]
+                   "P1b_per60","P1b_per60_lo95","P1b_per60_hi95",
+                   "RelNFI_F_pct","RelNFI_F_lo95","RelNFI_F_hi95",
+                   "RelNFI_A_pct","RelNFI_A_lo95","RelNFI_A_hi95",
+                   "RelNFI_pct","RelNFI_lo95","RelNFI_hi95",
+                   "P2_weighted","small_sample_flag"]
 new_pub_f = new_pub_f[new_pub_f_cols]
 
 # D

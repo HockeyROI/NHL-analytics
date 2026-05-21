@@ -21,6 +21,7 @@ import os, math
 from collections import defaultdict
 import numpy as np
 import pandas as pd
+from scipy.stats import chi2
 ROOT = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
 OUT  = f"{ROOT}/NFI/output"
 SHOT_CSV  = f"{ROOT}/Data/nhl_shot_events.csv"
@@ -81,9 +82,21 @@ def wilson(k, n, z=1.96):
     return (p, max(0.0,c-h), min(1.0,c+h))
 
 def rate_ci(events, minutes, z=1.96):
-    if minutes <= 0: return 0.0, 0.0, 0.0
-    p, lo, hi = wilson(events, max(events, int(round(minutes))))
-    return events/minutes*60.0, lo*60.0, hi*60.0
+    """Per-60 rate with exact Poisson 95% CI on the event count.
+
+    Chi-square (Garwood) exact Poisson interval on k, scaled to per-60.
+    Replaces a prior Wilson-on-rate misuse. Signature preserved; z arg kept
+    for API stability but the level is fixed at 95%."""
+    if minutes <= 0:
+        return (0.0, 0.0, 0.0)
+    k = int(round(events))
+    rate = events / minutes * 60.0
+    if k <= 0:
+        hi_count = chi2.ppf(0.975, 2) / 2.0
+        return (rate, 0.0, hi_count * 60.0 / minutes)
+    lo_count = chi2.ppf(0.025, 2 * k) / 2.0
+    hi_count = chi2.ppf(0.975, 2 * (k + 1)) / 2.0
+    return (rate, lo_count * 60.0 / minutes, hi_count * 60.0 / minutes)
 
 # ---- Load lookups ----
 print("Loading positions / TOI ...")

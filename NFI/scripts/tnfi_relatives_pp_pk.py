@@ -144,6 +144,67 @@ pp["FF_RF"] = pp["on60_cf_fen"] - pp["off60_cf_fen"]
 pp["FF_RA"] = pp["off60_ca_fen"] - pp["on60_ca_fen"]
 pp["FF_combined"] = pp["FF_RF"] + pp["FF_RA"]
 
+# ---- RelNFI 95% CIs via Poisson-differential SE -----------------------------
+# Each Rel* metric is a difference of two per-60 Poisson rates.
+# Var(rate) = events / minutes**2 (per-minute units); SE per-60 = sqrt(var)*60.
+# RelNFI_F uses cf_cm events (for); RelNFI_A uses ca_cm events (against).
+# For the combined RelNFI = RelNFI_F + RelNFI_A, we DON'T assume independence:
+# empirically, residuals of cf_cm and ca_cm given log(toi_sec) are correlated
+# (typical r ~ +0.4 across the player pool — score-state / pace effects mean
+# trailing/transition-heavy contexts spike both counts even at fixed TOI).
+# So we use Var(F+A) = Var(F) + Var(A) + 2·Cov(F,A)  with Cov ≈ r·SE_F·SE_A,
+# where r is computed empirically on this pool below.
+toi_min      = pp["toi_sec"] / 60.0
+off_toi_min  = (pp["team_es_toi_sec"] - pp["toi_sec"]) / 60.0
+
+def _se_diff_per60(F_on, T_on, F_off, T_off):
+    """SE of (on60 - off60) where on60 = F_on/T_on * 60 etc., T in minutes."""
+    T_on_safe  = np.where(T_on  > 0, T_on,  np.nan)
+    T_off_safe = np.where(T_off > 0, T_off, np.nan)
+    var = F_on / (T_on_safe ** 2) + F_off / (T_off_safe ** 2)
+    return np.sqrt(var) * 60.0
+
+se_F = _se_diff_per60(pp["cf_cm"].to_numpy(),
+                       toi_min.to_numpy(),
+                       (pp["team_cf_cm"] - pp["cf_cm"]).to_numpy(),
+                       off_toi_min.to_numpy())
+se_A = _se_diff_per60(pp["ca_cm"].to_numpy(),
+                       toi_min.to_numpy(),
+                       (pp["team_ca_cm"] - pp["ca_cm"]).to_numpy(),
+                       off_toi_min.to_numpy())
+
+# Empirical partial correlation r(cf_cm, ca_cm | log(toi_sec)) across the pool.
+# Used as the Cov(F,A) proxy for the per-player combined SE. Computed on the
+# qualifying-TOI subset of pp to match the population whose CIs we're reporting.
+_mask = (pp["toi_sec"] > 0) & pp["cf_cm"].notna() & pp["ca_cm"].notna()
+if _mask.sum() >= 30:
+    _X_resid = sm_log = np.log(pp.loc[_mask, "toi_sec"].to_numpy())
+    _f = pp.loc[_mask, "cf_cm"].to_numpy()
+    _a = pp.loc[_mask, "ca_cm"].to_numpy()
+    # Residuals of cf_cm and ca_cm on log(toi_sec), via simple linear regression.
+    _x_mean = _X_resid.mean()
+    _xc = _X_resid - _x_mean
+    _denom_x = (_xc ** 2).sum()
+    _beta_f = (_xc * (_f - _f.mean())).sum() / _denom_x
+    _beta_a = (_xc * (_a - _a.mean())).sum() / _denom_x
+    _res_f = _f - (_f.mean() + _beta_f * _xc)
+    _res_a = _a - (_a.mean() + _beta_a * _xc)
+    _r_partial = float(np.corrcoef(_res_f, _res_a)[0, 1])
+else:
+    _r_partial = 0.0
+print(f"[part2] empirical partial r(cf_cm, ca_cm | log toi) = {_r_partial:+.4f}  "
+      f"(used as Cov term in RelNFI combined SE)")
+
+se_combined = np.sqrt(se_F ** 2 + se_A ** 2 + 2.0 * _r_partial * se_F * se_A)
+
+Z = 1.96
+pp["TNFI_RF_lo95"]       = pp["TNFI_RF"] - Z * se_F
+pp["TNFI_RF_hi95"]       = pp["TNFI_RF"] + Z * se_F
+pp["TNFI_RA_lo95"]       = pp["TNFI_RA"] - Z * se_A
+pp["TNFI_RA_hi95"]       = pp["TNFI_RA"] + Z * se_A
+pp["TNFI_combined_lo95"] = pp["TNFI_combined"] - Z * se_combined
+pp["TNFI_combined_hi95"] = pp["TNFI_combined"] + Z * se_combined
+
 # Top 30 by TNFI_RF / RA / combined — career mean, min 2000 ES min TOI pooled
 def top_relative(col, n=30, min_toi=2000):
     g = pp.groupby(["player_id","player_name","position"]).agg(
@@ -327,6 +388,9 @@ add_cols = ["on60_cf_fen","off60_cf_fen","on60_ca_fen","off60_ca_fen",
             "on60_cf_cor","off60_cf_cor","on60_ca_cor","off60_ca_cor",
             "on60_cf_cm", "off60_cf_cm", "on60_ca_cm", "off60_ca_cm",
             "TNFI_RF","TNFI_RA","TNFI_combined",
+            "TNFI_RF_lo95","TNFI_RF_hi95",
+            "TNFI_RA_lo95","TNFI_RA_hi95",
+            "TNFI_combined_lo95","TNFI_combined_hi95",
             "CF_RF","CF_RA","CF_combined",
             "FF_RF","FF_RA","FF_combined",
             "team_es_toi_sec"]
