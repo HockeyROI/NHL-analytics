@@ -20,11 +20,20 @@ def wilson(k, n, z=1.96):
     return (p, max(0.0,c-h), min(1.0,c+h))
 
 sh = pd.read_csv(f"{OUT}/shots_tagged.csv")
+# Bug 2 fix (May 2026): restrict to regular-season games. shots_tagged.csv
+# includes playoff data for build_playoff_data.py; goalie pillars must match
+# the regular-season-only convention used by script 03's upstream pillar
+# build. game_id digits 4-5 == "02" = regular.
+sh = sh[sh["game_id"].astype(str).str[4:6] == "02"].copy()
+# State filter (May 2026): "ES" now means strict 5v5 (post-Bug-1 fix in
+# script 03). Restrict to ES so pillar_6 / pillar_7 are strict-5v5-only,
+# matching HEAD convention (no PP rows in pillar_7).
+sh = sh[sh["state"] == "ES"].copy()
 # goalie-faced = shot-on-goal + goal (missed/blocked never reach goalie)
 faced = sh[sh["event_type"].isin(["shot-on-goal","goal"])].copy()
 faced = faced[faced["goalie_id"].notna()].copy()
 faced["goalie_id"] = faced["goalie_id"].astype(int)
-print(f"Shots-faced rows: {len(faced):,}")
+print(f"Shots-faced rows (5v5 regular season): {len(faced):,}")
 
 # Pillar 6: FNFI + MNFI by state
 rows = []

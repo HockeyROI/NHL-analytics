@@ -45,9 +45,13 @@ def faced_mask(df: pd.DataFrame) -> pd.Series:
 def main() -> None:
     print("Loading shots_tagged.csv ...")
     sh = pd.read_csv(SHOT_FP)
+    # Bug 2 fix (May 2026): restrict to regular-season games. shots_tagged.csv
+    # includes playoff data for build_playoff_data.py; goalie GSAx must match
+    # the regular-season-only convention. game_id digits 4-5 == "02" = regular.
+    sh = sh[sh["game_id"].astype(str).str[4:6] == "02"].copy()
     es = sh[sh["state"] == "ES"].copy()
     es["season"] = es["season"].astype(int)
-    print(f"ES rows: {len(es):,}")
+    print(f"ES rows (5v5 regular season): {len(es):,}")
     print(f"Seasons: {sorted(es['season'].unique().tolist())}")
 
     # Goalie name lookup

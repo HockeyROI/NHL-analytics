@@ -359,19 +359,70 @@ for gid, gshots in shots_by_game.items():
             plr_onice_ag_att[p][(state, zone)] += 1
             if is_goal: plr_onice_ag_gl[p][(state, zone)] += 1
 
-        # goalie (of defending team)
-        if not pd.isna(goalie) and sh["event_type"] in ("shot-on-goal","goal"):
-            gk_faced[int(goalie)][(state, zone)] += 1
-            if is_goal:
-                gk_goals[int(goalie)][(state, zone)] += 1
-
-        # team-level (for composite + team aggregates)
-        team_for[(season_str, shoot_ab)][(state, zone)] += 1
-        if is_goal: team_goals_for[(season_str, shoot_ab)][(state, zone)] += 1
-        team_ag [(season_str, def_ab)][(state, zone)] += 1
-        if is_goal: team_goals_ag[(season_str, def_ab)][(state, zone)] += 1
+        # Goalie pillar counting and team-level for/against counting moved
+        # out of this loop (see vectorized post-loop pass below). Bug fix
+        # May 2026 — they don't depend on shift data, so they shouldn't be
+        # gated by the shift-availability check at the top of this loop.
 
 print(f"Processed {n_games} games.")
+
+# ---------------------------------------------------------------------
+# Vectorized goalie + team aggregation (no shift-data dependency).
+# Bug fix May 2026: previously gk_faced/gk_goals and team_for/team_ag/
+# team_goals_for/team_goals_ag were populated inside the per-game
+# shift-attribution loop above. When shift data was missing for a game,
+# the entire game was skipped, causing those counters to under-count
+# events by up to ~5% in seasons where shift_data.csv was incomplete
+# (24-25 was missing 57 of 1312 regular-season games). Goalie save% and
+# team for/against totals don't depend on skater shift data, so we now
+# populate them in a vectorized post-loop pass over the shots DataFrame,
+# filtered to regular-season games (game_id digits 4-5 == "02"). Skater
+# on-ice attribution above remains correctly gated by shift availability.
+# ---------------------------------------------------------------------
+reg_shots = shots[shots["game_id"].astype(str).str[4:6] == "02"].copy()
+
+# Goalies — faced events (SOG + goal) only, where goalie_id is present
+_gk = reg_shots[
+    reg_shots["event_type"].isin(["shot-on-goal","goal"])
+    & reg_shots["goalie_id"].notna()
+].copy()
+_gk["goalie_id"] = _gk["goalie_id"].astype(int)
+_gk_agg = _gk.groupby(["goalie_id","state","zone"]).agg(
+    faced=("event_type","size"),
+    goals=("is_goal_i","sum"),
+).reset_index()
+for _, r in _gk_agg.iterrows():
+    gk_faced[int(r["goalie_id"])][(r["state"], r["zone"])] = int(r["faced"])
+    gk_goals[int(r["goalie_id"])][(r["state"], r["zone"])] = int(r["goals"])
+
+# Team-level — counts all Corsi attempts (event_type already filtered at
+# line 119 to SOG/missed/blocked/goal)
+reg_shots["_def_team"] = np.where(
+    reg_shots["_shoot_home"],
+    reg_shots["away_team_abbrev"],
+    reg_shots["home_team_abbrev"])
+_for_agg = reg_shots.groupby(
+    ["season","shooting_team_abbrev","state","zone"]).agg(
+    att=("event_type","size"),
+    gl=("is_goal_i","sum"),
+).reset_index()
+for _, r in _for_agg.iterrows():
+    key = (str(r["season"]), r["shooting_team_abbrev"])
+    team_for[key][(r["state"], r["zone"])] = int(r["att"])
+    team_goals_for[key][(r["state"], r["zone"])] = int(r["gl"])
+_ag_agg = reg_shots.groupby(
+    ["season","_def_team","state","zone"]).agg(
+    att=("event_type","size"),
+    gl=("is_goal_i","sum"),
+).reset_index()
+for _, r in _ag_agg.iterrows():
+    key = (str(r["season"]), r["_def_team"])
+    team_ag[key][(r["state"], r["zone"])] = int(r["att"])
+    team_goals_ag[key][(r["state"], r["zone"])] = int(r["gl"])
+
+print(f"  vectorized post-loop aggregation: "
+      f"{len(_gk_agg)} goalie rows, {len(_for_agg)} team-for rows, "
+      f"{len(_ag_agg)} team-ag rows")
 
 # ----------------- Write TOI CSV -----------------
 print("Writing TOI...")
