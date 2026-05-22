@@ -156,3 +156,43 @@ NFI/scripts/41_zone_factor_investigation.py
 NFI/scripts/42_publication_charts_7.py
 NFI/scripts/build_8_charts.py
 NFI/scripts/build_post_charts.py
+
+# === Added May 21, 2026 — audit-cycle + research artefacts cleanup ===
+# Following the May 4 cleanup doctrine: framework-essential code and canonical
+# post-audit data outputs only; audit folders, trial scripts, trial outputs,
+# and research artefacts stay local (preserved on disk, not in repo history).
+
+# Tonight's audit folder (May 20 state==ES + game_type + shift-data bug audit)
+**/audit_2026_05_player_recompute/
+
+# Monthly research-cycle folders
+NFI/2026/
+
+# Trial scripts (research diagnostics, not part of the canonical pipeline)
+NFI/scripts/build_trended_chart.py
+NFI/scripts/player_two_way_split.py
+NFI/scripts/qoc_trial.py
+NFI/scripts/rel_za_trial.py
+NFI/scripts/vgk_netfront_composite.py
+
+# Trial / research outputs paired with the scripts above
+**/rel_za_trial_*.csv
+**/oilers_by_coach_segment.csv
+**/oilers_nfi_for_against_ci_by_season.csv
+**/oilers_nfi_for_against_ci_by_season_cnfi_mnfi.csv
+**/vgk_netfront_composite.csv
+**/player_two_way_split.csv
+**/team_nfi_spread_6yr.csv
+**/team_season_nfi_spread_6yr.csv
+**/team_metrics_reg_only_5v5.csv
+**/team_nfi_verification_prior_seasons.csv
+
+# Goalie diagnostics (not part of the published Goalies/PY/ pipeline)
+Goalies/scripts/
+Goalies/Output/
+
+# Binary formats that don't diff usefully
+*.numbers
+
+# One-off backup files
+*.bak
