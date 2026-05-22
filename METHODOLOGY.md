@@ -2,7 +2,7 @@
 
 This document describes the analytical decisions underlying the HockeyROI frameworks, the reasoning behind each choice, and the verification work that supports them. It is the canonical reference for the project's methodology and is updated when methodology changes; data files reflect the methodology version stamped below.
 
-**Methodology version:** May 2026 audit + May 3, 2026 zone-adjustment factor swap.
+**Methodology version:** May 20, 2026 audit + bug fix (building on the May 2026 audit and the May 3, 2026 zone-adjustment factor swap).
 **Data snapshot reflected in this document:** values current as of the version stamp date. Counts and player-level values shift as games are added to the dataset.
 
 ---
@@ -63,11 +63,11 @@ Anyone re-running the NFI pipeline should expect these values for reference play
 
 | Player | NFI% | NFI%_ZA |
 |---|---|---|
-| Auston Matthews | 0.4824 | 0.4804 |
-| Connor McDavid | 0.5782 | 0.5733 |
-| Brandon Hagel | 0.5958 | 0.5939 |
-| Mattias Ekholm | 0.5969 | 0.5921 |
-| Zach Hyman | 0.5552 | 0.5511 |
+| Auston Matthews | 0.4759 | 0.4746 |
+| Connor McDavid | 0.5639 | 0.5590 |
+| Brandon Hagel | 0.5881 | 0.5865 |
+| Mattias Ekholm | 0.5724 | 0.5685 |
+| Zach Hyman | 0.5650 | 0.5606 |
 
 If your pipeline output for the same data snapshot differs from these values by more than rounding (±0.0005), something is wrong with your reproduction. If you're re-running the pipeline at a later date with additional games included, expect drift.
 
@@ -125,7 +125,12 @@ These thresholds reduce noise from low-sample player-seasons and goalie filter c
 
 ### Confidence intervals
 
-Player and goalie metrics report Wilson 95% confidence intervals where appropriate. The Wilson interval is preferred over the normal approximation because it remains valid at the small-sample sizes common in goalie filter analyses (e.g., a goalie's CNFI save rate may draw from only 50-100 shots in a season).
+The framework uses two interval families, chosen by the underlying statistic:
+
+- **Wilson 95% CIs** for proportions — save percent, NFI percent share, conversion rate, anything bounded in [0, 1]. Wilson is preferred over the normal approximation because it remains valid at small samples (a goalie's CNFI save rate may draw from only 50-100 shots).
+- **Poisson 95% CIs** for per-60 rates — events per 60 minutes of TOI, anywhere a count is divided by a time exposure. Uses the exact Garwood (chi-square) interval on the event count, scaled to per-60. Wilson is incorrect for rates and was previously misapplied here; the May 20, 2026 bug fix migrated all per-60 helpers to Poisson.
+
+RelNFI metrics carry 95% CIs at the season-player level (Poisson-differential SE; the combined RelNFI uses an empirical partial correlation as the covariance proxy rather than assuming independence) and at the career-pool level (TOI-weighted point with variance-pooled SE).
 
 ---
 
@@ -153,7 +158,19 @@ The current methodology state reflects a comprehensive audit completed in May 20
 - **FNFI dropped from the framework** after R² with team performance collapsed to 0.238 and additional analyses showed the zone's noise dominated its signal.
 - **3A linemate adjustment downgraded** from default to toggleable, after team-level R² for 3A collapsed to 0.503 versus ZA's 0.583. 3A is preserved as an option but not the default for team rankings.
 
-After the audit, a separate methodology refinement (May 3, 2026) switched the zone-adjustment factor from the empirical 0.1071 to Tulsky's published 0.035. This switch was motivated by recognition that the empirical-factor derivation rested on R-squared optimization the project no longer wants to lean on; Tulsky's factor is established convention and is methodologically defensible without that derivation. Spot-check values in this document reflect the post-factor-swap state.
+After the audit, a separate methodology refinement (May 3, 2026) switched the zone-adjustment factor from the empirical 0.1071 to Tulsky's published 0.035. This switch was motivated by recognition that the empirical-factor derivation rested on R-squared optimization the project no longer wants to lean on; Tulsky's factor is established convention and is methodologically defensible without that derivation.
+
+### May 20, 2026 follow-up audit
+
+A second audit, triggered by gut-checking rank stability against a verification CSV built with a different filter set, surfaced three independent pipeline bugs that survived the May 2026 audit:
+
+1. **`state == "ES"` conflation** — the state column had collapsed 5v5, 4v4, and 3v3 into a single "ES" label, so downstream `state == "ES"` filters over-included by ~1.2% of events. Fixed by differentiating the labels at the source.
+2. **Missing `game_type` filter at scripts that read `shots_tagged.csv` directly** — `shots_tagged.csv` contains playoff data (build_playoff_data needs it), so consumers that want regular-season-only aggregation must apply their own filter. Fixed at four consumer sites.
+3. **Shift-data over-filter on goalie pillars and team counters** — `03_onice_attribution_pillars.py`'s per-game loop correctly gated skater on-ice attribution by shift-data availability, but the same gate was inherited by goalie pillar counters and team-level for/against counters, which don't depend on shifts. Under-counted goalie and team events by ~5% in 2024-25 (where shift_data was missing 57 of 1312 games). Fixed by moving both workflows to a vectorized post-loop pass.
+
+The May 20 audit also corrected a Wilson-vs-Poisson misuse on per-60 rate CIs across the pipeline (see "Confidence intervals" above) and added RelNFI 95% CIs at the player level. Spot-check values in this document reflect the post-fix state.
+
+Methodology — what NFI measures, the Fenwick choice, the zone definitions, the Tulsky 0.035 factor, the TOI thresholds — is unchanged from the May 2026 audit. Only the pipeline correctness improved.
 
 ---
 

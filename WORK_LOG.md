@@ -23,3 +23,11 @@ Format: `YYYY-MM-DD — [link] — one-sentence summary.`
 - 2026-05-08 — [link](https://hockeyroi.substack.com/p/oilers-true-goalie-problem) — Oilers' goaltending struggles framed as a team-defense problem, not just a goalie problem.
 - 2026-05-11 — [link](https://hockeyroi.substack.com/p/a-deep-dive-into-the-edm-goalie-options) — Realistic goalie options for the Oilers.
 - 2026-05-14 — [link](https://hockeyroi.substack.com/p/why-raw-stats-lie-the-case-for-relative) — Methodology: why RelNFI/RelCorsi beat raw stats for player evaluation.
+
+- 2026-05-17 — [link](https://hockeyroi.substack.com/p/forget-mcmann-and-jenner-these-are) — RelNFI deep-dive identifying undervalued contributors hidden by rel production stats.
+
+- 2026-05-20 — [link](https://hockeyroi.substack.com/p/the-cap-is-going-up-the-ufa-class) — UFA-class analysis framed against rising salary cap; talent and value framing for the 2026 free agent market.
+
+- 2026-05-20 (in-place correction) — [link](https://hockeyroi.substack.com/p/oilers-true-goalie-problem) — Updated the 2026-05-08 Oilers post in-place with corrected NFI rankings (#8/#8/#11/#22) after the May 20 audit found a state==ES filter bug and a missing game_type filter that had previously shown EDM as near dead-last in suppression. Original framing held; specific numbers corrected.
+
+- 2026-05-20 — Internal: May 20, 2026 audit and bug-fix session — Found and fixed three pipeline bugs (state==ES conflation of 5v5/4v4/3v3, missing game_type filter at multiple consumer scripts, shift-data over-filter affecting goalie pillars and team counters). Migrated per-60 rate CIs from Wilson to Poisson; added RelNFI 95% CIs. Five commits pushed (909a4de, 6d35519, 758f632, 5b353cb, 95e71e8). Verified EDM and DAL ranks across 4 audited seasons unchanged from pre-audit. Audit folder and trial artefacts gitignored per May 4 cleanup doctrine.

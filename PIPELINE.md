@@ -11,19 +11,70 @@ If you are re-running the pipeline from scratch, follow the canonical execution 
 The full NFI pipeline runs in this order:
 
 ```
-1.  python3 NFI/scripts/build_fa_factors.py
-2.  python3 NFI/scripts/fa_linemate_without_me.py
-3.  python3 NFI/scripts/stage5_7_finalize.py
-4.  python3 NFI/scripts/tnfi_relatives_pp_pk.py
-5.  python3 NFI/scripts/rename_and_momentum.py
-6.  python3 NFI/scripts/top200_article_dataset.py
-7.  python3 NFI/scripts/update_current_season.py
-8.  python3 NFI/scripts/build_playoff_data.py
+1.  python3 NFI/scripts/03_onice_attribution_pillars.py
+2.  python3 NFI/scripts/04_corsi_nfi_variants.py
+3.  python3 NFI/scripts/06_qoc_qot.py
+4.  python3 NFI/scripts/07_finalize_outputs.py
+5.  python3 NFI/scripts/build_fa_factors.py
+6.  python3 NFI/scripts/fa_linemate_without_me.py
+7.  python3 NFI/scripts/stage5_7_finalize.py
+8.  python3 NFI/scripts/tnfi_relatives_pp_pk.py
+9.  python3 NFI/scripts/rename_and_momentum.py
+10. python3 NFI/scripts/top200_article_dataset.py
+11. python3 NFI/scripts/update_current_season.py
+12. python3 NFI/scripts/build_playoff_data.py
 ```
 
-Steps 1-6 must run sequentially. Each enforces schema on the prior, and several pickle files passed between scripts are created and consumed in strict order. Steps 7 and 8 are independent of each other and can run in any order or in parallel after step 6 completes.
+Steps 1-10 must run sequentially. Each enforces schema on the prior, and several pickle files passed between scripts are created and consumed in strict order. Steps 11 and 12 are independent of each other and can run in any order or in parallel after step 10 completes.
+
+Steps 1-4 (the numbered-prefix scripts) are rebuilt when `shots_tagged.csv` or upstream zone/state definitions change — they produce the foundation artifacts (`shots_tagged.csv`, `player_counts_by_state_zone.csv`, `team_counts_by_state_zone.csv`, `metrics_team.csv`, `metrics_player.csv`, `team_level_all_metrics.csv`, and the pillar CSVs) that the downstream fully-adjusted pipeline reads. In steady state — daily data updates that don't change methodology — these steps may be skipped if their inputs and outputs are already current.
 
 Upstream of step 1, the shot database build (`NFI/Geometry_post/NF_PY/build_shot_db.py`) must have run at least once and produced the raw shot events database. This is run rarely — typically once per season ingest, not every pipeline execution — and is treated as a precondition rather than a pipeline step.
+
+---
+
+## May 20, 2026 audit and bug fixes
+
+A follow-up to the May 2026 audit (the original is documented in `METHODOLOGY.md`'s "Verification" section). Three independent bugs were found by gut-checking rank stability against an audit-verification CSV that had been built with a different (correct) filter set than the production pipeline.
+
+### Bug 1 — `state == "ES"` conflation (5v5 + 4v4 + 3v3)
+
+The upstream `state` column produced by `03_onice_attribution_pillars.py` previously labeled all even-strength play as `"ES"` — collapsing strict 5v5, 4v4 (coincidental minors), and 3v3 (regular-season OT) into a single label. Every downstream `state == "ES"` filter therefore over-included by ~1.2% of events league-wide. Fixed in `03_onice_attribution_pillars.py`'s `state_from_code` function and the parallel vectorized derivation: `"ES"` now means strict 5v5; 4v4 and 3v3 have their own labels (`"4v4"`, `"3v3"`). All downstream consumers inherit the fix without needing their own code changes — `state == "ES"` now correctly means strict 5v5.
+
+### Bug 2 — Missing `game_type` filter at scripts that read `shots_tagged.csv` directly
+
+`shots_tagged.csv` contains both regular-season and playoff shots because `build_playoff_data.py` needs the playoff data. Any consumer that reads `shots_tagged.csv` for regular-season aggregation must apply its own `game_type == "regular"` filter — there is no upstream filtering at the file level. Fixed at four consumer sites:
+
+- `04_corsi_nfi_variants.py` — filter applied at line 51 (the team-level + player-level aggregator)
+- `10_rerun_goalie_pillars_min300.py` — filter applied at the read site
+- `21_goalie_gsax_by_season.py` — filter applied at the read site
+- `03_onice_attribution_pillars.py`'s vectorized post-loop pass (added in bug-3 fix below)
+
+Also patched: `team_nfi_verification.py` (was missing the filter; benign for 25-26 because no playoff data was ingested at runtime, but would have under-counted any prior-season run).
+
+`fa_linemate_without_me.py` is **already protected** by an independent mechanism — it iterates over a `gids` list pre-filtered to regular games at script start, so playoff shots loaded into its in-memory DataFrame are never visited. No change needed there.
+
+### Bug 3 — Shift-data over-filter on goalie pillars and team counters
+
+`03_onice_attribution_pillars.py`'s per-game loop correctly gates **skater on-ice attribution** by shift-data availability — TOI and on-ice for/against counts require shifts. But the same loop also accumulated **goalie pillar counters** (`gk_faced`, `gk_goals`) and **team-level for/against counters** (`team_for`, `team_ag`, `team_goals_for`, `team_goals_ag`), neither of which depend on shift data. Goalie save-rates and team totals were therefore being under-counted by ~5% in 2024-25 (where `shift_data.csv` was missing 57 of 1312 regular-season games) and ~0.5% in 2025-26.
+
+Fix: moved both workflows out of the gated per-game loop into a vectorized post-loop pass over the `shots` DataFrame, filtered to regular-season games (game_id digits 4-5 == `"02"`). Skater on-ice attribution stays in the gated loop — it has to, no shifts means no attribution.
+
+### Wilson → Poisson CI migration (per-60 rate stats only)
+
+Per-60 rate stats now use exact Poisson (chi-square / Garwood) 95% intervals on the event count, scaled to per-60. Wilson intervals were previously used here in error — Wilson is correct for **proportions** (save percent, conversion rate, NFI%), not for **rate counts over fixed exposure**. Affected scripts (one `rate_ci` helper, replicated across the pipeline): `21_rerun_corsi_with_block_fix.py`, `27_p1b_add_per60.py`, `31_pp_pk_pillars.py`. Downstream consumers picked up the corrected helper in `tnfi_relatives_pp_pk.py`, `rename_and_momentum.py`, `28_publication_outputs.py`, and `33_age_filter_publication.py`. Wilson intervals are unchanged in scripts that report proportions; they were correct there.
+
+### New RelNFI 95% CIs
+
+`tnfi_relatives_pp_pk.py` now emits season-level 95% CIs on `RelNFI_F_pct`, `RelNFI_A_pct`, and `RelNFI_pct` via Poisson-differential SE, using the empirical partial correlation `r(cf_cm, ca_cm | log toi)` as the covariance proxy for the combined column. Career-pool CIs are computed in `28_publication_outputs.py` and `33_age_filter_publication.py` via TOI-weighted point estimates with variance-pooled SE. New columns appear in `player_fully_adjusted.csv`, `top30_RelNFI_*.csv`, `publication_forwards_top100.csv`, and `publication_D_top100.csv`.
+
+### Reconciliation gap (intentional)
+
+After bug 3's fix, team and goalie counts use all regular-season games while player on-ice counts still require shift data. This introduces an intentional ~5% gap (24-25 specifically) between team totals (`team_counts_by_state_zone.csv`) and the same events summed from player on-ice counts (`player_counts_by_state_zone.csv`). Goalie save-rates use all regular-season games; player on-ice metrics use only games with shift data. This is the right tradeoff — player attribution requires shifts and can't be relaxed without losing correctness; team and goalie counts don't depend on shifts and shouldn't be artificially restricted.
+
+### Known in-progress
+
+`update_current_season.py` uses an approximate CNFI+MNFI zone definition (`zone == "O"` AND `|y| <= 22` AND `|x| >= 65`) that drifts from the canonical bounds (CNFI: x∈[74,89], |y|≤9; MNFI: x∈[55,73], |y|≤15). The script's docstring acknowledges this as a real-time approximation in the absence of `shots_tagged.csv`. Being fixed in a separate Streamlit-chat workstream. When the daily-update GitHub Action is re-enabled, this drift will reassert; until then, `current_season_player_fully_adjusted.csv` is regenerated by the full pipeline using canonical bounds.
 
 ---
 
@@ -214,4 +265,4 @@ If you re-run the pipeline and your spot-check values land significantly differe
 
 ---
 
-*This document reflects pipeline behavior as of the May 2026 audit and the May 3, 2026 zone-adjustment factor swap. Future changes that affect ordering, schema, or column names will update this document alongside `METHODOLOGY.md`.*
+*This document reflects pipeline behavior as of the May 20, 2026 audit + bug fix (building on the May 2026 audit and the May 3, 2026 zone-adjustment factor swap). Future changes that affect ordering, schema, or column names will update this document alongside `METHODOLOGY.md`.*

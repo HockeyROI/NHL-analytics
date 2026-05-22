@@ -1,0 +1,45 @@
+# Methodology notes — May 20, 2026 audit
+
+A pipeline-correctness audit completed on May 20, 2026. Three independent bugs were found and fixed; the per-60 confidence-interval helper was migrated from Wilson to Poisson; RelNFI 95% CIs were added at the player level. Headline methodology — what NFI measures, the Fenwick choice, the zone definitions, the Tulsky 0.035 factor, the TOI thresholds — is unchanged. Only the pipeline correctness improved.
+
+This file is the technical writeup. For the canonical methodology, see `METHODOLOGY.md`; for execution order, see `PIPELINE.md`.
+
+## What triggered the audit
+
+A team-level NFI rank ordering produced by the production pipeline disagreed with a separate verification CSV that had been built earlier in the audit cycle with explicit filters (`situation_code == "1551"`, `period in [1,3]`, `game_type == "regular"`). The verification file's numbers were defensible from first principles; the production file's numbers diverged by a magnitude that couldn't be explained by rounding or random data drift. The gut-check failed, and the failure pointed somewhere the original May 2026 audit hadn't reached.
+
+## Three bugs, in the order they surfaced
+
+### 1. `state == "ES"` conflated 5v5, 4v4, and 3v3
+
+The upstream `state` column produced by `03_onice_attribution_pillars.py` labeled all even-strength play as `"ES"` — collapsing strict 5v5, 4v4 (coincidental minors), and 3v3 (regular-season OT) into one label. Every downstream `state == "ES"` filter over-included by ~1.2% of events league-wide. For specific teams in specific situations the effect was larger (DAL 24-25's CNFI+MNFI Against was inflated more than the league average). Fix: differentiate the labels at the source in `03_onice_attribution_pillars.py`'s `state_from_code` function and the parallel vectorized derivation. `"ES"` now means strict 5v5; `"4v4"` and `"3v3"` are separate labels. All downstream consumers inherit the fix without their own code changes.
+
+### 2. Missing `game_type` filter at scripts that read `shots_tagged.csv` directly
+
+`shots_tagged.csv` contains both regular-season and playoff shots because `build_playoff_data.py` needs the playoff data. Consumers that want regular-season-only aggregation must apply their own `game_type == "regular"` filter at read time. Several didn't — for example, `04_corsi_nfi_variants.py` (the team-level aggregator) and `10_rerun_goalie_pillars_min300.py`. The bug bit most visibly for teams with deep playoff runs (DAL in 22-23, 23-24, 24-25): playoff events inflated their counted attempts while the denominator stayed at 82 regular-season games, distorting rates by ~15% in some cases. Fix: add the filter at the four consumer sites. `fa_linemate_without_me.py` was already protected by an independent mechanism (it iterates over a pre-filtered regular-only `gids` list), so no change needed there.
+
+### 3. Shift-data over-filter on goalie pillars and team counters
+
+`03_onice_attribution_pillars.py`'s per-game loop correctly gates **skater on-ice attribution** by shift-data availability — TOI and on-ice for/against counts require shifts. But the same loop also accumulated **goalie pillar counters** (`gk_faced`, `gk_goals`) and **team-level for/against counters** (`team_for`, `team_ag`, `team_goals_for`, `team_goals_ag`). Goalie save-rates and team totals don't need shift data, but the loop's `if gid not in shifts_by_game: continue` gate caught them anyway. `shift_data.csv` was missing 57 of 1312 regular-season games for 2024-25 (4.3%), so the under-count for that season was ~5% across most teams. Fix: move both workflows out of the gated per-game loop into a vectorized post-loop pass over the `shots` DataFrame, filtered to regular-season games. Skater attribution stays in the gated loop — it has to, no shifts means no attribution.
+
+## Wilson vs Poisson — the rate-vs-proportion distinction
+
+Per-60 rate stats were previously reporting Wilson 95% confidence intervals. Wilson is the right tool for **proportions** (successes over trials, bounded in [0, 1]); it is not the right tool for **rate counts over fixed exposure** (events per 60 minutes of TOI). Applying Wilson to a rate doesn't just slightly mis-size the interval — Wilson's denominator is treated as a binomial trial count rather than a Poisson exposure window, which is the wrong noise model for a rate stat. The magnitude of the resulting interval mis-sizing depends on event counts and exposure; in some data shapes it is small, in others it is large.
+
+Migration applied across seven scripts: `21_rerun_corsi_with_block_fix.py`, `27_p1b_add_per60.py`, `31_pp_pk_pillars.py` (the helper-function fixes), and the downstream consumers `tnfi_relatives_pp_pk.py`, `rename_and_momentum.py`, `28_publication_outputs.py`, and `33_age_filter_publication.py` (which pick up the corrected helper). Wilson intervals on proportions (save%, NFI%, conversion rate) were correct and remain unchanged. Intuition for the distinction: save percent is a proportion — `saves / shots_faced` is bounded in [0, 1], so Wilson is right. Shots-against per 60 minutes of TOI is a rate count over an exposure window — Poisson is right.
+
+## New RelNFI 95% CIs
+
+`tnfi_relatives_pp_pk.py` now emits 95% CIs on `RelNFI_F_pct`, `RelNFI_A_pct`, and `RelNFI_pct` at the season-player level via Poisson-differential SE. The combined RelNFI doesn't assume independence between `cf_cm` and `ca_cm`; it uses the empirical partial correlation `r(cf_cm, ca_cm | log toi)` across the player pool as the covariance proxy. Career-pool CIs are computed in `28_publication_outputs.py` and `33_age_filter_publication.py` via TOI-weighted point estimates with variance-pooled SE. New columns appear in `player_fully_adjusted.csv`, the `top30_RelNFI_*.csv` files, and the publication forwards/D top-100 files.
+
+## Reconciliation gap — intentional, documented
+
+After the bug-3 fix, team and goalie counts use all regular-season games while player on-ice counts still require shift data. The result is a ~5% gap (24-25 specifically) between team totals (`team_counts_by_state_zone.csv`) and the same events summed from player on-ice counts (`player_counts_by_state_zone.csv`). This is the right tradeoff: player attribution requires shifts and can't be relaxed without losing correctness, and team and goalie counts don't depend on shifts and shouldn't be artificially restricted. The gap is documented in `PIPELINE.md` and surfaces only if a downstream consumer expects team totals and player on-ice sums to reconcile exactly.
+
+## Pattern-search discipline
+
+When a bug surfaces, search for the pattern across the codebase, not just the instance. The audit reinforced this: the `state == "ES"` filter was found in one place but lived in five. The missing `game_type` filter was found at the team-level aggregator but lived at four consumer sites. The shift-data over-filter was found by diff-comparing two independently-built CSVs that should have matched — not by reading the original script. Each fix prompted a grep for the same pattern elsewhere; each grep found more. Bug-fix sessions that stop at the first instance leave siblings in place to surface later.
+
+---
+
+*Repo state at session end (May 20, 2026): five commits pushed (`909a4de`, `6d35519`, `758f632`, `5b353cb`, `95e71e8`). Spot-check ranks verified unchanged for EDM and DAL across 2022-23 through 2025-26 after regeneration. Audit folder and trial artefacts gitignored per the May 4 cleanup doctrine.*
