@@ -196,3 +196,8 @@ Goalies/Output/
 
 # One-off backup files
 *.bak
+
+# Prospects/ — entire folder excluded from git tracking
+# (contains personal-use scraping scripts, scraped CSVs, and embedded
+# third-party API keys that should not be published)
+Prospects/
