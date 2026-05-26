@@ -33,12 +33,13 @@ from statistics import mean
 # ===========================================================================
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
-RAW_PBP = HERE / "raw" / "pbp"
-RAW_SHIFTS = HERE / "raw" / "shifts"
+ZONES = HERE.parent
+ROOT = ZONES.parent
+RAW_PBP = ZONES / "raw" / "pbp"
+RAW_SHIFTS = ZONES / "raw" / "shifts"
 GAME_IDS = ROOT / "Data" / "game_ids.csv"
-PLAYER_META = HERE / "_player_meta.json"
-OUT_DIR = HERE / "zone_variations"
+PLAYER_META = ZONES / "output" / "_player_meta.json"
+OUT_DIR = ZONES / "zone_variations"
 
 Z = 1.96
 Z2 = Z * Z

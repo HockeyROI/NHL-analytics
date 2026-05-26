@@ -34,14 +34,15 @@ import numpy as np
 # ---------------------------------------------------------------------------
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
-RAW_PBP = HERE / "raw" / "pbp"
-RAW_SHIFTS = HERE / "raw" / "shifts"
+ZONES = HERE.parent
+ROOT = ZONES.parent
+RAW_PBP = ZONES / "raw" / "pbp"
+RAW_SHIFTS = ZONES / "raw" / "shifts"
 GAME_IDS = ROOT / "Data" / "game_ids.csv"
-PLAYER_META = HERE / "_player_meta.json"
-OVERLAP_PKL = HERE / "_overlap.pkl"
-ZONE_VAR = HERE / "zone_variations"
-OUT_DIR = HERE / "adjusted_rankings"
+PLAYER_META = ZONES / "output" / "_player_meta.json"
+OVERLAP_PKL = ZONES / "output" / "_overlap.pkl"
+ZONE_VAR = ZONES / "zone_variations"
+OUT_DIR = ZONES / "adjusted_rankings"
 
 Z = 1.96
 Z2 = Z * Z
@@ -733,6 +734,7 @@ def main():
     write_dtnzi_csvs(OUT_DIR, player_meta, scenario_gp[POOLED], dtnzi,
                     raw_scores_pool_10)
     write_corr_csv(OUT_DIR, tnzi_corr_rows)
+    write_top20_by_metric(OUT_DIR)
 
     # ---- Print reports --------------------------------------------------
     print_tnzi_corr_table(tnzi_corr_rows)
@@ -880,6 +882,65 @@ def write_corr_csv(out_dir, rows):
                         _fmt(r["pearson_r"]), _fmt(r["r_squared"]),
                         r["n_teams"]])
     print(f"    wrote {path}")
+
+def write_top20_by_metric(out_dir):
+    """Write a consolidated derived view: top 20 per metric per position group.
+
+    Reads the canonical *_adjusted_{forwards,defense}.csv files in `out_dir` so
+    the writer is independent of in-memory state and works for metrics produced
+    by other scripts (TOZI/TDZI from compute_tozi_tdzi.py). Missing source
+    files are skipped with a warning rather than fatal.
+
+    Output schema: metric, position_group, rank, player_name, team, pos, GP, raw_score
+    Sort within (metric, position_group): raw_score desc, ties broken by GP desc.
+    """
+    path = out_dir / "top20_by_metric.csv"
+    sources = [
+        ("OZI",  "ozi_adjusted",  "OZI"),
+        ("DZI",  "dzi_adjusted",  "DZI"),
+        ("NZI",  "nzi_adjusted",  "NZI"),
+        ("TNZI", "tnzi_adjusted", "TNZI"),
+        ("TOZI", "tozi_adjusted", "TOZI"),
+        ("TDZI", "tdzi_adjusted", "TDZI"),
+    ]
+    rows_out = []
+    for metric, prefix, score_col in sources:
+        for grp in ("forwards", "defense"):
+            src = out_dir / f"{prefix}_{grp}.csv"
+            if not src.exists():
+                print(f"    WARN: {src.name} not found; skipping {metric}/{grp}")
+                continue
+            with open(src, newline="") as f:
+                rdr = csv.DictReader(f)
+                src_rows = list(rdr)
+            def keyfn(r):
+                try:    s = float(r.get(score_col, "") or "nan")
+                except (TypeError, ValueError): s = float("-inf")
+                try:    g = int(r.get("GP", "0") or 0)
+                except (TypeError, ValueError): g = 0
+                if s != s:  # NaN
+                    s = float("-inf")
+                return (-s, -g)
+            src_rows.sort(key=keyfn)
+            for i, r in enumerate(src_rows[:20], 1):
+                rows_out.append({
+                    "metric": metric,
+                    "position_group": grp,
+                    "rank": i,
+                    "player_name": r.get("player_name", ""),
+                    "team": r.get("team", ""),
+                    "pos": r.get("pos", ""),
+                    "GP": r.get("GP", ""),
+                    "raw_score": r.get(score_col, ""),
+                })
+    cols = ["metric", "position_group", "rank", "player_name",
+            "team", "pos", "GP", "raw_score"]
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(cols)
+        for r in rows_out:
+            w.writerow([r[c] for c in cols])
+    print(f"    wrote {path}  ({len(rows_out)} rows)")
 
 # ---------------------------------------------------------------------------
 # Printing

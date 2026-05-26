@@ -17,14 +17,15 @@ import os
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
+ZONES = HERE.parent
+ROOT = ZONES.parent
 
-ZONE_TIME_PATH = HERE / "_zone_time.json"
-PLAYER_META_PATH = HERE / "_player_meta.json"
-CORSI_PATH = HERE / "corsi_reference.csv"
+ZONE_TIME_PATH = ZONES / "output" / "_zone_time.json"
+PLAYER_META_PATH = ZONES / "output" / "_player_meta.json"
+CORSI_PATH = ZONES / "output" / "corsi_reference.csv"
 
 # game_ids.csv location — try Zones/Data first, then Data/
-_candidate_game_paths = [HERE / "Data" / "game_ids.csv", ROOT / "Data" / "game_ids.csv"]
+_candidate_game_paths = [ZONES / "Data" / "game_ids.csv", ROOT / "Data" / "game_ids.csv"]
 GAME_IDS_PATH = next((p for p in _candidate_game_paths if p.exists()), _candidate_game_paths[0])
 
 OUTPUT_MAP = {

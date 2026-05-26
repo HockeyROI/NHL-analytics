@@ -1,4 +1,4 @@
-player_name,team,pos,GP,seasons_qualified,IOZC,IOZL,OZI,OZI_C,OZI_L,OZI_CL,DZI,DZI_C,DZI_L,DZI_CL,NZI,NZI_C,NZI_L,NZI_CL,TNZI,TNZI_C,TNZI_L,TNZI_CL,DOZI_23_24,DOZI_24_25,DOZI_25_26,DOZI_trend,DOZI_recent,DOZI_flag
+player_name,team,pos,GP,seasons_qualified,IOZC,IOZL,OZI,OZI_C,OZI_L,OZI_CL,DZI,DZI_C,DZI_L,DZI_CL,NZI,NZI_C,NZI_L,NZI_CL,TNZI,TNZI_C,TNZI_L,TNZI_CL,DTNZI_23_24,DTNZI_24_25,DTNZI_25_26,DTNZI_trend,DTNZI_recent,DTNZI_flag
 Gavin Bayreuther,CBJ,D,51,1,0.7744,0.6473,6.8,5.5,6.2,5.2,7.9,8.0,10.0,10.0,4.3,4.6,1.3,1.4,4.1,4.4,1.1,1.0,,,,,,
 Victor Soderstrom,BOS,D,41,1,0.7562,0.5956,7.0,5.6,6.6,5.8,5.6,6.2,9.8,9.9,4.6,5.9,1.0,0.9,4.7,5.1,1.1,1.3,,,,,,
 Maxwell Crozier,TBL,D,53,1,0.775,0.7076,6.9,7.1,6.1,6.0,9.5,9.7,9.4,9.7,8.3,8.7,4.8,4.7,7.1,7.4,3.6,3.9,,,,,,

@@ -22,10 +22,11 @@ from statistics import mean, pstdev
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
+ZONES = HERE.parent
+ROOT = ZONES.parent
 
 SHOTS_CSV = ROOT / "Data" / "nhl_shot_events.csv"
-TNZI_CORR_CSV = HERE / "adjusted_rankings" / "tnzi_winning_correlation.csv"
+TNZI_CORR_CSV = ZONES / "adjusted_rankings" / "tnzi_winning_correlation.csv"
 
 SEASONS = ["20222023", "20232024", "20242025", "20252026"]
 SEASON_LABEL = {"20222023": "22/23", "20232024": "23/24",
