@@ -75,25 +75,57 @@ If your pipeline output for the same data snapshot differs from these values by 
 
 ## TZI: Transitional Zone Impact
 
-### What it measures
+### What TZI measures
 
-TZI quantifies how much a player tilts the ice based on where they start their shift. Three peer metrics — DZI, NZI, OZI — measure this separately for each starting zone, rather than collapsing the three deployment contexts into a single number.
+TZI (Transitional Zone Impact) is a player-evaluation framework measuring how a player's on-ice deployment after each type of faceoff translates into offensive zone time. Three peer metrics — DZI, NZI, OZI — are three independent lenses, not a hierarchy. A complete player rates well on all three.
 
-- **DZI — Defensive Zone Impact.** A player's net ice-tilt impact during shifts that begin in the defensive zone. Captures whether the player escapes their own zone cleanly and turns DZ starts into shot-attempt advantages.
-- **NZI — Neutral Zone Impact.** Net ice-tilt impact during shifts that begin in the neutral zone. Captures transition play and zone-entry effectiveness.
-- **OZI — Offensive Zone Impact.** Net ice-tilt impact during shifts that begin in the offensive zone. Captures whether OZ starts get converted to sustained pressure.
+- **DZI — Defensive Zone Impact.** Share of offensive-zone time on shifts that begin with a defensive-zone faceoff. Captures whether the player escapes their own zone cleanly.
+- **NZI — Neutral Zone Impact.** Share of offensive-zone time on shifts that begin with a neutral-zone faceoff. Captures transition play.
+- **OZI — Offensive Zone Impact.** Share of offensive-zone time on shifts that begin with an offensive-zone faceoff. Captures whether OZ starts get converted to sustained pressure.
 
-Each metric uses Fenwick-based shot differential while the player is on the ice, attributed to the player's starting-zone context.
+TZI is a **zone-time share** metric, not a shot-differential metric. The earlier description in this document as "Fenwick-based shot differential" was inaccurate — corrected May 2026 to match what the code computes.
+
+### Construction
+
+1. For each shift, capture player on-ice time and the zone of each puck event.
+2. Bucket each shift by its starting faceoff zone (NZ, OZ, DZ).
+3. Within each bucket, sum seconds in each zone; compute share of time spent in the offensive zone.
+4. Apply Wilson interval shrinkage to handle small-sample variance.
+5. Position-normalize: rank forwards vs forwards and defense vs defense separately. Rescale to 0–10 within each position group.
 
 ### Why three metrics rather than one
 
-Different deployment contexts produce different ice-tilt patterns for the same player. A defensively-deployed player who excels at DZ exits may have strong DZI but unremarkable OZI; a finisher who feasts on OZ starts may show the inverse profile. Collapsing these into a single "zone-impact" number — as conventional zone-start adjustments do — loses the deployment-specific signal.
+Different deployment contexts produce different ice-tilt patterns for the same player. A defensively-deployed player who excels at DZ exits may have strong DZI but unremarkable OZI; a finisher who feasts on OZ starts may show the inverse profile. Collapsing these into a single "zone-impact" number loses the deployment-specific signal.
 
-Reporting DZI, NZI, and OZI as peer metrics preserves that information. Linemate-adjusted variants (DZI_L, NZI_L, OZI_L) and competition-adjusted variants are computed where the underlying linemate and competition data are available.
+### Sample thresholds
 
-### What TZI does not claim
+- 50 faceoff-start shifts minimum per metric (NZ-FO for NZI, OZ-FO for OZI, DZ-FO for DZI)
+- 20 games played minimum
+- Stricter publication floor: 100 GP forwards / 130 GP defense (4-year pooled); 60 GP forwards / 70 GP defense (2-year recent)
 
-TZI is descriptive. It characterizes how players tilt the ice given their deployment; it does not claim any particular relationship to team winning. Exploratory R-squared analyses against standings points were run during development and did not produce findings that would support predictive claims. The framework stands as a player-evaluation descriptive tool, not a predictive one.
+### Linemate adjustment
+
+Only **OZI** has a working linemate-adjusted variant (`OZI_L`). Linemate adjustment for NZI, DZI, and TNZI was attempted via team-level OLS regression but the regression cannot identify the coefficient at n=32 with multicollinear predictors. Bootstrap analysis showed sign flips and large variance; Ridge regression did not stabilise the estimate. Rather than publish unstable adjustments, the framework presents raw NZI / DZI plus OZI_L. The orphaned methodology and historical CSVs are preserved under `Zones/_orphaned_broken_L_2026_05/` for transparency.
+
+### What TZI is not
+
+- **Not a complete skill rating.** Doesn't measure shooting talent, defensive engagement, faceoff ability, or specialty teams.
+- **Not a value-over-replacement.**
+- **Not deployment-controlled for quality of competition.** A player getting sheltered minutes may rate higher than one playing tough minutes.
+- **Not predictive of standings.** Team-level correlation with standings is moderate but is explicitly not the framework's purpose. The "tnzi_winning_correlation" diagnostic that previously sat beside the framework was retired May 2026 with the broken _L methodology.
+
+### What TZI is
+
+- A descriptive territorial-impact lens.
+- A way to identify players whose zone-time output exceeds or falls short of their reputation.
+- A complement to NFI (shot quality) and Rel-NZI (true on/off teammate effect).
+
+### Caveats
+
+- Per-season DTNZI deltas mean-revert (Pearson r ≈ −0.4 year over year). Flag a recent delta as "the most recent delta was negative", not "declining career trajectory".
+- Raw scores include deployment context, not just player skill.
+- Forwards and defense are normalized within their own groups; their 0–10 scores are not directly comparable across positions.
+- 99.89% game coverage at the current data snapshot; a small number of postponed regular-season games are not in foundation files (same precedent as NFI; not blocking).
 
 ---
 

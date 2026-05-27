@@ -527,17 +527,8 @@ def main():
         return {tm: mean(vs) for tm, vs in by_team.items() if vs}
 
     # betas[metric] = {"single_C": (b_raw, b_iozc),
-    #                  "single_L": (b_raw, b_iozl),   # OZI only — see note below
-    #                  "both":     (b_raw, b_iozc, b_iozl)}   # OZI only
-    #
-    # MAY 2026 — Linemate-adjustment models (single_L / both) are computed
-    # only for OZI. The team-level OLS that produces r_L cannot be identified
-    # at n=32 with the multicollinear (raw, IOZL) predictors for DZI, NZI,
-    # TNZI. Bootstrap analysis showed sign flips and large variance; Ridge
-    # did not stabilise the estimate. The broken outputs were orphaned to
-    # Zones/_orphaned_broken_L_2026_05/. OZI's r_L behaves as a modifier-
-    # scale adjustment and remains in production.
-    OZI_ONLY_L = {"OZI"}
+    #                  "single_L": (b_raw, b_iozl),
+    #                  "both":     (b_raw, b_iozc, b_iozl)}
     betas = {}
     for metric in METRICS:
         t_raw = team_mean(norm01[POOLED][metric])
@@ -556,30 +547,21 @@ def main():
         raw_v = np.array([t_raw[tm] for tm in teams])
         c_v = np.array([t_iozc[tm] for tm in teams])
         l_v = np.array([t_iozl[tm] for tm in teams])
-        # Model 1: y ~ raw + IOZC  (kept for all metrics; r_C is small-scale)
+        # Model 1: y ~ raw + IOZC
         X1 = np.column_stack([np.ones(len(teams)), raw_v, c_v])
         b1, *_ = np.linalg.lstsq(X1, y, rcond=None)
-        if metric in OZI_ONLY_L:
-            # Model 2: y ~ raw + IOZL
-            X2 = np.column_stack([np.ones(len(teams)), raw_v, l_v])
-            b2, *_ = np.linalg.lstsq(X2, y, rcond=None)
-            # Model 3: y ~ raw + IOZC + IOZL
-            X3 = np.column_stack([np.ones(len(teams)), raw_v, c_v, l_v])
-            b3, *_ = np.linalg.lstsq(X3, y, rcond=None)
-            betas[metric] = {
-                "single_C": (float(b1[1]), float(b1[2])),
-                "single_L": (float(b2[1]), float(b2[2])),
-                "both":     (float(b3[1]), float(b3[2]), float(b3[3])),
-                "teams": len(teams),
-            }
-        else:
-            # Linemate adjustment skipped — see comment above.
-            betas[metric] = {
-                "single_C": (float(b1[1]), float(b1[2])),
-                "single_L": (None, None),
-                "both":     (None, None, None),
-                "teams": len(teams),
-            }
+        # Model 2: y ~ raw + IOZL
+        X2 = np.column_stack([np.ones(len(teams)), raw_v, l_v])
+        b2, *_ = np.linalg.lstsq(X2, y, rcond=None)
+        # Model 3: y ~ raw + IOZC + IOZL
+        X3 = np.column_stack([np.ones(len(teams)), raw_v, c_v, l_v])
+        b3, *_ = np.linalg.lstsq(X3, y, rcond=None)
+        betas[metric] = {
+            "single_C": (float(b1[1]), float(b1[2])),
+            "single_L": (float(b2[1]), float(b2[2])),
+            "both":     (float(b3[1]), float(b3[2]), float(b3[3])),
+            "teams": len(teams),
+        }
 
     # Adjusted per-player scores — use raw (0-1 normalised) as the base
     # OZI_C = raw + (β_iozc/β_raw) × IOZC   etc.
@@ -638,12 +620,6 @@ def main():
                 raw_scores_pool_10[metric][pid] = val
 
     # ---- DTNZI: year-over-year of per-season 0-1 normalised -------------
-    # NOTE: These deltas mean-revert strongly across consecutive seasons
-    # (Pearson r ~ -0.37 forwards / -0.39 defense). A single RISING /
-    # DECLINING flag should be read as "the most recent delta was positive /
-    # negative", not as a stable career-trajectory signal. The flag is
-    # computed from RAW norm01 per-season values (independent of the broken
-    # _L methodology removed May 2026).
     print("    computing DTNZI ...")
     # per-season 0-1 scores already in norm01[season][metric][pid]
     dtnzi = {metric: {} for metric in METRICS}
@@ -678,9 +654,76 @@ def main():
             dtnzi[metric][pid] = {"deltas": deltas, "trend": trend,
                                  "recent": recent, "flag": flag}
 
-    # NOTE: TNZI winning-correlation block removed May 2026 — depended on the
-    # broken team-level r_L for TNZI. Output file (tnzi_winning_correlation.csv)
-    # orphaned to Zones/_orphaned_broken_L_2026_05/. See that folder's README.
+    # ---- TNZI winning correlation ---------------------------------------
+    tnzi_corr_rows = []
+    def corr_team(pid_map, points_map):
+        t = team_mean(pid_map)
+        common = set(t) & set(points_map)
+        if len(common) < 5:
+            return float("nan"), float("nan")
+        xs = [t[tm] for tm in common]; ys = [points_map[tm] for tm in common]
+        r = pearson(xs, ys)
+        r2 = r * r if not math.isnan(r) else float("nan")
+        return r, r2
+
+    # Per-season team points
+    team_points_by_season = {}
+    for s in SEASONS:
+        team_points_by_season[s] = {tm: row["points"] for tm, row in standings[s].items()}
+    team_points_by_season[POOLED] = team_points
+
+    variants_for_tnzi = {
+        "raw":  norm01[POOLED]["TNZI"],
+        "C":    adj_raw["TNZI"]["C"],
+        "L":    adj_raw["TNZI"]["L"],
+        "CL":   adj_raw["TNZI"]["CL"],
+    }
+
+    # pooled correlations
+    for variant_label, pid_map in variants_for_tnzi.items():
+        r, r2 = corr_team(pid_map, team_points)
+        tnzi_corr_rows.append({"scenario": "pooled", "variant": variant_label,
+                               "pearson_r": r, "r_squared": r2,
+                               "n_teams": sum(1 for tm in team_mean(pid_map)
+                                              if tm in team_points)})
+
+    # per-season: only raw available per season (adjusted uses pooled overlap/β)
+    for s in SEASONS:
+        r, r2 = corr_team(norm01[s]["TNZI"], team_points_by_season[s])
+        tnzi_corr_rows.append({"scenario": s, "variant": "raw",
+                               "pearson_r": r, "r_squared": r2,
+                               "n_teams": sum(1 for tm in team_mean(norm01[s]["TNZI"])
+                                              if tm in team_points_by_season[s])})
+
+    # For per-season variant correlations: apply pooled betas to per-season raw + pooled IOZC/IOZL
+    for s in SEASONS:
+        for variant_label, pid_map in (("C", adj_raw["TNZI"]["C"]),
+                                        ("L", adj_raw["TNZI"]["L"]),
+                                        ("CL", adj_raw["TNZI"]["CL"])):
+            # use only pids also present in per-season raw; substitute per-season raw then apply same beta offsets
+            bC = betas["TNZI"]["single_C"]; bL = betas["TNZI"]["single_L"]; b3 = betas["TNZI"]["both"]
+            def rat(n, d):
+                return None if (n is None or d is None or abs(d) < 1e-12) else n / d
+            r_C = rat(bC[1], bC[0])
+            r_L = rat(bL[1], bL[0])
+            r_C3 = rat(b3[1], b3[0])
+            r_L3 = rat(b3[2], b3[0])
+            season_map = {}
+            for pid, raw_s in norm01[s]["TNZI"].items():
+                if raw_s is None: continue
+                c = iozc["TNZI"].get(pid)
+                l = iozl["TNZI"].get(pid)
+                if variant_label == "C" and r_C is not None and c is not None:
+                    season_map[pid] = raw_s + r_C * c
+                elif variant_label == "L" and r_L is not None and l is not None:
+                    season_map[pid] = raw_s - r_L * l
+                elif variant_label == "CL" and r_C3 is not None and r_L3 is not None and c is not None and l is not None:
+                    season_map[pid] = raw_s + r_C3 * c - r_L3 * l
+            r, r2 = corr_team(season_map, team_points_by_season[s])
+            tnzi_corr_rows.append({"scenario": s, "variant": variant_label,
+                                   "pearson_r": r, "r_squared": r2,
+                                   "n_teams": sum(1 for tm in team_mean(season_map)
+                                                  if tm in team_points_by_season[s])})
 
     # ---- Write CSV outputs ----------------------------------------------
     print("[9/9] writing CSVs ...")
@@ -690,6 +733,7 @@ def main():
     )
     write_dtnzi_csvs(OUT_DIR, player_meta, scenario_gp[POOLED], dtnzi,
                     raw_scores_pool_10)
+    write_corr_csv(OUT_DIR, tnzi_corr_rows)
     write_top20_by_metric(OUT_DIR)
     write_per_season_csvs(OUT_DIR, player_meta, player_bucket,
                           player_season_gp, norm01)
@@ -697,6 +741,7 @@ def main():
                           player_season_gp)
 
     # ---- Print reports --------------------------------------------------
+    print_tnzi_corr_table(tnzi_corr_rows)
     print_top_tnzi(player_meta, scenario_gp[POOLED], adj_scores,
                    adj_raw, norm01, iozc, iozl, dtnzi)
     print_dtnzi_leaders(player_meta, scenario_gp[POOLED], dtnzi,
@@ -708,28 +753,13 @@ def main():
 # Output
 # ---------------------------------------------------------------------------
 
-# Schemas differ between OZI and the raw-only metrics. OZI keeps the full
-# linemate-adjusted quad (_C, _L, _CL) because its r_L is modifier-scale and
-# behaves correctly. NZI / DZI / TNZI publish raw + IOZC-adjusted only; the
-# broken _L / _CL columns were dropped May 2026 — see
-# Zones/_orphaned_broken_L_2026_05/README.md.
-OUT_COLS_OZI = [
+OUT_COLS = [
     "player_name", "team", "pos", "GP", "seasons_qualified",
     "IOZC", "IOZL",
     "OZI", "OZI_C", "OZI_L", "OZI_CL",
-    "DZI", "DZI_C",
-    "NZI", "NZI_C",
-    "TNZI", "TNZI_C",
-    "DTNZI_23_24", "DTNZI_24_25", "DTNZI_25_26",
-    "DTNZI_trend", "DTNZI_recent", "DTNZI_flag",
-]
-OUT_COLS_RAW = [
-    "player_name", "team", "pos", "GP", "seasons_qualified",
-    "IOZC",
-    "OZI", "OZI_C",
-    "DZI", "DZI_C",
-    "NZI", "NZI_C",
-    "TNZI", "TNZI_C",
+    "DZI", "DZI_C", "DZI_L", "DZI_CL",
+    "NZI", "NZI_C", "NZI_L", "NZI_CL",
+    "TNZI", "TNZI_C", "TNZI_L", "TNZI_CL",
     "DTNZI_23_24", "DTNZI_24_25", "DTNZI_25_26",
     "DTNZI_trend", "DTNZI_recent", "DTNZI_flag",
 ]
@@ -744,16 +774,14 @@ def _fmt(v, d=4):
 
 def write_adjusted_csvs(out_dir, meta, gp_map, shifts_map, norm01,
                         raw_scores_pool_10, iozc, iozl, adj_scores, adj_raw, dtnzi):
-    """Write one adjusted CSV per metric per position group.
-
-    OZI files carry the full _C/_L/_CL adjustment quad (OZI's linemate
-    adjustment works at modifier scale). NZI / DZI / TNZI files publish raw
-    + IOZC-adjusted only; broken _L / _CL columns were dropped May 2026.
-    """
+    """Write one adjusted CSV per metric per position group. Each CSV has all
+    OUT_COLS so downstream inspection is easy."""
+    # Identify qualifying players: those with at least one metric POOLED.
     qualifying = set()
     for metric in METRICS:
         qualifying |= set(pid for pid, v in norm01[POOLED][metric].items() if v is not None)
 
+    # Build row per player
     def build_row(pid, sort_metric):
         pos = (meta.get(pid, {}).get("position") or "").upper()
         seasons_q = sum(
@@ -774,8 +802,8 @@ def write_adjusted_csvs(out_dir, meta, gp_map, shifts_map, norm01,
             r[f"{metric}_C"] = adj_scores[metric]["C"].get(pid, "")
             r[f"{metric}_L"] = adj_scores[metric]["L"].get(pid, "")
             r[f"{metric}_CL"] = adj_scores[metric]["CL"].get(pid, "")
-        d = dtnzi[sort_metric].get(pid, {"deltas": {}, "trend": None,
-                                          "recent": None, "flag": None})
+        # DTNZI — use the file's headline metric for the deltas
+        d = dtnzi[sort_metric].get(pid, {"deltas": {}, "trend": None, "recent": None, "flag": None})
         r["DTNZI_23_24"] = _fmt(d["deltas"].get("DTNZI_23_24"), 4)
         r["DTNZI_24_25"] = _fmt(d["deltas"].get("DTNZI_24_25"), 4)
         r["DTNZI_25_26"] = _fmt(d["deltas"].get("DTNZI_25_26"), 4)
@@ -785,14 +813,6 @@ def write_adjusted_csvs(out_dir, meta, gp_map, shifts_map, norm01,
         return r
 
     for metric in METRICS:
-        # Schema + sort key depend on whether this is the OZI file.
-        if metric == "OZI":
-            cols = OUT_COLS_OZI
-            sort_col = "OZI_CL"     # keep historical sort by combined-adjusted
-        else:
-            cols = OUT_COLS_RAW
-            sort_col = metric       # sort by raw metric — no _CL to fall back on
-
         for group_name, pos_set in (("forwards", POS_FORWARD),
                                      ("defense", POS_DEFENSE)):
             rows = []
@@ -802,19 +822,18 @@ def write_adjusted_csvs(out_dir, meta, gp_map, shifts_map, norm01,
                 if pid not in norm01[POOLED][metric]:
                     continue
                 rows.append(build_row(pid, metric))
-            def sort_key(row, sc=sort_col, mc=metric):
-                v = row.get(sc)
-                if v in ("", None):
-                    v = row.get(mc) or 0
+            # Sort by <metric>_CL desc if present, else <metric>
+            def sort_key(row):
+                v = row.get(f"{metric}_CL") or row.get(metric) or 0
                 try: return -float(v)
                 except (TypeError, ValueError): return 0
             rows.sort(key=sort_key)
             path = out_dir / f"{metric.lower()}_adjusted_{group_name}.csv"
             with open(path, "w", newline="") as f:
                 w = csv.writer(f)
-                w.writerow(cols)
+                w.writerow(OUT_COLS)
                 for r in rows:
-                    w.writerow([r.get(c, "") for c in cols])
+                    w.writerow([r.get(c, "") for c in OUT_COLS])
     print(f"    wrote adjusted CSVs in {out_dir}")
 
 def write_dtnzi_csvs(out_dir, meta, gp_map, dtnzi, raw_scores_pool_10):

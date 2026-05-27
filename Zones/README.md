@@ -1,56 +1,58 @@
 # Zones — Transitional Zone Impact (TZI)
 
-Measures how much a player can tilt the ice based on where they start their shift. TZI breaks the question into three peer metrics — DZI, NZI, OZI — rather than collapsing the three deployment contexts into a single number.
+TZI measures how much of a player's on-ice time is spent in the offensive zone after a faceoff, from three different starting positions. It is a **zone-time share** framework, not a shot-differential one.
 
-See `../METHODOLOGY.md` for the framework rationale and what TZI does and does not claim.
+See `../METHODOLOGY.md` for the framework rationale, construction, sample thresholds, and what TZI does / does not claim.
 
-## The three metrics
+## The three peer metrics
 
-- **DZI — Defensive Zone Impact.** A player's net ice-tilt impact during shifts that begin in the defensive zone. Captures whether the player escapes their own zone cleanly and turns DZ starts into shot-attempt advantages.
-- **NZI — Neutral Zone Impact.** Net ice-tilt impact during shifts that begin in the neutral zone. Captures transition play and zone-entry effectiveness.
-- **OZI — Offensive Zone Impact.** Net ice-tilt impact during shifts that begin in the offensive zone. Captures whether OZ starts get converted to sustained pressure.
+- **DZI — Defensive Zone Impact.** Share of OZ time on shifts that begin with a DZ faceoff.
+- **NZI — Neutral Zone Impact.** Share of OZ time on shifts that begin with an NZ faceoff.
+- **OZI — Offensive Zone Impact.** Share of OZ time on shifts that begin with an OZ faceoff.
 
-Linemate-adjusted variants (DZI_L, NZI_L, OZI_L) and competition-adjusted variants are computed where the underlying linemate and competition data are available.
+Each metric is Wilson-shrunk for sample size, then position-normalized to a 0–10 score within forwards / within defense.
 
-## What's in this folder
+## Linemate adjustment
+
+Only **OZI** has a working linemate-adjusted variant (`OZI_L`). NZI / DZI / TNZI linemate adjustments were removed in May 2026 — the team-level OLS regression that produced them could not identify a coefficient at n=32 with multicollinear predictors. The orphaned methodology and historical CSVs sit under `_orphaned_broken_L_2026_05/` for transparency. See that folder's README for the audit trail.
+
+Rel-NZI (`compute_rel_tnzi.py`, outputs in `adjusted_rankings/rel_tnzi_*`) provides a separate, methodologically independent on-ice minus off-ice teammate-effect view.
+
+## Folder layout
 
 ```
 scripts/             Production scripts that compute TZI metrics
 output/              Derived TZI metrics at player and team level
 output/playoffs/     Playoff-specific TZI files
-adjusted_rankings/   Sorted ranking files
+adjusted_rankings/   Sorted publication rankings (4-year pooled headlines)
+adjusted_rankings/per_season/        Per-season + 2-year-recent leaderboards
+adjusted_rankings/publication_filtered/  GP-filtered rankings for post-ready usage
 raw/                 Raw shift and play-by-play data (gitignored)
+_orphaned_broken_L_2026_05/  Quarantined broken linemate-adjustment artifacts
 ```
 
-## scripts/
+## Key scripts
 
-The TZI pipeline runs independently of the NFI pipeline. Both pipelines read from the same underlying shot/shift database but produce separate output files.
+- `compute_iozc_iozl_dozi.py` — main producer. Writes OZI, DZI, NZI, TNZI raw + OZI's _C / _L / _CL adjusted variants, DTNZI flags, per-season + 2-year leaderboards, and top20 derived view.
+- `compute_tozi_tdzi.py` — TOZI / TDZI peer rollup variants.
+- `compute_rel_tnzi.py` — on-ice vs off-ice Rel-NZI computation (independent of the team-level OLS).
+- `compute_oze_dze_nze.py` — per-player OZE / DZE / NZE foundations.
+- `compute_zone_and_overlap.py` — writes `_player_meta.json`, `_zone_time.json`, `_overlap.pkl` (foundations).
 
-Key scripts:
+## What's still actively published
 
-- `compute_iozc_iozl_dozi.py` — computes the underlying IOZC, IOZL, and DOZI metrics that feed into the TZI rollup
-- `compute_oze_dze_nze.py` — per-player OZE/DZE/NZE computation
-- `compute_pqr_roc_rol.py` — PQR/ROC/ROL pipeline (regular and playoff variants)
-- `compute_zone_variations.py` — sweeps zone-factor variations for methodology testing
-
-Some scripts in this folder also compute correlation-to-winning side outputs as part of historical exploratory work. Those output files are gitignored and not part of the framework's current public claims; see `../METHODOLOGY.md` "On exploratory R-squared work" for context.
-
-## output/
-
-Derived TZI metrics. Notable files:
-
-- Player-level TZI files (DZI, NZI, OZI by season and pooled)
-- Team-level TZI rollups
-- `playoffs/` — playoff-specific TZI files including linemate-adjusted variants
-
-## adjusted_rankings/
-
-Sorted ranking files for forwards and defensemen by each TZI variant. Used as inputs to the Streamlit app and downstream content.
+- Raw NZI, OZI, DZI scores (0–10 within position group)
+- OZI_L (linemate-adjusted OZI; only working linemate variant)
+- IOZC-adjusted variants (`*_C`) for all four metrics
+- DTNZI trajectory flags (raw deltas; mean-reverting — see methodology caveat)
+- Rel-NZI (on-off)
+- Per-season + 2-year-recent leaderboards in `adjusted_rankings/per_season/`
+- Publication-filtered leaderboards in `adjusted_rankings/publication_filtered/`
 
 ## What TZI does not claim
 
-TZI is descriptive. It characterizes how players tilt the ice given their deployment; it does not claim any particular relationship to team winning. Exploratory R-squared analyses against standings points were run during development and did not produce findings that would support predictive claims. The framework stands as a player-evaluation descriptive tool, not a predictive one.
+TZI is descriptive. It characterizes deployment-conditioned territorial impact and does not claim a particular relationship to team winning. See `TECH_DEBT.md` for resolved items and `../METHODOLOGY.md` for the full caveat list.
 
 ---
 
-*See `../METHODOLOGY.md` for the full methodology context, including why three peer metrics rather than a single combined number, and `../PIPELINE.md` for execution details.*
+*See `../METHODOLOGY.md` for methodology and `../PIPELINE.md` for execution details.*
