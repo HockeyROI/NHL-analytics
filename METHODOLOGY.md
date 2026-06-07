@@ -2,7 +2,7 @@
 
 This document describes the analytical decisions underlying the HockeyROI frameworks, the reasoning behind each choice, and the verification work that supports them. It is the canonical reference for the project's methodology and is updated when methodology changes; data files reflect the methodology version stamped below.
 
-**Methodology version:** May 20, 2026 audit + bug fix (building on the May 2026 audit and the May 3, 2026 zone-adjustment factor swap).
+**Methodology version:** June 7, 2026 — NFI-QG exact-0.5 tie handling switched to half-credit; TZI2 team-level companion + single-game share-of-attack reporting convention added (building on the May 20, 2026 audit + bug fix, the May 2026 audit, and the May 3, 2026 zone-adjustment factor swap).
 **Data snapshot reflected in this document:** values current as of the version stamp date. Counts and player-level values shift as games are added to the dataset.
 
 ---
@@ -73,6 +73,71 @@ If your pipeline output for the same data snapshot differs from these values by 
 
 ---
 
+## NFI-QG: Per-Game Quality Game Rate
+
+### What NFI-QG measures
+
+NFI-QG is the per-game complement to season-aggregate NFI%. Each player's 5v5 ES regulation games are classified as a "Quality Game" if the player's on-ice NFI share for that game lands at or above the empirical position-median NFI share (F median and D median computed across all qualifying player-games over the four-season scope). Season-level NFI_QG_pct is the rate of Quality Games over a player's qualifying games. It captures **consistency of outchancing opponents in the net-front zone**, complementing season-aggregate NFI% which captures aggregate dominance.
+
+The parallel xG-QG metric uses the same construction with MoneyPuck xGoal-weighted xG% per game in place of NFI share.
+
+### Qualifying-game floor
+
+A player-game enters NFI-QG only if, at 5v5 ES regulation:
+- TOI on-ice ≥ 480 seconds (8 minutes), AND
+- Total on-ice Fenwick attempts (for + against) ≥ 5
+
+Below either threshold the game is excluded as low-signal.
+
+### Handling of Exact-0.5 Tie Games
+
+NFI per-game ratios are discrete by construction. Most qualifying games have small NFI denominators (median 5-7 NFI-zone events while a player is on-ice), so the per-game NFI share frequently lands at common fractions like 1/2, 2/4, 3/6 — all of which equal exactly 0.5000. **14.24% of all qualifying player-games (24,310 of 170,658) land at exactly 0.5000 on NFI.** This is a real consequence of the discreteness, not a data error.
+
+xG-QG does not have this issue. xG ratios are computed from continuous MoneyPuck xGoal weights and the per-game xG share is effectively continuous — only about 0.002% of qualifying games land within ±1e-5 of 0.5000.
+
+The framework handles this asymmetry with metric-specific rules:
+
+- **NFI-QG (half-credit on ties):**
+  ```
+  is_NFI_QG = 1.0  if NFI_pct_game >  position median NFI%
+            = 0.5  if NFI_pct_game == position median NFI%   (half-credit tie)
+            = 0.0  if NFI_pct_game <  position median NFI%
+  ```
+  The 0.5-credit treatment handles indeterminate outcomes symmetrically. Prior strict-`>` rule counted ties as losses (asymmetric: flag rate fell to 0.432 vs xG's 0.500); prior `>=` rule counted them as wins (flag rate spiked to 0.574 because the entire 14.24% tie spike landed in the QG bucket). Half-credit makes NFI-QG and xG-QG comparable: NFI flag rate now ≈ 0.503 by construction.
+
+- **xG-QG (greater-or-equal, unchanged):**
+  ```
+  is_xG_QG = 1.0  if xG_pct_game >= position median xG%
+           = 0.0  otherwise
+  ```
+  No tie handling needed under a continuous distribution.
+
+The asymmetric rule across the two metrics is not a stylistic choice — it reflects that NFI and xG have fundamentally different per-game ratio distributions. NFI is discrete-spike-heavy; xG is continuous. Either can be expressed with the other's rule, but only with the cost of either inflating QG rates by ties (xG-style `>=` on NFI) or asymmetrically penalizing ties as losses (strict `>` on NFI).
+
+### Stability of headline findings
+
+The June 2026 tie-handling change was verified to leave the durable-elite cohort intact. Under the strict-`>` rule, 73 players appeared on both the xG Elite Consistent High-Volume and NFI Elite Consistent High-Volume cohorts. Under the half-credit rule, 74 players appear, with 11 names changing at the cohort border — 5 dropped (rank 15-25 borderline cases whose tie shares were low enough that the credit reshuffle pushed them out of quartile 1 in one season), 6 added (similar border cases pushed in). The 68 names common to both rules contain every player at the elite-of-elite tier (McDavid, MacKinnon, Hagel, Hyman, Slavin, Bouchard, Makar, the Tkachuks, Kucherov, etc.). Within-bin rankings under the half-credit rule shuffle modestly: bin sizes can change by 1 player as borderline cases cross thresholds, but top-3 placements for elite-of-elite players are stable.
+
+### Locked spot-check values (NFI-QG, half-credit rule, 2025-26)
+
+| Player | Season NFI-QG_pct (25-26) | 4-yr career mean |
+|---|---|---|
+| Brandon Hagel | 0.7391 | 0.6808 |
+| Connor McDavid | 0.6543 | 0.6861 |
+| Zach Hyman | 0.6316 | 0.6890 |
+| Evan Bouchard | 0.6420 | 0.6860 |
+| Jaccob Slavin | 0.6154 | 0.6515 |
+| Cale Makar | 0.5676 | 0.6165 |
+| Miro Heiskanen | 0.5658 | 0.6193 |
+
+If your pipeline output for the same data snapshot differs from these values by more than rounding (±0.005), something is wrong with your reproduction.
+
+### Pipeline implementation note
+
+NFI-QG is computed by `Quality_Games/scripts/02_quality_game_aggregation.py`. The half-credit rule produces fractional contributions per tied game; the per-(player, season, team) `NFI_QG_count` column is stored as a float (not truncated to int) so that 0.5 fractional contributions propagate correctly into the season-level aggregation. Truncating to int silently drops 0.5 of QG credit per tied game and produces a 0.003-0.008 systematic underestimate of season NFI_QG_pct — this was caught and fixed in the June 2026 revision.
+
+---
+
 ## TZI: Transitional Zone Impact
 
 ### What TZI measures
@@ -126,6 +191,104 @@ Only **OZI** has a working linemate-adjusted variant (`OZI_L`). Linemate adjustm
 - Raw scores include deployment context, not just player skill.
 - Forwards and defense are normalized within their own groups; their 0–10 scores are not directly comparable across positions.
 - 99.89% game coverage at the current data snapshot; a small number of postponed regular-season games are not in foundation files (same precedent as NFI; not blocking).
+
+---
+
+## TZI2: Share-of-Attack Companion (team-level)
+
+### What TZI2 measures
+
+TZI2 uses the same shift-bucket source as published TZI but applies a different aggregation formula. Where published TZI computes `oz_sec / total_sec` (NZ time included in the denominator), TZI2 computes `oz_sec / (oz_sec + dz_sec)` (NZ time excluded). The TZI2 formula yields a head-to-head share — when both teams' numbers are computed on matched shifts, they sum to 100% by construction, because one team's `oz_sec` equals the opponent's `dz_sec` by symmetry.
+
+TZI2 is a **team-level companion**, not a player-level replacement. Player-level TZI2 status is covered at the end of this section.
+
+### The five TZI2 team-level metrics
+
+- **NZI-share** — `oz_sec / (oz_sec + dz_sec)` on NZ-faceoff shifts
+- **OZI-share** — `oz_sec / (oz_sec + dz_sec)` on OZ-faceoff shifts
+- **DZI-share** — `oz_sec / (oz_sec + dz_sec)` on DZ-faceoff shifts
+- **Contested Zone Share** — `oz_sec / (oz_sec + dz_sec)` on OZ-FO + DZ-FO shifts combined (the deep-zone contested territorial battle)
+- **NZ Share** — alias for NZI-share, included for parallelism with Contested Zone Share in tabular displays
+
+### Naming clarification — IMPORTANT
+
+TZI2's NZI-share, OZI-share, and DZI-share are **not the same metric** as published TZI's NZI, OZI, and DZI. The published versions keep NZ time in the denominator and apply Wilson shrinkage + position normalization on a 0–10 scale. The TZI2 versions are raw share-of-attack rates (percentages summing to 100% across the two teams on matched shifts), no Wilson shrinkage, no position normalization, no 0–10 rescaling.
+
+When citing numbers, always specify which version. "NZI = 7.4" is a published TZI score on the 0–10 scale. "NZI-share = 54.4%" is a TZI2 share. Confusing the two yields wrong conclusions.
+
+### Purpose: complement, not replacement
+
+TZI2 and published TZI ask different questions of the same shift buckets:
+
+- **Published TZI** asks "how much sustained OZ pressure does this team generate?" — a volume measure of OZ time per shift.
+- **TZI2** asks "when someone was attacking on this team's shifts, what share was them?" — a head-to-head efficiency measure where neutral-zone idle time drops out of the denominator.
+
+Both are valid hockey questions. Teams can score high on one and low on the other. A team that generates lots of OZ time AND gives up lots of OZ time on the same shifts will score high on published TZI but middling on TZI2. A team that generates less OZ time but wins each contest decisively will score lower on published TZI but high on TZI2.
+
+### Why published TZI remains primary
+
+The audit comparing both methodologies found that removing NZ time from the denominator pushes some low-volume teams upward in ways that do not reflect actual team quality. Calgary rises from #28 published TZI 4yr composite to #4 on TZI2 Contested Zone Share; Vegas falls from #3 published to #14 on TZI2 NZI-share; Winnipeg falls from #9 published to #18 on TZI2 NZI-share. The published methodology's NZ-in-denominator treatment is doing real work — distinguishing high-quality volume teams from low-volume teams that win head-to-head exchanges only because their NZ idle time isn't penalizing them.
+
+For the season-level ranking question — "who's the territorially best team" — published TZI remains the primary metric. TZI2 is a companion lens used alongside published TZI to surface volume-vs-efficiency disagreements as interpretable analytical findings (for example, Montreal is published DZI #1 but TZI2 DZI-share #14 — the gap reveals MTL's defensive value is volume-driven rather than head-to-head dominant).
+
+### Data layout
+
+- **Team-level CSV:** `Zones/output/tzi2_team.csv`
+- **Schema:** `team, season_window, gp, contested_share, contested_rank, nz_share, nz_share_rank, ozi_share, ozi_share_rank, dzi_share, dzi_share_rank, nzi_share, nzi_share_rank`
+- **Six season windows per team:** `2022_23`, `2023_24`, `2024_25`, `2025_26`, `2y_pool` (24-25 + 25-26), `4y_pool` (22-23 → 25-26)
+- **Expected row count:** 192 (32 teams × 6 windows)
+
+### Validation spot-checks (locked)
+
+These values are the methodology anchor — any bucket-source change must reproduce these to ±0.05 pp or be treated as a regression:
+
+| Team | Window | Metric | Value |
+|---|---|---|---|
+| CAR | 4y_pool | contested_share | 54.12% |
+| CAR | 4y_pool | nz_share | 54.40% |
+| MTL | 4y_pool | contested_share | 48.91% |
+
+### Player-level TZI2 status
+
+Player-level TZI2 was computed during audit runs but is **not in production**. The audit found a median rank shift of 53 ranks on NZI forwards between TZI2 share-of-attack and published TZI, even after Wilson shrinkage was applied at the player level. This indicates a structural divergence from published TZI rather than noise — the two metrics are pointing at distinct constructs at the player level (volume of OZ time per shift vs head-to-head share-of-attack), and the disagreement is not reduced by sample-size corrections.
+
+Player-level TZI2 will not be published until a public methodology introduction post is released that frames it as a distinct metric rather than a refinement of TZI. Until then:
+
+- Audit and pipeline scripts MUST NOT use player-level TZI2 numbers for downstream rankings or commentary without explicit authorization.
+- A computed CSV may exist at `Zones/output/tzi2_player.csv` as an audit artifact; treat its values as diagnostic-only.
+
+---
+
+## Single-Game Zone Reporting Convention
+
+### Single-game zone numbers use share-of-attack
+
+When reporting NZI, OZI, or DZI numbers for an individual game (X posts, live-game analysis, playoff game breakdowns), the numbers are reported as share-of-attack — applying the TZI2 formula to that game's data only. They are **not** the published Wilson-shrunk, position-normalized values that appear in season-level rankings.
+
+### Formula
+
+For each team and each faceoff zone:
+
+```
+zone_share = team_oz_sec / (team_oz_sec + team_dz_sec)
+```
+
+…on shifts that started with that zone's faceoff context (OZ-FO for OZI, DZ-FO for DZI, NZ-FO for NZI). Both teams' numbers on matched shifts sum to 100% by construction.
+
+### Reference example
+
+SCF Game 1 (June 2, 2026):
+
+| Zone | CAR | VGK |
+|---|---|---|
+| OZI | 76.0% | 24.0% |
+| DZI | 36.3% | 63.7% |
+| NZI | 44.6% | 55.4% |
+| Contested combined | 66.2% | 33.8% |
+
+### Season-level rankings continue to use published TZI
+
+Single-game share-of-attack is a **presentation choice** for live-game and playoff-game contexts, where matched-shift symmetry makes the 100%-sum framing intuitive. Season-level rankings — the canonical "best NZI defenseman" or "team OZI rank" — continue to use the published TZI methodology (NZ in denominator, Wilson-shrunk, position-normalized, 0–10 scale). Single-game share-of-attack does not feed season rankings.
 
 ---
 
@@ -204,6 +367,13 @@ The May 20 audit also corrected a Wilson-vs-Poisson misuse on per-60 rate CIs ac
 
 Methodology — what NFI measures, the Fenwick choice, the zone definitions, the Tulsky 0.035 factor, the TOI thresholds — is unchanged from the May 2026 audit. Only the pipeline correctness improved.
 
+### June 7, 2026 addition
+
+Two related methodology additions, both documented in the "TZI2 (Share-of-Attack Companion)" and "Single-Game Zone Reporting Convention" sections above:
+
+1. **TZI2 team-level companion metric introduced.** Same shift-bucket source as published TZI, different aggregation formula (`oz_sec / (oz_sec + dz_sec)` instead of `oz_sec / total_sec`). Persisted to `Zones/output/tzi2_team.csv` with 192 rows (32 teams × 6 season windows). Published TZI methodology is unchanged and remains the primary season-level ranking. Player-level TZI2 is computed in audits but not authorized for production use.
+2. **Single-game share-of-attack reporting convention adopted.** Single-game NZI, OZI, DZI numbers (for X posts, live-game analysis, playoff game breakdowns) are reported as share-of-attack — applying the TZI2 formula to the single game's data — rather than as the published Wilson-shrunk, position-normalized season-level values. Season-level rankings are unchanged.
+
 ---
 
 ## Pipeline reproducibility
@@ -212,4 +382,4 @@ The full pipeline can be reproduced from the NHL API given the scripts in `NFI/s
 
 ---
 
-*This document reflects the methodology as of the May 2026 audit and the May 3 zone-adjustment factor swap. Future methodology changes will increment the version stamp at the top of this document and update the locked spot-check values accordingly.*
+*This document reflects the methodology as of the May 2026 audit, the May 3 zone-adjustment factor swap, and the June 7, 2026 additions (TZI2 team-level companion + single-game share-of-attack reporting convention). Future methodology changes will increment the version stamp at the top of this document and update the locked spot-check values accordingly.*
