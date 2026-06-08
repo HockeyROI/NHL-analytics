@@ -204,17 +204,18 @@ TZI2 is a **team-level companion**, not a player-level replacement. Player-level
 
 ### The five TZI2 team-level metrics
 
-- **NZI-share** — `oz_sec / (oz_sec + dz_sec)` on NZ-faceoff shifts
-- **OZI-share** — `oz_sec / (oz_sec + dz_sec)` on OZ-faceoff shifts
-- **DZI-share** — `oz_sec / (oz_sec + dz_sec)` on DZ-faceoff shifts
-- **Contested Zone Share** — `oz_sec / (oz_sec + dz_sec)` on OZ-FO + DZ-FO shifts combined (the deep-zone contested territorial battle)
-- **NZ Share** — alias for NZI-share, included for parallelism with Contested Zone Share in tabular displays
+- **NZIS** (Neutral Zone Impact Share) — `oz_sec / (oz_sec + dz_sec)` on NZ-faceoff shifts
+- **OZIS** (Offensive Zone Impact Share) — `oz_sec / (oz_sec + dz_sec)` on OZ-faceoff shifts
+- **DZIS** (Defensive Zone Impact Share) — `oz_sec / (oz_sec + dz_sec)` on DZ-faceoff shifts
+- **TZI2** (Contested Zone Share) — `oz_sec / (oz_sec + dz_sec)` on OZ-FO + DZ-FO shifts combined (the deep-zone contested territorial battle)
+
+Note: the "2" in TZI2 means *two zones combined* (the OZ-FO + DZ-FO contested pool), not "version 2 of TZI". NZIS / OZIS / DZIS are single-zone metrics and do not use the "2" suffix.
 
 ### Naming clarification — IMPORTANT
 
-TZI2's NZI-share, OZI-share, and DZI-share are **not the same metric** as published TZI's NZI, OZI, and DZI. The published versions keep NZ time in the denominator and apply Wilson shrinkage + position normalization on a 0–10 scale. The TZI2 versions are raw share-of-attack rates (percentages summing to 100% across the two teams on matched shifts), no Wilson shrinkage, no position normalization, no 0–10 rescaling.
+NZIS, OZIS, DZIS, and TZI2 are **not the same metric** as published TZI's NZI, OZI, DZI, and TZI. The published versions keep NZ time in the denominator and apply Wilson shrinkage + position normalization on a 0–10 scale. The share-of-attack family (NZIS, OZIS, DZIS, TZI2) is raw share-of-attack rates (percentages summing to 100% across the two teams on matched shifts), no Wilson shrinkage, no position normalization, no 0–10 rescaling.
 
-When citing numbers, always specify which version. "NZI = 7.4" is a published TZI score on the 0–10 scale. "NZI-share = 54.4%" is a TZI2 share. Confusing the two yields wrong conclusions.
+When citing numbers, always specify which version. "NZI = 7.4" is a published TZI score on the 0–10 scale. "NZIS = 54.4%" is the share-of-attack version. Confusing the two yields wrong conclusions.
 
 ### Purpose: complement, not replacement
 
@@ -227,16 +228,17 @@ Both are valid hockey questions. Teams can score high on one and low on the othe
 
 ### Why published TZI remains primary
 
-The audit comparing both methodologies found that removing NZ time from the denominator pushes some low-volume teams upward in ways that do not reflect actual team quality. Calgary rises from #28 published TZI 4yr composite to #4 on TZI2 Contested Zone Share; Vegas falls from #3 published to #14 on TZI2 NZI-share; Winnipeg falls from #9 published to #18 on TZI2 NZI-share. The published methodology's NZ-in-denominator treatment is doing real work — distinguishing high-quality volume teams from low-volume teams that win head-to-head exchanges only because their NZ idle time isn't penalizing them.
+The audit comparing both methodologies found that removing NZ time from the denominator pushes some low-volume teams upward in ways that do not reflect actual team quality. Calgary rises from #28 published TZI 4yr composite to #4 on TZI2; Vegas falls from #3 published to #14 on NZIS; Winnipeg falls from #9 published to #18 on NZIS. The published methodology's NZ-in-denominator treatment is doing real work — distinguishing high-quality volume teams from low-volume teams that win head-to-head exchanges only because their NZ idle time isn't penalizing them.
 
-For the season-level ranking question — "who's the territorially best team" — published TZI remains the primary metric. TZI2 is a companion lens used alongside published TZI to surface volume-vs-efficiency disagreements as interpretable analytical findings (for example, Montreal is published DZI #1 but TZI2 DZI-share #14 — the gap reveals MTL's defensive value is volume-driven rather than head-to-head dominant).
+For the season-level ranking question — "who's the territorially best team" — published TZI remains the primary metric. The share-of-attack family (NZIS, OZIS, DZIS, TZI2) is a companion lens used alongside published TZI to surface volume-vs-efficiency disagreements as interpretable analytical findings (for example, Montreal is published DZI #1 but DZIS #14 — the gap reveals MTL's defensive value is volume-driven rather than head-to-head dominant).
 
 ### Data layout
 
 - **Team-level CSV:** `Zones/output/tzi2_team.csv`
-- **Schema:** `team, season_window, gp, contested_share, contested_rank, nz_share, nz_share_rank, ozi_share, ozi_share_rank, dzi_share, dzi_share_rank, nzi_share, nzi_share_rank`
+- **Schema:** `team, season_window, gp, contested_share, contested_rank, nzis, nzis_rank, ozis, ozis_rank, dzis, dzis_rank`
 - **Six season windows per team:** `2022_23`, `2023_24`, `2024_25`, `2025_26`, `2y_pool` (24-25 + 25-26), `4y_pool` (22-23 → 25-26)
 - **Expected row count:** 192 (32 teams × 6 windows)
+- **Historical note (June 7, 2026):** the initial schema shipped with duplicate columns — `nz_share`/`nzi_share` (same value) and `ozi_share`/`dzi_share` (legacy descriptive names). These were collapsed and renamed to single `nzis` / `ozis` / `dzis` columns on the same day, before any downstream consumers existed.
 
 ### Validation spot-checks (locked)
 
@@ -245,7 +247,7 @@ These values are the methodology anchor — any bucket-source change must reprod
 | Team | Window | Metric | Value |
 |---|---|---|---|
 | CAR | 4y_pool | contested_share | 54.12% |
-| CAR | 4y_pool | nz_share | 54.40% |
+| CAR | 4y_pool | nzis | 54.40% |
 | MTL | 4y_pool | contested_share | 48.91% |
 
 ### Player-level TZI2 status
