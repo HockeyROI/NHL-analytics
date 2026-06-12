@@ -2,7 +2,7 @@
 
 This document describes the analytical decisions underlying the HockeyROI frameworks, the reasoning behind each choice, and the verification work that supports them. It is the canonical reference for the project's methodology and is updated when methodology changes; data files reflect the methodology version stamped below.
 
-**Methodology version:** June 7, 2026 — NFI-QG exact-0.5 tie handling switched to half-credit; TZI2 team-level companion + single-game share-of-attack reporting convention added (building on the May 20, 2026 audit + bug fix, the May 2026 audit, and the May 3, 2026 zone-adjustment factor swap).
+**Methodology version:** June 12, 2026 — added Goalie Metrics section (NFI-GSAx, QNFS%, QS-GSAx) with Vollman Quality Starts disambiguation; the previous June 7 update covered NFI-QG half-credit tie handling and the TZI2 team-level companion (both building on the May 20, 2026 audit + bug fix, the May 2026 audit, and the May 3, 2026 zone-adjustment factor swap).
 **Data snapshot reflected in this document:** values current as of the version stamp date. Counts and player-level values shift as games are added to the dataset.
 
 ---
@@ -55,7 +55,7 @@ Where `oz_ratio` is the share of a player's non-neutral-zone faceoffs that occur
 
 Zone adjustment's contribution to NFI's analytical content is modest. Empirical testing during the audit found that zone-adjusted NFI (NFI%_ZA) and raw NFI% rank players nearly identically. The zone adjustment is included for consistency with established NHL analytics convention rather than as a substantive methodological refinement. Raw NFI% is the recommended primary metric; NFI%_ZA is a secondary zone-corrected variant.
 
-A note on factor selection: the project initially derived an empirical factor of 0.1071 through optimization against an outcome variable, then switched to Tulsky's published 0.035 factor. The current data state (May 2026 onward) reflects Tulsky's factor. Goalie reports published prior to May 2026 may cite NFI%_ZA values computed with the older factor; raw NFI% values cited in those reports remain unchanged. See `Goalies/README.md` for the cited-values note.
+A note on factor selection: the project initially derived an empirical NFI factor of 0.1071 by optimizing against an outcome variable, then tested whether it earned its place. It did not: over Tulsky's published 0.035 the empirical factor added no meaningful, statistically significant predictive value (ΔR² = +0.005, p = 0.187 against standings points). The empirical 0.1071 was therefore **evaluated and rejected**, not merely deprecated, and the framework uses Tulsky's 0.035. The current data state (May 2026 onward) reflects Tulsky's factor. Goalie reports published prior to May 2026 may cite NFI%_ZA values computed with the older empirical factor; raw NFI% values cited in those reports remain unchanged. See `Goalies/README.md` for the cited-values note.
 
 ### Locked spot-check values
 
@@ -261,6 +261,77 @@ Player-level TZI2 will not be published until a public methodology introduction 
 
 ---
 
+## Goalie Metrics: NFI-GSAx, QNFS%, QS-GSAx
+
+### Disambiguation from conventional Quality Starts
+
+Read this before mapping any of these metrics to a conventional goalie-consistency measure. Robert Vollman's Quality Starts metric (~2009) is binary on **save percentage**: a quality start is a game where the goalie's save% exceeds league-average save% (with a small adjustment for high-shot-volume games). Anyone in hockey analytics who hears "Quality Starts" will map to that definition. The HockeyROI quality-start metrics are constructed differently on three dimensions:
+
+1. **Threshold.** Per-game GSAx ≥ 0 — the goalie beat their expected on a danger- or xG-weighted basis — **not** save% > league average.
+2. **Two parallel definitions** (QNFS% and QS-GSAx), not one.
+3. **Different shot scopes.** QNFS% uses net-front (CNFI ∪ MNFI) shots only; QS-GSAx uses all shots faced.
+
+These are not Vollman Quality Starts under a different name. Do not conflate them.
+
+### NFI-GSAx
+
+**What it measures:** per-(goalie, season) goals-saved-above-expected on **CNFI ∪ MNFI shots only**. The expectation baseline is an **internal per-season, per-zone league goal rate** — within each season the league's goals-per-shot-faced is computed separately for the CNFI and MNFI zones, and each goalie's expected goals is `faced_CNFI × rate_CNFI + faced_MNFI × rate_MNFI`. GSAx is that expectation minus goals allowed on net-front shots. (This is a HockeyROI-internal model, **not** the MoneyPuck xGoal model — MoneyPuck is used only by QS-GSAx, below.) The faced denominator is save-based — shots-on-goal and goals (missed shots excluded), distinct from QNFS%'s Fenwick base. Per-60 normalization allocates each goalie's pooled even-strength TOI across seasons in proportion to the share of their career net-front faced shots that fell in each season (shifts data is not season-keyed, so exposure is apportioned by faced-shot share).
+
+**Why net-front only:** NFI's structural insight is that the immediate net-front and high slot are where shot location actually predicts conversion. Restricting GSAx to those shots puts the goalie metric on the same spatial basis as the player- and team-level NFI framework — they are commensurable in a way that all-shot GSAx and NFI% are not.
+
+**Qualifying:** minimum 100 net-front shots faced per season for the per-season table; minimum 300 net-front shots faced across pooled seasons for the pooled table.
+
+**Confidence intervals:** none are currently reported. NFI-GSAx per-60 is a rate count over a fixed exposure window; were CIs to be added they would use the Poisson (Garwood) interval, per the rate-vs-proportion rule established in the May 20, 2026 audit (see `docs/AUDIT_2026-05-20.md`). The present outputs carry point estimates only.
+
+**Source:** `NFI/scripts/21_goalie_gsax_by_season.py` → `NFI/Output/goalie_nfi_gsax_by_season.csv` (per-season, 354 goalie-seasons) and `NFI/Output/goalie_nfi_gsax_pooled_v2.csv` (pooled, 84 goalies). The pooled file currently spans five seasons (2021-22 → 2025-26), one more than QNFS%/QS-GSAx.
+
+### QNFS%: Quality Net-Front Save percentage
+
+**What it measures:** the share of a goalie's 5v5 ES regulation appearances in which their per-game net-front (CNFI ∪ MNFI) GSAx ≥ 0. Each game yields a binary indicator (1 if NF GSAx ≥ 0, else 0); the season-level metric is the rate of 1-games over qualifying games. The per-game expectation uses the same internal per-season per-zone league goal rate as NFI-GSAx, but on a **Fenwick** base (shot-on-goal + missed-shot + goal). Wilson 95% confidence intervals are reported, because the underlying statistic is a proportion bounded in [0, 1], not a per-60 rate.
+
+**Qualifying:** a goalie-game enters QNFS% only if the goalie faced ≥ 3 net-front shots at 5v5 ES regulation in that game. A goalie qualifies for season-level reporting with ≥ 25 qualifying games in any single season within the window.
+
+**Interpretation:** QNFS% captures *consistency of beating expected on net-front shots*, complementing season-aggregate NFI-GSAx, which captures aggregate dominance. A goalie can post high NFI-GSAx but middling QNFS% (a few huge games against expected amid many forgettable ones), or the reverse.
+
+**Source:** `NFI/goalie_consistency/scripts/compute_qnfs.py` and `compute_qnfs_per_season.py`; outputs `NFI/goalie_consistency/output/qnfs_2022-2026.csv` (146 goalies, of which 82 qualified) and `qnfs_per_season_2022-2026.csv` (294 goalie-seasons). Window: four seasons, 2022-23 → 2025-26.
+
+### QS-GSAx: Quality Start GSAx percentage
+
+**What it measures:** the share of a goalie's 5v5 ES regulation appearances in which their per-game **all-shot** GSAx ≥ 0. Same binary-indicator + season-rate construction as QNFS%, but on all shots faced rather than net-front only, and using the **MoneyPuck xGoal model** for the per-shot expectation (per-game GSAx = Σ xGoal − Σ goals). Wilson 95% confidence intervals; reported with both the point estimate and a Wilson lower-bound rank.
+
+**Qualifying:** minimum 10 shots faced per game; minimum 25 qualifying games per season.
+
+**Why QS-GSAx exists alongside QNFS%:** the two measure related but non-identical things. Spearman ρ between the two metrics' Wilson lower bounds (QS_GSAx_lo vs QNFS_lo) across the n = 80 qualified-goalie overlap is 0.810 — they rank goalies similarly, but ~34% of rank variance is unshared (1 − 0.810² = 0.344). Net-front-only QNFS% penalizes failures on the highest-leverage shots more sharply; all-shot QS-GSAx captures a goalie's full expected-vs-actual ledger. Reporting both keeps the framework honest about which shot scope drives which result.
+
+**Source:** `NFI/goalie_consistency/scripts/compute_qs_gsax.py`; outputs `NFI/goalie_consistency/output/qs_gsax_2022-2026.csv` (81 goalies) and `qs_gsax_per_season_2022-2026.csv` (210 goalie-seasons). Window: four seasons, 2022-23 → 2025-26.
+
+### Cohort overlap note
+
+The three goalie metrics qualify at different thresholds and on different shot bases and season spans, so they produce different cohort sizes: NFI-GSAx pooled has 84 goalies (five seasons), QNFS% has 146 in-file with 82 qualified (four seasons), QS-GSAx pooled has 81 (four seasons). A goalie may appear in one metric and not another because the qualifying floors differ — this is by design, not a bug. A goalie with a thin net-front shot diet but high total volume may qualify for QS-GSAx and NFI-GSAx but not for QNFS%; an infrequent appearance-maker may qualify for none. Where the same goalie appears in multiple metrics, the metrics are commensurable *for that goalie* — bearing in mind the net-front (QNFS%, NFI-GSAx) vs all-shot (QS-GSAx) scope difference and the internal-rate (QNFS%, NFI-GSAx) vs MoneyPuck (QS-GSAx) expectation model.
+
+### Confidence interval note
+
+QNFS% and QS-GSAx are proportions; Wilson 95% CIs are the correct tool and are reported for both. NFI-GSAx per-60 is a rate count over a fixed exposure; per the May 20, 2026 audit migration (see `docs/AUDIT_2026-05-20.md`), Poisson CIs are the correct tool for rate metrics — but NFI-GSAx currently reports point estimates only, so no CI is emitted today. This follows the same Wilson-vs-Poisson rule the player-level framework uses.
+
+### Locked spot-check values
+
+Pooled values for eight reference starters, as of the methodology version stamp at the top of this document. All eight qualify in all three cohorts. QNFS% and QS-GSAx% are percentages; NFI-GSAx is GSAx per 60 ES minutes. Values shift as games are added.
+
+| Goalie (team) | QNFS% | QS-GSAx% | NFI-GSAx /60 |
+|---|---|---|---|
+| Connor Hellebuyck (WPG) | 63.37 | 63.37 | 0.162 |
+| Igor Shesterkin (NYR) | 62.22 | 60.89 | 0.226 |
+| Ilya Sorokin (NYI) | 59.74 | 59.74 | 0.268 |
+| Andrei Vasilevskiy (TBL) | 53.88 | 54.74 | 0.185 |
+| Juuse Saros (NSH) | 55.10 | 53.69 | 0.061 |
+| Sergei Bobrovsky (FLA) | 53.59 | 52.61 | 0.070 |
+| Jacob Markström (CGY) | 49.75 | 51.02 | 0.008 |
+| Adin Hill (VGK) | 52.63 | 50.38 | −0.081 |
+
+The cohort-overlap NaN convention (show the row with NaN where a goalie qualifies for only some metrics) applies to goalies outside this eight — e.g. one clearing QS-GSAx's and NFI-GSAx's floors but under QNFS%'s 25-GP-in-a-season gate. If your pipeline output for the same data snapshot differs from these values by more than rounding (±0.01 for the percentages, ±0.005 for per-60), something is wrong with your reproduction.
+
+---
+
 ## Single-Game Zone Reporting Convention
 
 ### Single-game zone numbers use share-of-attack
@@ -355,7 +426,7 @@ The current methodology state reflects a comprehensive audit completed in May 20
 - **FNFI dropped from the framework** after R² with team performance collapsed to 0.238 and additional analyses showed the zone's noise dominated its signal.
 - **3A linemate adjustment downgraded** from default to toggleable, after team-level R² for 3A collapsed to 0.503 versus ZA's 0.583. 3A is preserved as an option but not the default for team rankings.
 
-After the audit, a separate methodology refinement (May 3, 2026) switched the zone-adjustment factor from the empirical 0.1071 to Tulsky's published 0.035. This switch was motivated by recognition that the empirical-factor derivation rested on R-squared optimization the project no longer wants to lean on; Tulsky's factor is established convention and is methodologically defensible without that derivation.
+After the audit, a separate methodology refinement (May 3, 2026) switched the zone-adjustment factor from the empirical 0.1071 to Tulsky's published 0.035. The empirical factor had been derived by R-squared optimization, but on test it added no significant predictive value over Tulsky's 0.035 (ΔR² = +0.005, p = 0.187 against standings points — not significant). It was evaluated and not trusted, not merely set aside for convention; Tulsky's factor is established, defensible without the optimization, and gives up nothing the empirical factor provided.
 
 ### May 20, 2026 follow-up audit
 
@@ -384,4 +455,4 @@ The full pipeline can be reproduced from the NHL API given the scripts in `NFI/s
 
 ---
 
-*This document reflects the methodology as of the May 2026 audit, the May 3 zone-adjustment factor swap, and the June 7, 2026 additions (TZI2 team-level companion + single-game share-of-attack reporting convention). Future methodology changes will increment the version stamp at the top of this document and update the locked spot-check values accordingly.*
+*This document reflects the methodology as of the May 2026 audit, the May 3 zone-adjustment factor swap, the June 7, 2026 additions (TZI2 team-level companion + single-game share-of-attack reporting convention), and the June 12, 2026 Goalie Metrics addition (NFI-GSAx, QNFS%, QS-GSAx, with Vollman Quality Starts disambiguation). Future methodology changes will increment the version stamp at the top of this document and update the locked spot-check values accordingly.*
