@@ -2,7 +2,7 @@
 
 This document describes the analytical decisions underlying the HockeyROI frameworks, the reasoning behind each choice, and the verification work that supports them. It is the canonical reference for the project's methodology and is updated when methodology changes; data files reflect the methodology version stamped below.
 
-**Methodology version:** June 12, 2026 — added Goalie Metrics section (NFI-GSAx, QNFS%, QS-GSAx) with Vollman Quality Starts disambiguation; the previous June 7 update covered NFI-QG half-credit tie handling and the TZI2 team-level companion (both building on the May 20, 2026 audit + bug fix, the May 2026 audit, and the May 3, 2026 zone-adjustment factor swap).
+**Methodology version:** June 12, 2026 — added Goalie Metrics section (NFI-GSAx, QNFS%, QS-GSAx) with Vollman Quality Starts disambiguation; the previous June 7 update covered the NFI-QG half-credit tie handling and documented TZI2 as exploratory single-game tooling (not part of the public framework), building on the May 20, 2026 audit + bug fix, the May 2026 audit, and the May 3, 2026 zone-adjustment factor swap.
 **Data snapshot reflected in this document:** values current as of the version stamp date. Counts and player-level values shift as games are added to the dataset.
 
 ---
@@ -194,13 +194,15 @@ Only **OZI** has a working linemate-adjusted variant (`OZI_L`). Linemate adjustm
 
 ---
 
-## TZI2: Share-of-Attack Companion (team-level)
+## TZI2: Share-of-Attack (exploratory, not in public framework)
+
+TZI2 is internal commentary tooling for analyzing individual games. It has not been used in any published HockeyROI work to date, is not part of the public NFI/TZI framework, and is not featured on the public Streamlit dashboard. The section below documents the construction for future reference and for readers who encounter the related code and outputs in the repo (`Zones/scripts/compute_iozc_iozl_dozi.py`, `Zones/output/tzi2_team.csv`, `Zones/output/tzi2_player.csv`). No published claim or framework metric depends on TZI2.
 
 ### What TZI2 measures
 
 TZI2 uses the same shift-bucket source as published TZI but applies a different aggregation formula. Where published TZI computes `oz_sec / total_sec` (NZ time included in the denominator), TZI2 computes `oz_sec / (oz_sec + dz_sec)` (NZ time excluded). The TZI2 formula yields a head-to-head share — when both teams' numbers are computed on matched shifts, they sum to 100% by construction, because one team's `oz_sec` equals the opponent's `dz_sec` by symmetry.
 
-TZI2 is a **team-level companion**, not a player-level replacement. Player-level TZI2 status is covered at the end of this section.
+TZI2 operates at the team level; player-level TZI2 exists in the codebase but is not a replacement for player-level TZI. Player-level TZI2 status is covered at the end of this section.
 
 ### The five TZI2 team-level metrics
 
@@ -230,7 +232,7 @@ Both are valid hockey questions. Teams can score high on one and low on the othe
 
 The audit comparing both methodologies found that removing NZ time from the denominator pushes some low-volume teams upward in ways that do not reflect actual team quality. Calgary rises from #28 published TZI 4yr composite to #4 on TZI2; Vegas falls from #3 published to #14 on NZIS; Winnipeg falls from #9 published to #18 on NZIS. The published methodology's NZ-in-denominator treatment is doing real work — distinguishing high-quality volume teams from low-volume teams that win head-to-head exchanges only because their NZ idle time isn't penalizing them.
 
-For the season-level ranking question — "who's the territorially best team" — published TZI remains the primary metric. The share-of-attack family (NZIS, OZIS, DZIS, TZI2) is a companion lens used alongside published TZI to surface volume-vs-efficiency disagreements as interpretable analytical findings (for example, Montreal is published DZI #1 but DZIS #14 — the gap reveals MTL's defensive value is volume-driven rather than head-to-head dominant).
+For the season-level ranking question — "who's the territorially best team" — published TZI remains the primary metric. The share-of-attack family (NZIS, OZIS, DZIS, TZI2) is an internal lens used alongside published TZI to surface volume-vs-efficiency disagreements as interpretable analytical findings (for example, Montreal is published DZI #1 but DZIS #14 — the gap reveals MTL's defensive value is volume-driven rather than head-to-head dominant).
 
 ### Data layout
 
@@ -442,9 +444,9 @@ Methodology — what NFI measures, the Fenwick choice, the zone definitions, the
 
 ### June 7, 2026 addition
 
-Two related methodology additions, both documented in the "TZI2 (Share-of-Attack Companion)" and "Single-Game Zone Reporting Convention" sections above:
+Two related June 7, 2026 changes, documented in the "TZI2: Share-of-Attack (exploratory, not in public framework)" and "Single-Game Zone Reporting Convention" sections above:
 
-1. **TZI2 team-level companion metric introduced.** Same shift-bucket source as published TZI, different aggregation formula (`oz_sec / (oz_sec + dz_sec)` instead of `oz_sec / total_sec`). Persisted to `Zones/output/tzi2_team.csv` with 192 rows (32 teams × 6 season windows). Published TZI methodology is unchanged and remains the primary season-level ranking. Player-level TZI2 is computed in audits but not authorized for production use.
+1. **TZI2 documented as exploratory tooling.** Share-of-attack aggregation (`oz_sec / (oz_sec + dz_sec)` instead of `oz_sec / total_sec`), computed at team and player level and persisted to `Zones/output/tzi2_team.csv` (192 rows) and `Zones/output/tzi2_player.csv`. TZI2 is internal single-game commentary tooling — not used in any published work, not part of the public NFI/TZI framework, and not on the Streamlit dashboard. Player-level TZI2 is computed for individual-game commentary but is not authorized for production use. Published TZI methodology is unchanged and remains the primary season-level ranking.
 2. **Single-game share-of-attack reporting convention adopted.** Single-game NZI, OZI, DZI numbers (for X posts, live-game analysis, playoff game breakdowns) are reported as share-of-attack — applying the TZI2 formula to the single game's data — rather than as the published Wilson-shrunk, position-normalized season-level values. Season-level rankings are unchanged.
 
 ---
@@ -455,4 +457,4 @@ The full pipeline can be reproduced from the NHL API given the scripts in `NFI/s
 
 ---
 
-*This document reflects the methodology as of the May 2026 audit, the May 3 zone-adjustment factor swap, the June 7, 2026 additions (TZI2 team-level companion + single-game share-of-attack reporting convention), and the June 12, 2026 Goalie Metrics addition (NFI-GSAx, QNFS%, QS-GSAx, with Vollman Quality Starts disambiguation). Future methodology changes will increment the version stamp at the top of this document and update the locked spot-check values accordingly.*
+*This document reflects the methodology as of the May 2026 audit, the May 3 zone-adjustment factor swap, the June 7, 2026 single-game share-of-attack reporting convention (TZI2 itself, documented the same month, is exploratory tooling outside the public framework), and the June 12, 2026 Goalie Metrics addition (NFI-GSAx, QNFS%, QS-GSAx, with Vollman Quality Starts disambiguation). Future methodology changes will increment the version stamp at the top of this document and update the locked spot-check values accordingly.*
