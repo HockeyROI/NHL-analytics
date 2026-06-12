@@ -1,6 +1,6 @@
 # Pipeline
 
-This document describes the HockeyROI pipeline: which scripts to run, in what order, what each one produces, and the schema/ordering constraints that have to be respected. It is the operational counterpart to `METHODOLOGY.md` — methodology answers *why*, this answers *how to run it*.
+This document describes the HockeyROI pipeline: which scripts to run, in what order, what each one produces, and the schema/ordering constraints that have to be respected. It is the operational counterpart to `docs/METHODOLOGY.md` — methodology answers *why*, this answers *how to run it*.
 
 If you are re-running the pipeline from scratch, follow the canonical execution order below. If you are running a single stage, check the "Schema and ordering constraints" section first — several scripts have hard prerequisites that will produce silent or loud failures if violated.
 
@@ -35,7 +35,7 @@ Upstream of step 1, the shot database build (`NFI/Geometry_post/NF_PY/build_shot
 
 ## May 20, 2026 audit and bug fixes
 
-A follow-up to the May 2026 audit (the original is documented in `METHODOLOGY.md`'s "Verification" section). Three independent bugs were found by gut-checking rank stability against an audit-verification CSV that had been built with a different (correct) filter set than the production pipeline.
+A follow-up to the May 2026 audit (the original is documented in `docs/METHODOLOGY.md`'s "Verification" section). Three independent bugs were found by gut-checking rank stability against an audit-verification CSV that had been built with a different (correct) filter set than the production pipeline.
 
 ### Bug 1 — `state == "ES"` conflation (5v5 + 4v4 + 3v3)
 
@@ -108,7 +108,7 @@ After bug 3's fix, team and goalie counts use all regular-season games while pla
 }
 ```
 
-**Important:** The NFI factor is hardcoded to 0.035 (Tulsky's published value) at line 42, overriding any empirical computation. This was set during the May 3, 2026 factor swap. See `METHODOLOGY.md` for the reasoning behind the swap.
+**Important:** The NFI factor is hardcoded to 0.035 (Tulsky's published value) at line 42, overriding any empirical computation. This was set during the May 3, 2026 factor swap. See `docs/METHODOLOGY.md` for the reasoning behind the swap.
 
 ### `NFI/scripts/fa_linemate_without_me.py`
 
@@ -176,7 +176,7 @@ After Path C, the canonical interpretation is: **the live-data version written b
 
 **Writes:** Playoff player file and zone-time playoff files.
 
-**Note:** Contains the Fenwick filter for NFI zone determination at lines 101-108 — this is the same audit fix applied to `decision_tree_stage4.py`, `decision_tree_stage123.py`, and `factor_comparison_5metrics.py`. The filter ensures NFI zone flags only consider Fenwick events (excluding blocked shots, whose coordinates may not be in the shooter's reference frame). Without this filter, the playoff NFI metric would be corrupted by the blocked-shot coordinate inconsistencies described in `METHODOLOGY.md`.
+**Note:** Contains the Fenwick filter for NFI zone determination at lines 101-108 — this is the same audit fix applied to `decision_tree_stage4.py`, `decision_tree_stage123.py`, and `factor_comparison_5metrics.py`. The filter ensures NFI zone flags only consider Fenwick events (excluding blocked shots, whose coordinates may not be in the shooter's reference frame). Without this filter, the playoff NFI metric would be corrupted by the blocked-shot coordinate inconsistencies described in `docs/METHODOLOGY.md`.
 
 ---
 
@@ -255,11 +255,11 @@ These conventions exist so that any audit-cycle change can be rolled back if nee
 
 ## Re-running the pipeline at a later date
 
-If you re-run the pipeline at a later date (e.g., months after the methodology version stamp in `METHODOLOGY.md`), expect:
+If you re-run the pipeline at a later date (e.g., months after the methodology version stamp in `docs/METHODOLOGY.md`), expect:
 
 1. **Cohort sizes increase** as more games complete. The complete-seasons cohort grows by one season every June; the current cohort updates daily during the season.
-2. **Spot-check values shift** for the same player. The locked values in `METHODOLOGY.md` are anchored to the version stamp; later reruns will produce different values for the same player due to additional games.
-3. **Methodology stays consistent** unless a methodology change is recorded in `METHODOLOGY.md` and the version stamp is updated. Pipeline behavior should not silently change between runs without a corresponding methodology change.
+2. **Spot-check values shift** for the same player. The locked values in `docs/METHODOLOGY.md` are anchored to the version stamp; later reruns will produce different values for the same player due to additional games.
+3. **Methodology stays consistent** unless a methodology change is recorded in `docs/METHODOLOGY.md` and the version stamp is updated. Pipeline behavior should not silently change between runs without a corresponding methodology change.
 
 If you re-run the pipeline and your spot-check values land significantly different from the methodology document's locked values *at the same data snapshot*, something has gone wrong. If you re-run at a later snapshot, drift is expected.
 
@@ -278,4 +278,4 @@ Before re-enabling the GitHub Action or running any of these scripts on a case-s
 
 ---
 
-*This document reflects pipeline behavior as of the May 20, 2026 audit + bug fix (building on the May 2026 audit and the May 3, 2026 zone-adjustment factor swap). Future changes that affect ordering, schema, or column names will update this document alongside `METHODOLOGY.md`.*
+*This document reflects pipeline behavior as of the May 20, 2026 audit + bug fix (building on the May 2026 audit and the May 3, 2026 zone-adjustment factor swap). Future changes that affect ordering, schema, or column names will update this document alongside `docs/METHODOLOGY.md`.*

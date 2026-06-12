@@ -2,7 +2,7 @@
 
 TZI measures how much of a player's on-ice time is spent in the offensive zone after a faceoff, from three different starting positions. It is a **zone-time share** framework, not a shot-differential one.
 
-See `../METHODOLOGY.md` for the framework rationale, construction, sample thresholds, and what TZI does / does not claim.
+See `../docs/METHODOLOGY.md` for the framework rationale, construction, sample thresholds, and what TZI does / does not claim.
 
 ## The three peer metrics
 
@@ -51,8 +51,8 @@ _orphaned_broken_L_2026_05/  Quarantined broken linemate-adjustment artifacts
 
 ## What TZI does not claim
 
-TZI is descriptive. It characterizes deployment-conditioned territorial impact and does not claim a particular relationship to team winning. See `TECH_DEBT.md` for resolved items and `../METHODOLOGY.md` for the full caveat list.
+TZI is descriptive. It characterizes deployment-conditioned territorial impact and does not claim a particular relationship to team winning. See `TECH_DEBT.md` for resolved items and `../docs/METHODOLOGY.md` for the full caveat list.
 
 ---
 
-*See `../METHODOLOGY.md` for methodology and `../PIPELINE.md` for execution details.*
+*See `../docs/METHODOLOGY.md` for methodology and `../PIPELINE.md` for execution details.*

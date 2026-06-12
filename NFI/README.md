@@ -2,7 +2,7 @@
 
 The flagship framework. NFI redefines high-danger scoring chances based on the actual conversion geometry, narrowing the conventional high-danger trapezoid to the regions where shots genuinely behave like dangerous chances.
 
-See `../METHODOLOGY.md` for the full methodology rationale and `../PIPELINE.md` for execution order.
+See `../docs/METHODOLOGY.md` for the full methodology rationale and `../PIPELINE.md` for execution order.
 
 ## What's in this folder
 
@@ -47,14 +47,14 @@ Derived NFI metrics at player, team, and goalie level. Notable files:
 - `fully_adjusted/player_fully_adjusted_playoffs.csv` — playoff metrics
 - `fully_adjusted/top200_article_dataset.csv` — curated top-200 set
 
-Locked spot-check values for the player file are documented in `../METHODOLOGY.md`.
+Locked spot-check values for the player file are documented in `../docs/METHODOLOGY.md`.
 
 ## What's not here
 
-- Historical exploratory R-squared analyses (horse-race scripts and outputs) were retired and untracked from this folder. See `../METHODOLOGY.md` "On exploratory R-squared work" for context.
+- Historical exploratory R-squared analyses (horse-race scripts and outputs) were retired and untracked from this folder. See `../docs/METHODOLOGY.md` "On exploratory R-squared work" for context.
 - Three-pillar team-construction model scripts and outputs were retired after the underlying claims could not be supported by holdout testing.
-- Decision-tree variant scripts that derived the empirical zone-adjustment factor were retired after the May 3, 2026 switch to Tulsky's published 0.035 factor. See `../METHODOLOGY.md` for the factor change rationale.
+- Decision-tree variant scripts that derived the empirical zone-adjustment factor are retained for reference only. The empirical NFI factor (0.1071) they produced was evaluated against Tulsky's 0.035 and added no significant predictive value (ΔR² = +0.005, p = 0.187), so it was rejected — not merely superseded — and the framework adopted Tulsky's 0.035. See `../docs/METHODOLOGY.md` for the factor-change rationale.
 
 ---
 
-*The NFI subsystem represents the core analytical work of HockeyROI. Methodology decisions, validation, and reasoning live in `../METHODOLOGY.md`; this README orients you to the folder contents.*
+*The NFI subsystem represents the core analytical work of HockeyROI. Methodology decisions, validation, and reasoning live in `../docs/METHODOLOGY.md`; this README orients you to the folder contents.*
