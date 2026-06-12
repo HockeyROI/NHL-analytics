@@ -53,6 +53,15 @@ FLIP = {"O":"D","D":"O","N":"N"}
 FEN  = {"shot-on-goal","missed-shot","goal"}
 COR  = FEN | {"blocked-shot"}
 
+# NOTE — RETAINED EXPLORATORY CONSTANTS, NOT THE PRODUCTION FACTOR.
+# The effective factors below derive from the empirical 0.1071 zone factor
+# (e.g. V5 = 2.50 x 0.1071 = 0.2677), which was evaluated and rejected:
+# it added no significant predictive value over Tulsky's 0.035
+# (DeltaR2 = +0.005, p = 0.187). Production NFI does NOT read these — the
+# canonical pipeline (build_fa_factors.py -> fa_factors.json) uses 0.035.
+# These constants feed only this script's exploratory complete_decision_tree
+# stage4_player_ratings_*.csv outputs, which are not the canonical metric.
+# Kept for reference/comparison; do not reintroduce 0.1071 into production.
 # Stage 2 optimal effective factors (pct-point delta in own-share per unit OZ_ratio swing)
 # V5 / CNFI+MNFI: 2.50× × 10.71pp = 26.77 pp
 # Fenwick CF%   : 3.00× × 11.91pp = 35.73 pp
