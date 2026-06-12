@@ -265,4 +265,17 @@ If you re-run the pipeline and your spot-check values land significantly differe
 
 ---
 
+## Operational gotchas
+
+### Output/output and Sizes/sizes directory casing (macOS vs Linux)
+
+Several scripts reference output directories using a different letter case than the on-disk directory name. macOS's default case-insensitive filesystem resolves this transparently; a case-sensitive filesystem (most Linux CI runners) will not.
+
+- On disk the directory is `NFI/Output/` (capital O); scripts reference `NFI/output/` (lowercase) in ~147 places vs ~9 using `NFI/Output/`.
+- On disk the directory is `Goalies/Sizes/` (capital S); scripts reference `Goalies/sizes/` (lowercase) in 4 places vs 0 using `Goalies/Sizes/`.
+
+Before re-enabling the GitHub Action or running any of these scripts on a case-sensitive filesystem, normalize every reference to match the on-disk case (or rename the directories). Until then, these scripts run correctly only on macOS. (Counts are occurrence counts from `grep -rho … --include='*.py'`, excluding worktrees.)
+
+---
+
 *This document reflects pipeline behavior as of the May 20, 2026 audit + bug fix (building on the May 2026 audit and the May 3, 2026 zone-adjustment factor swap). Future changes that affect ordering, schema, or column names will update this document alongside `METHODOLOGY.md`.*
