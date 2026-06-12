@@ -1,12 +1,20 @@
 """Incremental current-season (2025-26) NFI updater.
 
+⚠ APPROXIMATE ZONE DEFINITION — NOT CANONICAL. This script's inline
+CNFI+MNFI test is a coarse proxy (offensive zone AND |y|<=22 AND |x|>=65),
+not the canonical bounds (CNFI: x in [74,89] AND |y|<=9; MNFI: x in
+[55,73] AND |y|<=15) used by 03_onice_attribution_pillars.py and the
+downstream pipeline, which are the source of truth. Do NOT re-enable this
+script in any automated workflow until the zone test is brought to
+canonical bounds — its output will diverge from the canonical pipeline.
+
 Each run:
   1. Pulls 2025-26 regular-season game IDs from NHL standings/schedule API
   2. Skips games already in NFI/processed_game_ids.json
   3. Pulls play-by-play + shifts for any new games
   4. Tags shots to CNFI/MNFI zones using existing classifier
   5. Builds/updates per-player on-ice CNFI+MNFI counts and ES TOI
-  6. Applies zone adjustment (empirical factor 10.71 pp)
+  6. Applies zone adjustment (Tulsky factor 3.5 pp = 0.035; NFI_ZA_FACTOR)
   7. Writes NFI/output/fully_adjusted/current_season_player_fully_adjusted.csv
   8. Records timestamp + processed game IDs
 

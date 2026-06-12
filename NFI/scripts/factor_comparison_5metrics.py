@@ -9,7 +9,7 @@ Metrics:
 
 For each:
   - Empirical zone factor: league-pooled OZ%−DZ% pct-pt gap from shift-based faceoff attribution
-  - Raw, ZA_traditional (3.5pp), ZA_empirical (correct factor) R² vs standings points (N=126)
+  - Raw, ZA_traditional (3.5pp = adopted), ZA_empirical (0.1071 — evaluated, ΔR²=+0.005 p=0.187, not adopted) R² vs standings points (N=126)
 """
 from __future__ import annotations
 
