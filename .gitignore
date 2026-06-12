@@ -209,3 +209,6 @@ Quality_Games/Data/
 
 # Regenerated per-run diagnostic log
 Quality_Games/output/diagnostic_log.txt
+
+# Zones publication-filtered scratch/appendix notes (post-prep text, not derived CSVs)
+Zones/adjusted_rankings/publication_filtered/_*.txt
