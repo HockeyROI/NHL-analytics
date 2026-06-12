@@ -201,3 +201,11 @@ Goalies/Output/
 # (contains personal-use scraping scripts, scraped CSVs, and embedded
 # third-party API keys that should not be published)
 Prospects/
+
+# === Added June 12, 2026 — Quality Games framework ===
+
+# MoneyPuck source shot files (Path-A inputs: 4×~68MB, not repo content)
+Quality_Games/Data/
+
+# Regenerated per-run diagnostic log
+Quality_Games/output/diagnostic_log.txt
