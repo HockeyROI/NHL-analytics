@@ -596,18 +596,30 @@ def _prefetch_all() -> None:
 # Styling — palette + CSS
 # ---------------------------------------------------------------------------
 PALETTE = {
-    "bg":          "#0B1D2E",   # uniform dark background
-    "surface":     "#0B1D2E",
-    "panel":       "#122C44",   # slightly lighter for sidebar/expander contrast
+    # --- White theme (migrated from dark navy, June 2026) ---
+    "bg":          "#FFFFFF",   # app background
+    "surface":     "#FFFFFF",
+    "panel":       "#F0F4F8",   # light blue-grey — filter rows / expanders / cards
+    "border":      "#D9E2EC",
     "blue":        "#2E7DC4",
     "lightblue":   "#4AB3E8",
-    "text":        "#F0F4F8",
-    "text_dark":   "#1B3A5C",   # for dark-on-light dropdowns
-    "input_bg":    "#F0F4F8",
+    "text":        "#1B3A5C",   # primary text + headers (navy)
+    "text_dark":   "#1B3A5C",   # dropdown / input text (key kept for back-compat)
+    "text_secondary": "#888888",
+    "input_bg":    "#FFFFFF",
     "orange":      "#FF6B35",
-    "rising":      "#5DAA7A",   # softer green
-    "stable":      "#D4A843",   # softer yellow
-    "declining":   "#C05555",   # softer red
+    # momentum (+/-) text colours that read on white
+    "rising":      "#2E8B57",
+    "stable":      "#888888",
+    "declining":   "#C8504F",
+    # heatmap / tertile shading (diverging, reads on white)
+    "high":        "#3FA66B",
+    "mid":         "#E8B43C",
+    "low":         "#C8504F",
+    # primary-metric emphasis (brand orange family, white text)
+    "primary_top": "#F2622E",
+    "primary_mid": "#C68A3A",
+    "primary_low": "#A23B3B",
 }
 
 
@@ -652,7 +664,7 @@ def inject_css() -> None:
         /* Disclaimer box — orange border, orange heading, white body */
         .disclaimer-box {{
             border: 2px solid {PALETTE['orange']};
-            background: rgba(11, 29, 46, 0.6);
+            background: {PALETTE['panel']};
             padding: 1rem 1.25rem;
             border-radius: 6px;
             margin: 1rem 0 1.5rem 0;
@@ -699,7 +711,7 @@ def inject_css() -> None:
         }}
         [data-testid="stTabs"] button[aria-selected="true"] {{
             color: {PALETTE['text']} !important;
-            border-bottom: 3px solid {PALETTE['text']} !important;
+            border-bottom: 3px solid {PALETTE['orange']} !important;
         }}
 
         /* Footer */
@@ -1014,12 +1026,17 @@ def style_frame(display_df: pd.DataFrame, color_map: bool = True):
 # Common UI
 # ---------------------------------------------------------------------------
 def render_header() -> None:
-    ts = load_last_updated("regular")
     st.markdown(
-        f"""
-        <div class="hockeyroi-brand"><span class="hockey">HOCKEY</span><span class="roi">ROI</span></div>
-        <div class="tagline">Automated Zone Time Tracking — Updated Daily</div>
-        <div class="timestamp">Last updated: {ts}</div>
+        """
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap;">
+          <div class="hockeyroi-brand"><span class="hockey">HOCKEY</span><span class="roi">ROI</span></div>
+          <div style="color:#2E7DC4; font-size:0.9rem; padding-bottom:0.45rem;">How these metrics work → <strong>Methodology</strong> tab (far right)</div>
+        </div>
+        <div class="tagline">NHL Net-Front Impact &amp; Zone Analytics</div>
+        <div style="color:#888888; font-size:0.85rem; margin-top:0.15rem;">
+          Data through the 2025-26 season ·
+          <a href="https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md" style="color:#2E7DC4;">methodology on GitHub</a>
+        </div>
         """,
         unsafe_allow_html=True,
     )
@@ -1031,8 +1048,8 @@ def render_footer() -> None:
         <div class="hockeyroi-footer">
         HockeyROI — <a href="https://hockeyROI.substack.com">hockeyROI.substack.com</a> |
         <a href="https://twitter.com/HockeyROI">@HockeyROI</a> |
-        <a href="https://github.com/HockeyROI/nhl-analytics">github.com/HockeyROI/nhl-analytics</a><br/>
-        Data updated daily via NHL API. All methodology transparent and open source.
+        <a href="https://github.com/HockeyROI/NHL-analytics">github.com/HockeyROI/NHL-analytics</a><br/>
+        Built from NHL play-by-play data. Methodology open source.
         </div>
         """,
         unsafe_allow_html=True,
@@ -2057,108 +2074,152 @@ def render_team_construction() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Methodology tab + placeholders
 # ---------------------------------------------------------------------------
-def main() -> None:
-    # FIX 11 — sidebar always starts expanded so desktop users see filters.
-    st.set_page_config(
-        page_title="HockeyROI — Zone Time + Net Front Impact",
-        page_icon="🏒",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
+GITHUB_METHODOLOGY_URL = (
+    "https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md"
+)
+TAB_LABELS = ["Players", "Teams", "Goalies", "Zone Impact (TZI)", "Referees", "Methodology"]
 
-    # FIX 1 — session-state defaults set BEFORE any widget renders, so the
-    # very first paint of the NFI tab has the right season / game type / pos.
-    for key, val in {
-        "framework":     "NFI",
-        "nfi_season":    "Pooled (2022–2026)",
-        "nfi_game_type": "Regular Season",
-        "nfi_position":  "All",
-        "game_type_nfi": "Regular Season",
-    }.items():
-        st.session_state.setdefault(key, val)
-    # Per-tab widget defaults — also seeded before any widget runs.
-    for key, val in {
-        "nfi_teams": [], "nfi_name": "",
-        "nfi_min_toi": NFI_TOI_DEFAULT["pooled"],
-        "nfi_last_season": "Pooled (2022–2026)",
-        "nfi_show_corsi_fenwick": False,
-        "f_position": "All", "game_type_tnzi": "Regular Season",
-        "f_season": REGULAR_SEASON_OPTIONS[0], "f_teams": [],
-        "f_name": "", "f_min_gp": 0, "f_flag": "All",
-        "tc_season": "Current Season (2025-26)",
-        "goalie_season_view": GOALIE_POOLED_LABEL,
-        "goalie_min_shots":   500,
-    }.items():
-        st.session_state.setdefault(key, val)
 
-    # FIX 1 — load NFI pooled data unconditionally before framework selector.
-    # The cache_data on _preload_nfi / load_nfi_player keeps this O(0) on
-    # subsequent reruns.
-    _nfi_preload = _preload_nfi()
-    _prefetch_all()
-
-    inject_css()
-    render_header()
-
-    # Small mobile-only filter hint
+def render_coming_soon(title: str) -> None:
     st.markdown(
-        '<p class="mobile-filter-hint">← Use the sidebar arrow to access filters</p>',
+        f"""
+        <div style="border:1px dashed {PALETTE['border']}; background:{PALETTE['panel']};
+             border-radius:8px; padding:2.75rem 1.5rem; text-align:center; margin-top:1rem;">
+          <div style="font-family:'Bebas Neue',Impact,sans-serif; font-size:1.7rem;
+               color:{PALETTE['text']}; letter-spacing:1px;">{title}</div>
+          <div style="color:{PALETTE['text_secondary']}; margin-top:0.4rem; font-size:0.95rem;">
+            Coming in this build.</div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
-    # FIX 11 — framework toggle buttons in main area (not sidebar)
 
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col1:
-        nfi_btn = st.button(
-            "Net Front Impact (NFI)",
-            use_container_width=True,
-            type="primary" if st.session_state.get("framework") == "NFI" else "secondary",
-            key="btn_nfi",
-        )
-    with col2:
-        tnzi_btn = st.button(
-            "Zone Impact (TNZI)",
-            use_container_width=True,
-            type="primary" if st.session_state.get("framework") == "TNZI" else "secondary",
-            key="btn_tnzi",
-        )
-    with col3:
-        team_btn = st.button(
-            "Team Construction",
-            use_container_width=True,
-            type="primary" if st.session_state.get("framework") == "TEAM" else "secondary",
-            key="btn_team",
-        )
-    if nfi_btn:
-        st.session_state["framework"] = "NFI"
-        st.rerun()
-    if tnzi_btn:
-        st.session_state["framework"] = "TNZI"
-        st.rerun()
-    if team_btn:
-        st.session_state["framework"] = "TEAM"
-        st.rerun()
+def _meth_framework(name: str, body: str) -> str:
+    return (
+        f"<div style='margin:0.55rem 0; max-width:62rem;'>"
+        f"<span style='color:{PALETTE['blue']}; font-weight:700;'>{name}</span>"
+        f"<span style='color:{PALETTE['text']};'> — {body}</span></div>"
+    )
 
-    framework = st.session_state["framework"]
-    st.markdown("<div style='margin-bottom:1rem;'></div>", unsafe_allow_html=True)
 
-    if framework == "TNZI":
-        render_tnzi_disclaimer()
-        render_tnzi_sidebar()
-        render_tnzi_table()
-        render_tnzi_explainers()
-    elif framework == "NFI":
-        render_nfi_disclaimer()
-        render_nfi_sidebar()
-        render_nfi_table()
-        render_nfi_explainers()
-    elif framework == "TEAM":
-        render_team_construction_disclaimer()
-        render_team_construction_sidebar()
-        render_team_construction()
+def render_methodology() -> None:
+    st.markdown(
+        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.25rem;'>Methodology</h2>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"<p style='color:{PALETTE['text']}; font-size:0.97rem; line-height:1.55; max-width:62rem;'>"
+        "HockeyROI re-defines high-danger scoring chances around the geometry where shot location "
+        "actually predicts conversion, then applies that lens across players, teams, goalies, and "
+        "zone deployment. Short summaries are below; the full canonical methodology — definitions, "
+        "derivations, locked spot-check values, and verification work — lives in a single "
+        "source-of-truth document on GitHub.</p>",
+        unsafe_allow_html=True,
+    )
+    st.link_button("Full methodology →", GITHUB_METHODOLOGY_URL, type="primary")
+
+    st.markdown(
+        f"<h3 style='color:{PALETTE['text']}; margin-top:1.2rem;'>The frameworks</h3>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        _meth_framework(
+            "NFI — Net-Front Impact",
+            "Fenwick shot share (shots + misses + goals, blocks excluded) in the CNFI "
+            "(close net-front) and MNFI (mid / high-slot) zones while a player is on ice. "
+            "<b>RelNFI%</b> is the two-way version (generation + suppression). Zone-adjusted with "
+            "Tulsky's 3.5pp factor.",
+        )
+        + _meth_framework(
+            "Quality Games (QG)",
+            "Per-game consistency — the share of a player's 5v5 regulation games where their "
+            "on-ice danger share beat the position median, on two bases (MoneyPuck xG and NFI), "
+            "with a half-credit rule for exact-median ties.",
+        )
+        + _meth_framework(
+            "Teams",
+            "Team-level CNFI+MNFI share, plus a roster-talent-vs-on-ice-result “two ways” "
+            "comparison that flags teams whose talent and results diverge.",
+        )
+        + _meth_framework(
+            "Goalies",
+            "GSAx-based, three lenses: <b>NFI-GSAx</b> (net-front goals saved above expected), "
+            "<b>QNFS%</b> (consistency of beating expected on net-front shots), and "
+            "<b>QS-GSAx</b> (same idea on all shots). Qualifying floors differ by metric, so the "
+            "cohorts differ — by design.",
+        )
+        + _meth_framework(
+            "Zone Impact (TZI)",
+            "DZI / NZI / OZI — descriptive 0–10, position-normalized scores for how deployment "
+            "after defensive / neutral / offensive faceoffs translates into offensive-zone time. "
+            "Three peer lenses; none is elevated over the others.",
+        )
+        + _meth_framework(
+            "Referees",
+            "Penalty-call environment by official across 2023-24 → 2025-26.",
+        ),
+        unsafe_allow_html=True,
+    )
+
+    # Vollman disambiguation callout
+    st.markdown(
+        f"""
+        <div style="border:2px solid {PALETTE['orange']}; background:{PALETTE['panel']};
+             border-radius:6px; padding:1rem 1.25rem; margin:1.25rem 0; max-width:62rem;">
+          <div style="color:{PALETTE['orange']}; font-weight:700; margin-bottom:0.3rem;">
+            A note on &ldquo;Quality Starts&rdquo;</div>
+          <div style="color:{PALETTE['text']}; font-size:0.94rem; line-height:1.5;">
+            HockeyROI's goalie quality-start metrics are <b>not</b> Robert Vollman's Quality Starts
+            (~2009, defined on save% vs league average). Here a quality game is
+            <b>per-game GSAx &ge; 0</b> — the goalie beat expected on a danger / xG-weighted basis —
+            and there are <b>two</b> parallel definitions (QNFS% on net-front shots, QS-GSAx on all
+            shots). Don't map these to Vollman's metric, or to each other.
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"<p style='color:{PALETTE['text_secondary']}; font-size:0.85rem; max-width:62rem;'>"
+        "Cohorts differ by metric by design — qualifying floors vary (e.g. pooled goalie NFI-GSAx "
+        "requires ≥300 net-front shots; QNFS% requires ≥25 games in a season), so a player or "
+        "goalie may appear in one table and not another. Data is current through the 2025-26 season; "
+        "daily auto-updates are paused, with refreshes moving to roughly every 10 games.</p>",
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+def main() -> None:
+    st.set_page_config(
+        page_title="HockeyROI — NHL Net-Front Impact & Zone Analytics",
+        page_icon="🏒",
+        layout="wide",
+        initial_sidebar_state="collapsed",
+    )
+    inject_css()
+    render_header()
+    st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
+
+    players_tab, teams_tab, goalies_tab, tzi_tab, refs_tab, meth_tab = st.tabs(TAB_LABELS)
+    with players_tab:
+        render_coming_soon("Players — NFI + Quality Games")
+    with teams_tab:
+        render_coming_soon("Teams — NFI + Rankings Two Ways")
+    with goalies_tab:
+        render_coming_soon("Goalies — NFI-GSAx + QNFS% + QS-GSAx")
+    with tzi_tab:
+        render_coming_soon("Zone Impact — DZI / NZI / OZI")
+    with refs_tab:
+        render_coming_soon("Referees — penalty tendencies")
+    with meth_tab:
+        render_methodology()
 
     render_footer()
 
