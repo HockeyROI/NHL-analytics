@@ -2517,6 +2517,160 @@ def render_teams(season_label: str, game_type: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Goalies tab — NFI-GSAx + QNFS% + QS-GSAx (union of qualified cohorts)
+# ---------------------------------------------------------------------------
+GOALIE_SEASON_INT = {"2025-26": 20252026, "2024-25": 20242025,
+                     "2023-24": 20232024, "2022-23": 20222023}
+_QC = REPO_ROOT / "NFI" / "goalie_consistency" / "output"
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qnfs_pooled() -> pd.DataFrame:
+    fp = _QC / "qnfs_2022-2026.csv"
+    return pd.read_csv(fp) if fp.exists() else pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qnfs_by_season() -> pd.DataFrame:
+    fp = _QC / "qnfs_per_season_2022-2026.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(int)
+    return df
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qs_pooled() -> pd.DataFrame:
+    fp = _QC / "qs_gsax_2022-2026.csv"
+    return pd.read_csv(fp) if fp.exists() else pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qs_by_season() -> pd.DataFrame:
+    fp = _QC / "qs_gsax_per_season_2022-2026.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(int)
+    return df
+
+
+def render_goalies(season_label: str, game_type: str) -> None:
+    st.markdown(
+        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Goalies</h2>",
+        unsafe_allow_html=True,
+    )
+    if game_type == "Playoffs":
+        st.info("Goalie playoff metrics aren't available yet — these are "
+                "regular-season GSAx-based metrics.")
+        return
+
+    is_pooled = SEASON_KEY.get(season_label, "pooled") == "pooled"
+    if is_pooled:
+        n = load_goalie_nfi()
+        nfi = (n[["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60"]]
+               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60"})
+               if not n.empty else pd.DataFrame())
+        q = load_qnfs_pooled()
+        if not q.empty and "qualified" in q.columns:
+            q = q[q["qualified"] == True]  # noqa: E712  union of QUALIFIED cohorts
+        qn = (q[["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi"]]
+              .rename(columns={"GP": "GP_qn"}) if not q.empty else pd.DataFrame())
+        s = load_qs_pooled()
+        qs = (s[["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo"]]
+              .rename(columns={"GP": "GP_qs"}) if not s.empty else pd.DataFrame())
+    else:
+        sk = GOALIE_SEASON_INT.get(season_label)
+        bs = load_goalie_nfi_by_season()
+        nfi = (bs[bs["season"] == sk][["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60"]]
+               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60"})
+               if (not bs.empty and sk) else pd.DataFrame())
+        q0 = load_qnfs_by_season()
+        qn = (q0[q0["season"] == sk][["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi"]]
+              .rename(columns={"GP": "GP_qn"}) if (not q0.empty and sk) else pd.DataFrame())
+        s0 = load_qs_by_season()
+        qs = (s0[s0["season"] == sk][["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo"]]
+              .rename(columns={"GP": "GP_qs"}) if (not s0.empty and sk) else pd.DataFrame())
+
+    frames = [f for f in (nfi, qn, qs) if not f.empty]
+    if not frames:
+        st.info("No goalie data available for this view.")
+        return
+
+    # Name lookup across sources; merge metrics on goalie_id (drop name first to
+    # avoid suffix collisions, then map a single canonical name back).
+    name_src = pd.concat([f[["goalie_id", "goalie_name"]] for f in frames
+                          if "goalie_name" in f.columns], ignore_index=True)
+    name_map = name_src.dropna().drop_duplicates("goalie_id").set_index("goalie_id")["goalie_name"]
+    frames2 = [f.drop(columns=[c for c in ["goalie_name"] if c in f.columns]) for f in frames]
+    base = frames2[0]
+    for r in frames2[1:]:
+        base = base.merge(r, on="goalie_id", how="outer")
+
+    base["Goalie"] = base["goalie_id"].map(name_map)
+    gp_cols = [c for c in ("GP_nfi", "GP_qn", "GP_qs") if c in base.columns]
+    base["GP"] = base[gp_cols].bfill(axis=1).iloc[:, 0] if gp_cols else np.nan
+    base["Team"] = base["team"] if "team" in base.columns else np.nan
+
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        view = st.radio("View", ["Compact", "Full"], horizontal=True, key="goalies_view")
+    with c2:
+        default_shots = 500 if is_pooled else 150
+        shots_key = "goalies_minshots_pooled" if is_pooled else "goalies_minshots_season"
+        min_shots = st.slider("Min Shots Faced", 0, 3000, default_shots, 50, key=shots_key)
+        st.caption("Min Shots Faced filter suppresses small-sample noise in per-60 "
+                   "rates. Defaults match the methodology's qualifying floors and the "
+                   "previous app's discipline.")
+    base = base[base["total_faced"].fillna(0) >= min_shots]
+    if base.empty:
+        st.info("No goalies meet the current Min Shots Faced filter.")
+        return
+
+    def _qnfs_ci(r):
+        if pd.isna(r.get("QNFS_lo")) or pd.isna(r.get("QNFS_hi")):
+            return np.nan
+        return f"({r['QNFS_lo']:.1f}–{r['QNFS_hi']:.1f})"
+    base["QNFS 95% CI"] = base.apply(_qnfs_ci, axis=1)
+    base = base.rename(columns={
+        "NFIG60": "NFI-GSAx/60", "QNFS_pct": "QNFS%",
+        "QS_GSAx_pct": "QS-GSAx%", "QS_GSAx_lo": "QS-GSAx (95% lower)",
+    })
+    base = base.sort_values("NFI-GSAx/60", ascending=False, na_position="last").reset_index(drop=True)
+
+    full = ["Goalie", "Team", "GP", "NFI-GSAx/60", "QNFS%", "QNFS 95% CI",
+            "QS-GSAx%", "QS-GSAx (95% lower)"]
+    compact = ["Goalie", "Team", "GP", "NFI-GSAx/60", "QNFS%", "QS-GSAx%"]
+    cols = full if view == "Full" else compact
+    disp = base[[c for c in cols if c in base.columns]].copy()
+
+    fmt = {}
+    if "NFI-GSAx/60" in disp:
+        fmt["NFI-GSAx/60"] = lambda x: "—" if pd.isna(x) else f"{x:+.3f}"
+    for c in ("QNFS%", "QS-GSAx%", "QS-GSAx (95% lower)"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
+    if "GP" in disp:
+        fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
+
+    st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    st.caption(
+        f"{len(disp)} goalies · {season_label} · sorted by NFI-GSAx/60 descending · "
+        "blanks = below that metric's qualifying floor (not zero)"
+    )
+    st.markdown(
+        f"<p style='color:{PALETTE['text_secondary']}; font-size:0.82rem; max-width:62rem;'>"
+        "Goalies shown are the union of qualified cohorts across the three metrics. "
+        "Backup goalies appearing only in unqualified QNFS rows are excluded — see "
+        "Methodology for full qualifying floors. Qualifying floors differ by metric "
+        "(NFI-GSAx ≥300 net-front shots pooled / ≥100 per season; QNFS% ≥25 GP/season "
+        "with ≥3 net-front shots/game; QS-GSAx ≥10 shots/game, ≥25 GP/season).</p>",
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Global sidebar (Season + Game type — apply to every tab)
 # ---------------------------------------------------------------------------
 def render_global_sidebar() -> tuple[str, str]:
@@ -2558,7 +2712,7 @@ def main() -> None:
     with teams_tab:
         render_teams(season_label, game_type)
     with goalies_tab:
-        render_coming_soon("Goalies — NFI-GSAx + QNFS% + QS-GSAx")
+        render_goalies(season_label, game_type)
     with refs_tab:
         render_coming_soon("Referees — penalty tendencies")
     with meth_tab:
