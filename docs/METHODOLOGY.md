@@ -148,8 +148,6 @@ Zone Impact is a player-evaluation framework measuring how a player's on-ice dep
 - **NZI — Neutral Zone Impact.** Share of offensive-zone time on shifts that begin with a neutral-zone faceoff. Captures transition play.
 - **OZI — Offensive Zone Impact.** Share of offensive-zone time on shifts that begin with an offensive-zone faceoff. Captures whether OZ starts get converted to sustained pressure.
 
-The framework also defines **TZI (Transitional Zone Impact)** — the net offensive tilt on neutral-zone starts: offensive-zone-time share minus defensive-zone-time share on shifts that begin with a neutral-zone faceoff (stored as `TNZI` in the data). TZI is computed but is not surfaced on the public dashboard, which leads with the three component lenses above.
-
 Zone Impact metrics are **zone-time share** measures, not shot-differential. The earlier description in this document as "Fenwick-based shot differential" was inaccurate — corrected May 2026 to match what the code computes.
 
 ### Construction

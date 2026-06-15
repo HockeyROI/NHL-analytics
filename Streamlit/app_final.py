@@ -2079,7 +2079,7 @@ def render_team_construction() -> None:
 GITHUB_METHODOLOGY_URL = (
     "https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md"
 )
-TAB_LABELS = ["Players", "Teams", "Goalies", "Zone Impact", "Referees", "Methodology"]
+TAB_LABELS = ["Players", "Teams", "Goalies", "Referees", "Methodology"]
 
 
 def render_coming_soon(title: str) -> None:
@@ -2194,6 +2194,202 @@ def render_methodology() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Players tab — NFI + Quality Games (+ Zone Impact in the Pooled view)
+# ---------------------------------------------------------------------------
+SEASON_KEY = {
+    "Pooled (2022–2026)": "pooled",
+    "2025-26": "20252026",
+    "2024-25": "20242025",
+    "2023-24": "20232024",
+    "2022-23": "20222023",
+}
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qg_player_season() -> pd.DataFrame:
+    """Quality Games per (player, season) — xG_QG% / NFI_QG% / GP / qual GP."""
+    fp = REPO_ROOT / "Quality_Games" / "output" / "per_player_season.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    if "player_id" in df.columns:
+        df["player_id"] = df["player_id"].astype("Int64")
+    return df
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_zone_pooled() -> pd.DataFrame:
+    """Pooled NZI / DZI / OZI (0–10) from tnzi_adjusted_{forwards,defense}.csv.
+    Name-keyed (the zone files carry no player_id); a `_pos_group` column is
+    added so the merge to NFI is on (player_name, pos-group) — this guards the
+    rare same-name / different-position case (e.g. the two Sebastian Ahos)."""
+    frames = []
+    for pos_file, grp in (("forwards", "F"), ("defense", "D")):
+        fp = ADJ / f"tnzi_adjusted_{pos_file}.csv"
+        if not fp.exists():
+            continue
+        d = pd.read_csv(fp)
+        keep = [c for c in ("player_name", "NZI", "DZI", "OZI") if c in d.columns]
+        d = d[keep].copy()
+        d["_pos_group"] = grp
+        frames.append(d)
+    if not frames:
+        return pd.DataFrame()
+    z = pd.concat(frames, ignore_index=True)
+    return z.drop_duplicates(subset=["player_name", "_pos_group"], keep="first")
+
+
+def _qg_pooled(qg: pd.DataFrame) -> pd.DataFrame:
+    """Career-pooled QG: rates = total quality games / total qualifying GP."""
+    if qg.empty:
+        return qg
+    g = qg.groupby("player_id").agg(
+        GP=("GP", "sum"),
+        qualifying_GP=("qualifying_GP", "sum"),
+        _xc=("xG_QG_count", "sum"), _xq=("xG_qual_GP", "sum"),
+        _nc=("NFI_QG_count", "sum"), _nq=("NFI_qual_GP", "sum"),
+    ).reset_index()
+    g["xG_QG_pct"] = np.where(g["_xq"] > 0, g["_xc"] / g["_xq"], np.nan)
+    g["NFI_QG_pct"] = np.where(g["_nq"] > 0, g["_nc"] / g["_nq"], np.nan)
+    return g[["player_id", "GP", "qualifying_GP", "xG_QG_pct", "NFI_QG_pct"]]
+
+
+def _build_players_frame(season_label: str) -> tuple[pd.DataFrame, bool]:
+    """Return (long per-player frame, is_pooled). NFI + QG, plus NZI/DZI/OZI in
+    the pooled view only (zone data has no season axis)."""
+    nfi = load_nfi_player()
+    if nfi.empty:
+        return pd.DataFrame(), False
+    qg = load_qg_player_season()
+    is_pooled = SEASON_KEY.get(season_label, "pooled") == "pooled"
+
+    if is_pooled:
+        base = _aggregate_nfi_pooled(nfi)
+        if not qg.empty:
+            base = base.merge(_qg_pooled(qg), on="player_id", how="left")
+        zone = load_zone_pooled()
+        if not zone.empty and not base.empty:
+            base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
+            base = base.merge(zone, on=["player_name", "_pos_group"], how="left")
+    else:
+        base = nfi[nfi["season"] == SEASON_KEY[season_label]].copy()
+        if not qg.empty:
+            qcols = ["player_id", "season", "GP", "qualifying_GP",
+                     "xG_QG_pct", "NFI_QG_pct"]
+            base = base.merge(qg[[c for c in qcols if c in qg.columns]],
+                              on=["player_id", "season"], how="left")
+    return base, is_pooled
+
+
+def render_players(season_label: str, game_type: str) -> None:
+    st.markdown(
+        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Players</h2>",
+        unsafe_allow_html=True,
+    )
+    if game_type == "Playoffs":
+        st.info(
+            "Individual player samples in playoffs are too small for meaningful "
+            "analysis (median 7–28 games per player). See the Teams tab for "
+            "team-level playoff results."
+        )
+        return
+
+    frame, is_pooled = _build_players_frame(season_label)
+    if frame.empty:
+        st.error("Player data not found "
+                 "(`NFI/output/fully_adjusted/player_fully_adjusted.csv`).")
+        return
+
+    c1, c2, c3 = st.columns([1.1, 1.7, 1.0])
+    with c1:
+        pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
+    with c2:
+        toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
+        default_toi = 2000 if is_pooled else 200
+        min_toi = st.slider("Min ES TOI (min)", 0, 7500, default_toi, 50, key=toi_key)
+    with c3:
+        view = st.radio("View", ["Compact", "Full"], horizontal=True, key="players_view")
+
+    df = frame.copy()
+    if pos in ("F", "D"):
+        df = df[df["position"] == pos]
+    else:
+        df = df[df["position"].isin(["F", "D"])]
+    df = df[df["toi_min"].fillna(0) >= min_toi]
+    if df.empty:
+        st.markdown(
+            f"<p style='color:{PALETTE['text']};'>No players match the current filters. "
+            "Widen Position or Min TOI, or change the Season in the sidebar.</p>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    df = df.sort_values("RelNFI_pct", ascending=False, na_position="last").reset_index(drop=True)
+    df = df.rename(columns={
+        "player_name": "Player", "position": "Pos", "team": "Team", "toi_min": "TOI",
+        "NFI_pct": "NFI%", "RelNFI_pct": "RelNFI%",
+        "RelNFI_F_pct": "RelNFI_F%", "RelNFI_A_pct": "RelNFI_A%",
+        "xG_QG_pct": "xG_QG%", "NFI_QG_pct": "NFI_QG%", "qualifying_GP": "Qual GP",
+    })
+
+    full_cols = ["Player", "Pos", "Team", "GP", "TOI", "NFI%", "RelNFI%", "RelNFI_F%",
+                 "RelNFI_A%", "NZI", "DZI", "OZI", "xG_QG%", "NFI_QG%", "Qual GP"]
+    compact_cols = ["Player", "Pos", "Team", "TOI", "NFI%", "RelNFI%", "NFI_QG%", "xG_QG%"]
+    cols = full_cols if view == "Full" else compact_cols
+    if not is_pooled:  # zone metrics are pooled-only — hide for single-season views
+        cols = [c for c in cols if c not in ("NZI", "DZI", "OZI")]
+    cols = [c for c in cols if c in df.columns]
+    disp = df[cols].copy()
+
+    fmt = {}
+    for c in ("NFI%", "xG_QG%", "NFI_QG%"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
+    for c in ("RelNFI%", "RelNFI_F%", "RelNFI_A%"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
+    for c in ("NZI", "DZI", "OZI"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    if "TOI" in disp.columns:
+        fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
+    for c in ("GP", "Qual GP"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
+
+    st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+
+    zone_note = (" · NZI/DZI/OZI pooled across all seasons" if is_pooled
+                 else " · Zone Impact hidden (pooled-only) in single-season view")
+    st.caption(
+        f"{len(disp):,} players · {season_label} · sorted by RelNFI% descending · "
+        f"min {min_toi:,} ES min{zone_note}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Global sidebar (Season + Game type — apply to every tab)
+# ---------------------------------------------------------------------------
+def render_global_sidebar() -> tuple[str, str]:
+    st.sidebar.markdown(
+        f"<div style='font-family:\"Bebas Neue\",Impact,sans-serif; font-size:1.4rem; "
+        f"color:{PALETTE['text']}; letter-spacing:1px; margin-bottom:0.3rem;'>Filters</div>",
+        unsafe_allow_html=True,
+    )
+    st.session_state.setdefault("g_season", "Pooled (2022–2026)")
+    st.session_state.setdefault("g_game_type", "Regular Season")
+    season = st.sidebar.selectbox("Season", list(SEASON_KEY.keys()), key="g_season")
+    game_type = st.sidebar.radio("Game type", ["Regular Season", "Playoffs"],
+                                 key="g_game_type")
+    st.sidebar.caption(
+        "Season and game type apply across all tabs. Zone Impact (NZI/DZI/OZI) is "
+        "pooled-only and appears in the Pooled season view."
+    )
+    return season, game_type
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 def main() -> None:
@@ -2201,21 +2397,20 @@ def main() -> None:
         page_title="HockeyROI — NHL Net-Front Impact & Zone Analytics",
         page_icon="🏒",
         layout="wide",
-        initial_sidebar_state="collapsed",
+        initial_sidebar_state="expanded",
     )
     inject_css()
     render_header()
+    season_label, game_type = render_global_sidebar()
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
 
-    players_tab, teams_tab, goalies_tab, tzi_tab, refs_tab, meth_tab = st.tabs(TAB_LABELS)
+    players_tab, teams_tab, goalies_tab, refs_tab, meth_tab = st.tabs(TAB_LABELS)
     with players_tab:
-        render_coming_soon("Players — NFI + Quality Games")
+        render_players(season_label, game_type)
     with teams_tab:
-        render_coming_soon("Teams — NFI + Rankings Two Ways")
+        render_coming_soon("Teams — NFI + Zone + Quality Games")
     with goalies_tab:
         render_coming_soon("Goalies — NFI-GSAx + QNFS% + QS-GSAx")
-    with tzi_tab:
-        render_coming_soon("Zone Impact — DZI / NZI / OZI")
     with refs_tab:
         render_coming_soon("Referees — penalty tendencies")
     with meth_tab:
