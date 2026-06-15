@@ -138,17 +138,19 @@ NFI-QG is computed by `Quality_Games/scripts/02_quality_game_aggregation.py`. Th
 
 ---
 
-## TZI: Transitional Zone Impact
+## Zone Impact
 
-### What TZI measures
+### What Zone Impact measures
 
-TZI (Transitional Zone Impact) is a player-evaluation framework measuring how a player's on-ice deployment after each type of faceoff translates into offensive zone time. Three peer metrics — DZI, NZI, OZI — are three independent lenses, not a hierarchy. A complete player rates well on all three.
+Zone Impact is a player-evaluation framework measuring how a player's on-ice deployment after each type of faceoff translates into offensive-zone time. Its three published metrics — DZI, NZI, OZI — are independent lenses, not a hierarchy. A complete player rates well on all three.
 
 - **DZI — Defensive Zone Impact.** Share of offensive-zone time on shifts that begin with a defensive-zone faceoff. Captures whether the player escapes their own zone cleanly.
 - **NZI — Neutral Zone Impact.** Share of offensive-zone time on shifts that begin with a neutral-zone faceoff. Captures transition play.
 - **OZI — Offensive Zone Impact.** Share of offensive-zone time on shifts that begin with an offensive-zone faceoff. Captures whether OZ starts get converted to sustained pressure.
 
-TZI is a **zone-time share** metric, not a shot-differential metric. The earlier description in this document as "Fenwick-based shot differential" was inaccurate — corrected May 2026 to match what the code computes.
+The framework also defines **TZI (Transitional Zone Impact)** — the net offensive tilt on neutral-zone starts: offensive-zone-time share minus defensive-zone-time share on shifts that begin with a neutral-zone faceoff (stored as `TNZI` in the data). TZI is computed but is not surfaced on the public dashboard, which leads with the three component lenses above.
+
+Zone Impact metrics are **zone-time share** measures, not shot-differential. The earlier description in this document as "Fenwick-based shot differential" was inaccurate — corrected May 2026 to match what the code computes.
 
 ### Construction
 
@@ -172,14 +174,14 @@ Different deployment contexts produce different ice-tilt patterns for the same p
 
 Only **OZI** has a working linemate-adjusted variant (`OZI_L`). Linemate adjustment for NZI, DZI, and TNZI was attempted via team-level OLS regression but the regression cannot identify the coefficient at n=32 with multicollinear predictors. Bootstrap analysis showed sign flips and large variance; Ridge regression did not stabilise the estimate. Rather than publish unstable adjustments, the framework presents raw NZI / DZI plus OZI_L. The orphaned methodology and historical CSVs are preserved under `Zones/_orphaned_broken_L_2026_05/` for transparency.
 
-### What TZI is not
+### What Zone Impact is not
 
 - **Not a complete skill rating.** Doesn't measure shooting talent, defensive engagement, faceoff ability, or specialty teams.
 - **Not a value-over-replacement.**
 - **Not deployment-controlled for quality of competition.** A player getting sheltered minutes may rate higher than one playing tough minutes.
 - **Not predictive of standings.** Team-level correlation with standings is moderate but is explicitly not the framework's purpose. The "tnzi_winning_correlation" diagnostic that previously sat beside the framework was retired May 2026 with the broken _L methodology.
 
-### What TZI is
+### What Zone Impact is
 
 - A descriptive territorial-impact lens.
 - A way to identify players whose zone-time output exceeds or falls short of their reputation.

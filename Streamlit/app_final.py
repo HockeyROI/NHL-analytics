@@ -2079,7 +2079,7 @@ def render_team_construction() -> None:
 GITHUB_METHODOLOGY_URL = (
     "https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md"
 )
-TAB_LABELS = ["Players", "Teams", "Goalies", "Zone Impact (TZI)", "Referees", "Methodology"]
+TAB_LABELS = ["Players", "Teams", "Goalies", "Zone Impact", "Referees", "Methodology"]
 
 
 def render_coming_soon(title: str) -> None:
@@ -2152,10 +2152,10 @@ def render_methodology() -> None:
             "cohorts differ — by design.",
         )
         + _meth_framework(
-            "Zone Impact (TZI)",
-            "DZI / NZI / OZI — descriptive 0–10, position-normalized scores for how deployment "
-            "after defensive / neutral / offensive faceoffs translates into offensive-zone time. "
-            "Three peer lenses; none is elevated over the others.",
+            "Zone Impact",
+            "DZI / NZI / OZI — three position-normalized 0–10 lenses for offensive-zone time after "
+            "defensive / neutral / offensive faceoffs. Independent lenses, not a hierarchy; a complete "
+            "player rates well across all three.",
         )
         + _meth_framework(
             "Referees",
