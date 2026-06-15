@@ -2671,6 +2671,125 @@ def render_goalies(season_label: str, game_type: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Referees tab — penalty-call tendencies (league-wide, 2023-24 → 2025-26)
+# ---------------------------------------------------------------------------
+REF_SEASON_INT = {"2025-26": 20252026, "2024-25": 20242025, "2023-24": 20232024}
+REF_TYPES = ["Tripping", "Roughing", "Hooking", "Holding", "Slashing", "Interference"]
+REF_MIN_GAMES = 40
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_ref_penalties() -> pd.DataFrame:
+    """League-wide penalties (2023-24 → 2025-26), exploded to one row per
+    (penalty, individual referee). The source `referee` field lists both
+    officials comma-joined; we split so each penalty is attributed to both."""
+    fp = REPO_ROOT / "Referees" / "output" / "all_teams_penalties_3seasons.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(int)
+    df["ref"] = df["referee"].astype(str).str.split(r"\s*,\s*")
+    df = df.explode("ref")
+    df["ref"] = df["ref"].str.strip()
+    return df[df["ref"] != ""].copy()
+
+
+def _ref_table(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per referee: games, pen/game, home-pen%, per-game type rates."""
+    rows = []
+    for ref, g in df.groupby("ref"):
+        games = g["game_id"].nunique()
+        pens = len(g)
+        ha = g["home_or_away"]
+        home = int((ha == "home").sum())
+        away = int((ha == "away").sum())
+        row = {"Referee": ref, "Games": games, "Pen/Game": pens / games if games else np.nan,
+               "Home Pen%": (home / (home + away) * 100) if (home + away) else np.nan}
+        for t in REF_TYPES:
+            row[f"{t}/G"] = (g["penalty_type"] == t).sum() / games if games else np.nan
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _ref_league_avg(tbl: pd.DataFrame) -> pd.DataFrame:
+    avg = {"Referee": "LEAGUE AVERAGE", "Games": tbl["Games"].sum()}
+    for c in tbl.columns:
+        if c not in ("Referee", "Games"):
+            avg[c] = tbl[c].mean()
+    return pd.DataFrame([avg])
+
+
+def render_referees(season_label: str, game_type: str) -> None:
+    st.markdown(
+        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Referees</h2>",
+        unsafe_allow_html=True,
+    )
+    if game_type == "Playoffs":
+        st.info("Referee data covers regular-season games only.")
+        return
+    if season_label == "2022-23":
+        st.info("Referee data covers 2023-24 onward — no 2022-23 data.")
+        return
+
+    df = load_ref_penalties()
+    if df.empty:
+        st.error("Referee data not found "
+                 "(`Referees/output/all_teams_penalties_3seasons.csv`).")
+        return
+    if SEASON_KEY.get(season_label, "pooled") != "pooled":
+        sk = REF_SEASON_INT.get(season_label)
+        df = df[df["season"] == sk]
+
+    st.markdown(
+        f"<p style='color:{PALETTE['text_secondary']}; font-size:0.85rem; font-style:italic; "
+        f"max-width:62rem;'>Each game has two referees and the NHL doesn't publish which "
+        "official called a given penalty — so these are the penalty environment in games each "
+        "referee worked (with a partner), not penalties personally assigned.</p>",
+        unsafe_allow_html=True,
+    )
+
+    view = st.radio("View", ["Compact", "Full"], horizontal=True, key="refs_view")
+    name_q = st.text_input("Referee name contains", key="refs_name").strip().lower()
+
+    tbl = _ref_table(df)
+    tbl = tbl[tbl["Games"] >= REF_MIN_GAMES]
+    if tbl.empty:
+        st.info("No referees meet the 40-game floor for this view.")
+        return
+    avg = _ref_league_avg(tbl)
+    tbl = tbl.sort_values("Pen/Game", ascending=False).reset_index(drop=True)
+    if name_q:
+        tbl = tbl[tbl["Referee"].str.lower().str.contains(name_q, na=False)]
+    out = pd.concat([avg, tbl], ignore_index=True)
+
+    full = ["Referee", "Games", "Pen/Game", "Home Pen%"] + [f"{t}/G" for t in REF_TYPES]
+    compact = ["Referee", "Games", "Pen/Game", "Home Pen%"]
+    cols = full if view == "Full" else compact
+    disp = out[[c for c in cols if c in out.columns]].copy()
+
+    fmt = {"Games": lambda x: "—" if pd.isna(x) else f"{int(x):,}",
+           "Pen/Game": lambda x: "—" if pd.isna(x) else f"{x:.2f}",
+           "Home Pen%": lambda x: "—" if pd.isna(x) else f"{x:.1f}%"}
+    for t in REF_TYPES:
+        c = f"{t}/G"
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+
+    def _bold_avg(row):
+        is_avg = row["Referee"] == "LEAGUE AVERAGE"
+        return [f"font-weight:700; color:{PALETTE['blue']};" if is_avg else "" for _ in row]
+
+    styler = disp.style.format(fmt, na_rep="—").apply(_bold_avg, axis=1)
+    st.dataframe(styler, width="stretch", hide_index=True)
+    n_refs = len(disp) - 1
+    st.caption(
+        f"{n_refs} referees · {season_label} · sorted by Pen/Game descending · "
+        "minimum 40 games · top row = league average. Home Pen% = share of a "
+        "referee's penalties assessed to the home team (league ≈ 47%)."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Global sidebar (Season + Game type — apply to every tab)
 # ---------------------------------------------------------------------------
 def render_global_sidebar() -> tuple[str, str]:
@@ -2714,7 +2833,7 @@ def main() -> None:
     with goalies_tab:
         render_goalies(season_label, game_type)
     with refs_tab:
-        render_coming_soon("Referees — penalty tendencies")
+        render_referees(season_label, game_type)
     with meth_tab:
         render_methodology()
 
