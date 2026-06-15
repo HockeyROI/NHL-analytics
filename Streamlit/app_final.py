@@ -2290,8 +2290,8 @@ def render_players(season_label: str, game_type: str) -> None:
     if game_type == "Playoffs":
         st.info(
             "Individual player samples in playoffs are too small for meaningful "
-            "analysis (median 7–28 games per player). See the Teams tab for "
-            "team-level playoff results."
+            "analysis (median 7–28 games per player). Regular-season player "
+            "metrics are available on this tab."
         )
         return
 
@@ -2369,6 +2369,154 @@ def render_players(season_label: str, game_type: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Teams tab — team NFI% (CNFI+MNFI share) + Attack/Suppress + Quality Games
+# ---------------------------------------------------------------------------
+POOLED_SEASONS = ["20222023", "20232024", "20242025", "20252026"]
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_team_level() -> pd.DataFrame:
+    fp = REPO_ROOT / "NFI" / "output" / "team_level_all_metrics.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    df["team"] = df["team"].replace({"ARI": "UTA"})  # legacy code → current
+    return df
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_team_qg() -> pd.DataFrame:
+    fp = REPO_ROOT / "Quality_Games" / "output" / "per_team_season.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp).rename(columns={"team_abbrev": "team"})
+    df["season"] = df["season"].astype(str)
+    df["team"] = df["team"].replace({"ARI": "UTA"})
+    return df
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_team_attack_suppress() -> pd.DataFrame:
+    """2025-26 post-audit Attack/Suppress per game (single-season snapshot)."""
+    fp = REPO_ROOT / "NFI" / "output" / "team_nfi_verification_and_attack_suppress.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["team"] = df["team"].replace({"ARI": "UTA"})
+    return df[["team", "attack_per_game", "suppress_per_game"]].copy()
+
+
+def _team_nfi_share(df: pd.DataFrame) -> np.ndarray:
+    """Post-audit team NFI% = CNFI+MNFI Fenwick for / (for + against). Excludes FNFI."""
+    ffor = df["CNFI_FF"] + df["MNFI_FF"]
+    fagn = df["CNFI_FA"] + df["MNFI_FA"]
+    denom = ffor + fagn
+    return np.where(denom > 0, ffor / denom, np.nan)
+
+
+def render_teams(season_label: str, game_type: str) -> None:
+    st.markdown(
+        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Teams</h2>",
+        unsafe_allow_html=True,
+    )
+    if game_type == "Playoffs":
+        st.info("Team playoff metrics aren't available yet — the team pipeline "
+                "currently covers regular season only.")
+        return
+
+    tl = load_team_level()
+    if tl.empty:
+        st.error("Team data not found (`NFI/output/team_level_all_metrics.csv`).")
+        return
+    qg = load_team_qg()
+    is_pooled = SEASON_KEY.get(season_label, "pooled") == "pooled"
+
+    def _wmean(g: pd.DataFrame, col: str) -> float:
+        w = g["total_team_TOI_min"].astype(float)
+        v = pd.to_numeric(g[col], errors="coerce")
+        m = v.notna() & (w > 0)
+        return float(np.average(v[m], weights=w[m])) if m.any() else np.nan
+
+    if is_pooled:
+        sub = tl[tl["season"].isin(POOLED_SEASONS)]
+        agg = sub.groupby("team").agg(
+            CNFI_FF=("CNFI_FF", "sum"), MNFI_FF=("MNFI_FF", "sum"),
+            CNFI_FA=("CNFI_FA", "sum"), MNFI_FA=("MNFI_FA", "sum"),
+            GP=("gp", "sum"),
+        ).reset_index()
+        agg["NFI%"] = _team_nfi_share(agg)
+        team = agg[["team", "GP", "NFI%"]]
+        if not qg.empty:
+            q = qg[qg["season"].isin(POOLED_SEASONS)]
+            qrows = [{"team": t, "TOI": g["total_team_TOI_min"].sum(),
+                      "xG_QG%": _wmean(g, "team_xG_QG_pct"),
+                      "NFI_QG%": _wmean(g, "team_NFI_QG_pct")}
+                     for t, g in q.groupby("team")]
+            team = team.merge(pd.DataFrame(qrows), on="team", how="left")
+    else:
+        sk = SEASON_KEY[season_label]
+        sub = tl[tl["season"] == sk].copy()
+        sub["NFI%"] = _team_nfi_share(sub)
+        team = sub[["team", "gp", "NFI%"]].rename(columns={"gp": "GP"})
+        if not qg.empty:
+            q = qg[qg["season"] == sk][
+                ["team", "total_team_TOI_min", "team_xG_QG_pct", "team_NFI_QG_pct"]
+            ].rename(columns={"total_team_TOI_min": "TOI",
+                              "team_xG_QG_pct": "xG_QG%", "team_NFI_QG_pct": "NFI_QG%"})
+            team = team.merge(q, on="team", how="left")
+
+    if team.empty:
+        st.info("No team data for this season.")
+        return
+
+    # Attack / Suppress — 2025-26 snapshot only
+    if season_label == "2025-26":
+        a = load_team_attack_suppress().rename(
+            columns={"attack_per_game": "Attack rate", "suppress_per_game": "Suppress rate"})
+        team = team.merge(a, on="team", how="left")
+    else:
+        team["Attack rate"] = np.nan
+        team["Suppress rate"] = np.nan
+
+    for c in ("NZI", "DZI", "OZI"):   # deliberate team-level placeholders
+        team[c] = np.nan
+    for c in ("TOI", "xG_QG%", "NFI_QG%"):
+        if c not in team.columns:
+            team[c] = np.nan
+
+    team = team.rename(columns={"team": "Team"})
+    team = team.sort_values("NFI%", ascending=False, na_position="last").reset_index(drop=True)
+    cols = ["Team", "GP", "TOI", "NFI%", "Attack rate", "Suppress rate",
+            "NZI", "DZI", "OZI", "xG_QG%", "NFI_QG%"]
+    disp = team[[c for c in cols if c in team.columns]].copy()
+
+    fmt = {}
+    for c in ("NFI%", "xG_QG%", "NFI_QG%"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
+    for c in ("Attack rate", "Suppress rate"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    for c in ("NZI", "DZI", "OZI"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    if "TOI" in disp:
+        fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
+    if "GP" in disp:
+        fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
+
+    st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+
+    cap = f"{len(disp)} teams · {season_label} · sorted by NFI% (CNFI+MNFI share) descending"
+    if season_label != "2025-26":
+        cap += (" · Attack and Suppress rates are currently only computed for 2025-26. "
+                "Per-season history requires a pipeline run not yet performed.")
+    cap += " · NZI/DZI/OZI are team-level placeholders (not yet computed)."
+    st.caption(cap)
+
+
+# ---------------------------------------------------------------------------
 # Global sidebar (Season + Game type — apply to every tab)
 # ---------------------------------------------------------------------------
 def render_global_sidebar() -> tuple[str, str]:
@@ -2408,7 +2556,7 @@ def main() -> None:
     with players_tab:
         render_players(season_label, game_type)
     with teams_tab:
-        render_coming_soon("Teams — NFI + Zone + Quality Games")
+        render_teams(season_label, game_type)
     with goalies_tab:
         render_coming_soon("Goalies — NFI-GSAx + QNFS% + QS-GSAx")
     with refs_tab:
