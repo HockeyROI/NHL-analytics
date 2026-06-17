@@ -939,7 +939,7 @@ SEASON_LABEL = {
     "20242025": "2024-25 regular",
     "20252026": "2025-26 regular",
 }
-PER_SEASON_TOP_N = 200
+PER_SEASON_TOP_N = 100000
 PER_SCOPE_COLS = ["rank", "player_name", "team", "pos",
                   "GP_in_scope", "ES_TOI_in_scope", "raw_score", "scope_label"]
 
