@@ -199,6 +199,18 @@ plr_onice_ag_gl    = defaultdict(lambda: defaultdict(int))
 # TOI
 plr_toi = defaultdict(lambda: defaultdict(float))   # (pid, state) -> seconds
 
+# Season-scoped player buckets — mirror the per-(pid) buckets above but keyed
+# by (pid, season_str), paralleling the season-keyed team buckets below. These
+# feed ONLY the new player_counts_by_state_zone_per_season.csv writer; the
+# existing per-(pid) buckets and their pooled output are untouched (add-only).
+plr_ind_att_s = defaultdict(lambda: defaultdict(int))       # (pid,season) -> {(state,zone): attempts as shooter}
+plr_ind_gl_s  = defaultdict(lambda: defaultdict(int))       # as shooter goals
+plr_onice_for_att_s = defaultdict(lambda: defaultdict(int)) # (pid,season) -> on-ice for
+plr_onice_for_gl_s  = defaultdict(lambda: defaultdict(int))
+plr_onice_ag_att_s  = defaultdict(lambda: defaultdict(int))
+plr_onice_ag_gl_s   = defaultdict(lambda: defaultdict(int))
+plr_toi_s = defaultdict(lambda: defaultdict(float))         # (pid, season) -> {state: seconds}
+
 # Goalie-level (faced)
 gk_faced = defaultdict(lambda: defaultdict(int))    # (gid, state, zone) -> shots faced (SOG+goals)
 gk_goals = defaultdict(lambda: defaultdict(int))
@@ -314,6 +326,7 @@ for gid, gshots in shots_by_game.items():
                 ovl = min(e, iv_ends[j]) - max(s, iv_starts[j])
                 if ovl > 0:
                     plr_toi[pid][iv_states[j]] += ovl
+                    plr_toi_s[(pid, season_str)][iv_states[j]] += ovl
 
     # -- Shot loop: identify on-ice players per team --
     for _, sh in gshots.iterrows():
@@ -347,17 +360,25 @@ for gid, gshots in shots_by_game.items():
         # individual shot (shooter)
         if not pd.isna(shooter):
             plr_ind_att[int(shooter)][(state, zone)] += 1
+            plr_ind_att_s[(int(shooter), season_str)][(state, zone)] += 1
             if is_goal:
                 plr_ind_gl[int(shooter)][(state, zone)] += 1
+                plr_ind_gl_s[(int(shooter), season_str)][(state, zone)] += 1
 
         # on-ice for (shooting team)
         for p in onice_shoot:
             plr_onice_for_att[p][(state, zone)] += 1
-            if is_goal: plr_onice_for_gl[p][(state, zone)] += 1
+            plr_onice_for_att_s[(p, season_str)][(state, zone)] += 1
+            if is_goal:
+                plr_onice_for_gl[p][(state, zone)] += 1
+                plr_onice_for_gl_s[(p, season_str)][(state, zone)] += 1
         # on-ice against (defending team)
         for p in onice_def:
             plr_onice_ag_att[p][(state, zone)] += 1
-            if is_goal: plr_onice_ag_gl[p][(state, zone)] += 1
+            plr_onice_ag_att_s[(p, season_str)][(state, zone)] += 1
+            if is_goal:
+                plr_onice_ag_gl[p][(state, zone)] += 1
+                plr_onice_ag_gl_s[(p, season_str)][(state, zone)] += 1
 
         # Goalie pillar counting and team-level for/against counting moved
         # out of this loop (see vectorized post-loop pass below). Bug fix
@@ -616,6 +637,34 @@ for pid in pids_all:
             rows.append(rec)
 pd.DataFrame(rows).to_csv(f"{OUT_DIR}/player_counts_by_state_zone.csv", index=False)
 print("  wrote player_counts_by_state_zone.csv")
+
+# Player-level raw counts, season-scoped (NEW, add-only). Same schema as the
+# pooled player_counts_by_state_zone.csv above, plus a `season` column. Mirrors
+# that writer's row structure (all STATES x ZONES_ALL per key) but iterates over
+# the season-keyed buckets, emitting every processed season present. Downstream
+# (Streamlit) scopes to the 4 reported seasons; the producer stays faithful.
+rows = []
+keys_all = (set(plr_ind_att_s) | set(plr_onice_for_att_s)
+            | set(plr_onice_ag_att_s) | set(plr_toi_s))
+for (pid, sn) in keys_all:
+    toi = plr_toi_s[(pid, sn)]
+    for state in STATES:
+        mins = toi.get(state, 0) / 60.0
+        for zone in ZONES_ALL:
+            rec = {
+                "player_id": pid, "season": sn, "position": pos_map.get(pid, ""),
+                "state": state, "zone": zone,
+                "toi_min": round(mins, 3),
+                "ind_att": plr_ind_att_s[(pid, sn)].get((state, zone), 0),
+                "ind_gl": plr_ind_gl_s[(pid, sn)].get((state, zone), 0),
+                "onice_for_att": plr_onice_for_att_s[(pid, sn)].get((state, zone), 0),
+                "onice_for_gl": plr_onice_for_gl_s[(pid, sn)].get((state, zone), 0),
+                "onice_ag_att": plr_onice_ag_att_s[(pid, sn)].get((state, zone), 0),
+                "onice_ag_gl": plr_onice_ag_gl_s[(pid, sn)].get((state, zone), 0),
+            }
+            rows.append(rec)
+pd.DataFrame(rows).to_csv(f"{OUT_DIR}/player_counts_by_state_zone_per_season.csv", index=False)
+print("  wrote player_counts_by_state_zone_per_season.csv")
 
 # Team-level
 rows = []
