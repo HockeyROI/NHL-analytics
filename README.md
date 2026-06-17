@@ -12,7 +12,7 @@ This project narrows the high-danger zone to where the geometry actually matters
 
 **NFI — Net-Front Impact (flagship).** Redefines the high-danger zone as the union of two areas: the immediate net-front (CNFI) where rebounds and deflections live, and the high slot (MNFI). Combined as TNFI = CNFI ∪ MNFI. NFI rates are computed at player, team, and goalie level using Fenwick-based shot counts (Corsi corrupts spatial metrics — see `docs/METHODOLOGY.md` for the blocked-shot coordinate finding that drives this choice). Zone-adjusted using the Tulsky linear correction with the published 3.5pp factor.
 
-**TZI — Transitional Zone Impact.** Measures how much of a player's on-ice time is spent in the offensive zone after a faceoff, computed separately from three different starting positions: DZI (Defensive Zone Impact), NZI (Neutral Zone Impact), OZI (Offensive Zone Impact). Zone-time-share construction, not shot-differential. Reported as raw 0–10 scores within position group, plus OZI's working linemate-adjusted variant (OZI_L) and a separate Rel-NZI on-off computation. Linemate adjustments for NZI / DZI / TNZI were attempted but removed in May 2026 — see `Zones/_orphaned_broken_L_2026_05/` for the audit trail. Descriptive rather than predictive: characterizes deployment-conditioned territorial impact without making correlation-to-winning claims.
+**Zone Impact (NZI / DZI / OZI).** Measures how much of a player's on-ice time is spent in the offensive zone after a faceoff, as three peer metrics computed separately from three different starting positions: DZI (Defensive Zone Impact), NZI (Neutral Zone Impact), OZI (Offensive Zone Impact). Zone-time-share construction, not shot-differential. Reported as raw 0–10 scores within position group, plus OZI's working linemate-adjusted variant (OZI_L) and a separate Rel-NZI on-off computation. Linemate adjustments for NZI / DZI / TNZI were attempted but removed in May 2026 — see `Zones/_orphaned_broken_L_2026_05/` for the audit trail. Descriptive rather than predictive: characterizes deployment-conditioned territorial impact without making correlation-to-winning claims.
 
 **Goalie analyses.** NFI's zone definition applied to GSAx (Goals Saved Above Expected). Goalies are evaluated by their save performance specifically within the high-danger zones the NFI framework identifies, rather than across all shots equally. Five goalies analyzed across published reports — Kuemper, Forsberg, Blackwood, Wedgewood, Dostal; more in development. See `Goalies/README.md` for the cited-values note on factor changes.
 
@@ -22,7 +22,7 @@ This project narrows the high-danger zone to where the geometry actually matters
 
 ```
 NFI/         Net-Front Impact framework — flagship
-Zones/       Transitional Zone Impact framework (DZI, NZI, OZI)
+Zones/       Zone Impact framework (NZI, DZI, OZI)
 Goalies/     Goalie analyses applying NFI zones to GSAx
 Referees/    Referee tendency analyses
 Streamlit/   Public app at hockeyroi.streamlit.app
@@ -34,7 +34,7 @@ For published work timeline, see `WORK_LOG.md`.
 
 ## Tools
 
-**hockeyroi.streamlit.app** — public NFI rankings for players, teams, and goalies, with TZI player evaluation in development.
+**hockeyroi.streamlit.app** — public dashboard with 5 tabs: Players (NFI, Zone Impact, Quality Games), Teams, Goalies (NFI-GSAx, QNFS%, QS-GSAx), Referees (penalty tendencies), and Methodology. Filter by season and regular season / playoffs.
 
 ## Author
 

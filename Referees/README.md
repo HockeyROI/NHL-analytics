@@ -2,6 +2,8 @@
 
 Analyses of NHL referee penalty-call tendencies relative to team and league averages. Currently publishes as short-form X content; a longer-form Substack post is planned but not yet published.
 
+Referee tendencies are also accessible via the Referees tab on hockeyroi.streamlit.app — league-wide penalty rates and breakdowns by type.
+
 ## What this analyzes
 
 Each referee has tendencies — types of penalties they call more or less often than the league average, and how their call distribution shifts depending on which team is involved. The analyses in this folder quantify those tendencies using NHL play-by-play data over multiple seasons.
@@ -47,4 +49,4 @@ Referee tendency content currently lives on X as threads and articles at [@Hocke
 
 ---
 
-*The referee analysis is a smaller content pillar relative to NFI and TZI but represents an independent line of analysis using the same underlying NHL play-by-play data infrastructure.*
+*The referee analysis is a smaller content pillar relative to NFI and Zone Impact but represents an independent line of analysis using the same underlying NHL play-by-play data infrastructure.*
