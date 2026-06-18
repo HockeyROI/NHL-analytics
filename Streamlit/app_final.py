@@ -418,6 +418,12 @@ def render_footer() -> None:
     )
 
 
+def _sort_hint() -> None:
+    """Small note above a table explaining the native header-sort cycle."""
+    st.caption("↕ Click any column header to sort — 1st click ascending, "
+               "2nd descending, 3rd clears.")
+
+
 def _aggregate_nfi_pooled(df: pd.DataFrame) -> pd.DataFrame:
     """Career TOI-weighted means per player for pooled view."""
     if df.empty:
@@ -1000,6 +1006,7 @@ def render_players(season_label: str, game_type: str) -> None:
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
+    _sort_hint()
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
     if SEASON_KEY.get(season_label) == "pooled_2yr":
@@ -1243,6 +1250,7 @@ def render_teams(season_label: str, game_type: str) -> None:
     if "GP" in disp:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
+    _sort_hint()
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
     zwin_label = "4-year pool (2022-26)" if zwin == "4y_pool" else "2-year pool (2024-26)"
@@ -1462,6 +1470,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
     if "GP" in disp:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
+    _sort_hint()
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
     st.caption(
         f"{len(disp)} goalies · {season_label} · sorted by NFI-GSAx/60 descending · "
@@ -1620,6 +1629,7 @@ def render_referees(season_label: str, game_type: str) -> None:
         return [f"font-weight:700; color:{PALETTE['blue']};" if is_avg else "" for _ in row]
 
     styler = disp.style.format(fmt, na_rep="—").apply(_bold_avg, axis=1)
+    _sort_hint()
     st.dataframe(styler, width="stretch", hide_index=True)
     n_refs = len(disp) - 1
     st.caption(
