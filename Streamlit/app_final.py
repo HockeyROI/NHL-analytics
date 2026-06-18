@@ -144,19 +144,19 @@ PALETTE = {
     "primary_low": "#A23B3B",
 }
 
-# Per-series line-chart colors. Orange (primary) + navy (dark blue) for the two
-# anchors; sea-green as the 3rd line (replaces the old light blue). NZI is the
-# orange line in the Zone chart, by request.
-_CHART_PRIMARY = PALETTE["orange"]   # #FF6B35
-_CHART_DARK = PALETTE["text"]        # #1B3A5C navy
-_CHART_THIRD = PALETTE["rising"]     # #2E8B57 sea green
+# Per-series line-chart colors. Orange (primary) is line 1; light blue is the
+# 2nd line on every chart; navy (dark blue) is the 3rd line on the 3-line charts
+# (RelNFI, Zone). NZI is the orange line in the Zone chart, by request.
+_CHART_PRIMARY = PALETTE["orange"]       # #FF6B35
+_CHART_SECOND = PALETTE["lightblue"]     # #4AB3E8 light blue
+_CHART_THIRD = PALETTE["text"]           # #1B3A5C navy (dark blue)
 _CHART_COLORS = {
     "NFI%": _CHART_PRIMARY,
-    "RelNFI%": _CHART_PRIMARY, "RelNFI-A%": _CHART_DARK, "RelNFI-S%": _CHART_THIRD,
-    "NFI-A/60": _CHART_PRIMARY, "NFI-S/60": _CHART_DARK,
-    "NZI": _CHART_PRIMARY, "DZI": _CHART_DARK, "OZI": _CHART_THIRD,
-    "NFI_QG%": _CHART_PRIMARY, "xG_QG%": _CHART_DARK,
-    "NFI-GSAx/60": _CHART_PRIMARY, "QNFS%": _CHART_PRIMARY, "QS-GSAx%": _CHART_DARK,
+    "RelNFI%": _CHART_PRIMARY, "RelNFI-A%": _CHART_SECOND, "RelNFI-S%": _CHART_THIRD,
+    "NFI-A/60": _CHART_PRIMARY, "NFI-S/60": _CHART_SECOND,
+    "NZI": _CHART_PRIMARY, "DZI": _CHART_SECOND, "OZI": _CHART_THIRD,
+    "NFI_QG%": _CHART_PRIMARY, "xG_QG%": _CHART_SECOND,
+    "NFI-GSAx/60": _CHART_PRIMARY, "QNFS%": _CHART_PRIMARY, "QS-GSAx%": _CHART_SECOND,
 }
 
 
@@ -1004,7 +1004,7 @@ def _render_player_profile(pid: int) -> None:
             return
         st.caption(title)
         st.line_chart(trend.set_index("Season")[ys],
-                      color=[_CHART_COLORS.get(c, _CHART_DARK) for c in ys])
+                      color=[_CHART_COLORS.get(c, _CHART_SECOND) for c in ys])
 
     # Scales differ across families — one chart per scale so none flattens.
     # NFI% (0–1 absolute share) is split from the RelNFI family (points, ~±5).
@@ -1555,13 +1555,13 @@ def _render_goalie_profile(gid: int) -> None:
     if "NFI-GSAx/60" in trend.columns and trend["NFI-GSAx/60"].notna().any():
         st.caption("NFI-GSAx per 60")
         st.line_chart(trend.set_index("Season")[["NFI-GSAx/60"]],
-                      color=[_CHART_COLORS.get("NFI-GSAx/60", _CHART_DARK)])
+                      color=[_CHART_COLORS.get("NFI-GSAx/60", _CHART_SECOND)])
     pct = [c for c in ("QNFS%", "QS-GSAx%")
            if c in trend.columns and trend[c].notna().any()]
     if pct:
         st.caption("Consistency % (QNFS%, QS-GSAx%)")
         st.line_chart(trend.set_index("Season")[pct],
-                      color=[_CHART_COLORS.get(c, _CHART_DARK) for c in pct])
+                      color=[_CHART_COLORS.get(c, _CHART_SECOND) for c in pct])
 
 
 def render_goalies(season_label: str, game_type: str) -> None:
