@@ -424,6 +424,35 @@ def _sort_hint() -> None:
                "2nd descending, 3rd clears.")
 
 
+def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=()):
+    """Append ' (rank)' to each ranked column's DISPLAY string while leaving the
+    underlying cell value numeric, so header-sort still orders by the real value.
+
+    Ranks are computed over `cohort` (a frame sharing the display column names),
+    #1 = best; columns in `lower_better` rank lowest-value-first. NaN cells get
+    no rank. Works via a value→rank map per column (ties share a rank, so the
+    map is unambiguous)."""
+    lower = set(lower_better)
+    for col in rank_cols:
+        if col not in disp.columns or col not in cohort.columns or col not in fmt:
+            continue
+        s = pd.to_numeric(cohort[col], errors="coerce")
+        ranks = s.rank(ascending=(col in lower), method="min")
+        vmap = {v: int(r) for v, r in zip(s.values, ranks.values)
+                if pd.notna(v) and pd.notna(r)}
+
+        def _mk(base_f, vm):
+            def f(x):
+                if pd.isna(x):
+                    return base_f(x)
+                r = vm.get(x)
+                return f"{base_f(x)} ({r})" if r is not None else base_f(x)
+            return f
+
+        fmt[col] = _mk(fmt[col], vmap)
+    return fmt
+
+
 def _aggregate_nfi_pooled(df: pd.DataFrame) -> pd.DataFrame:
     """Career TOI-weighted means per player for pooled view."""
     if df.empty:
@@ -954,6 +983,7 @@ def render_players(season_label: str, game_type: str) -> None:
     else:
         df = df[df["position"].isin(["F", "D"])]
     df = df[df["toi_min"].fillna(0) >= min_toi]
+    rank_cohort = df.copy()   # position + Min-TOI cohort — the ranking denominator
     if team_sel != "All":
         df = df[df["team"] == team_sel]
     if df.empty:
@@ -968,13 +998,15 @@ def render_players(season_label: str, game_type: str) -> None:
     # Storage → display: RelNFI_F (attack / for) shows as "RelNFI-A%",
     # RelNFI_A (suppress / against) shows as "RelNFI-S%". Do NOT sign-flip — the
     # underlying _F/_A columns are unchanged; only the display labels swap A/S.
-    df = df.rename(columns={
+    _ren = {
         "player_name": "Player", "position": "Pos", "team": "Team", "toi_min": "TOI",
         "NFI_pct": "NFI%", "RelNFI_pct": "RelNFI%",
         "RelNFI_F_pct": "RelNFI-A%", "RelNFI_A_pct": "RelNFI-S%",
         "NFI_A_rate": "NFI-A/60", "NFI_S_rate": "NFI-S/60",
         "xG_QG_pct": "xG_QG%", "NFI_QG_pct": "NFI_QG%",
-    })
+    }
+    df = df.rename(columns=_ren)
+    rank_cohort = rank_cohort.rename(columns=_ren)
 
     # Always show the full column set (Compact view removed; Qual GP dropped).
     # NFI-A/60 / NFI-S/60 are RAW per-60 rates; RelNFI-A% / RelNFI-S% are the
@@ -1006,6 +1038,14 @@ def render_players(season_label: str, game_type: str) -> None:
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
+    _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
+                    "NFI-S/60", "NZI", "DZI", "OZI", "xG_QG%", "NFI_QG%"]
+    _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better={"NFI-S/60"})
+    _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
+                     "D": "defense"}[pos]
+    st.caption(f"Each metric shows its **(rank)** — #1 = best — within "
+               f"**{_cohort_label}** (set by the Position filter; players meeting "
+               f"Min-TOI). NFI-S/60 (shots against): lowest = #1.")
     _sort_hint()
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
@@ -1250,6 +1290,11 @@ def render_teams(season_label: str, game_type: str) -> None:
     if "GP" in disp:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
+    _team_rank = (["NFI%", "Attack events", "Suppress events"] + zcols
+                  + ["xG_QG%", "NFI_QG%"])
+    _apply_ranks(disp, fmt, disp, _team_rank, lower_better={"Suppress events"})
+    st.caption("Each metric shows its **(rank)** — #1 = best — across all 32 teams. "
+               "Suppress events (shots against): lowest = #1.")
     _sort_hint()
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
@@ -1441,6 +1486,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
     with c2:
         name_q = st.text_input("Goalie name contains", key="goalies_name").strip().lower()
     base = base[base["total_faced"].fillna(0) >= min_shots]
+    rank_cohort = base.copy()   # Min-Shots cohort (pre name-filter) — rank denom
     if name_q:
         base = base[base["Goalie"].str.lower().str.contains(name_q, na=False)]
     if base.empty:
@@ -1452,10 +1498,12 @@ def render_goalies(season_label: str, game_type: str) -> None:
             return np.nan
         return f"({r['QNFS_lo']:.1f}–{r['QNFS_hi']:.1f})"
     base["QNFS 95% CI"] = base.apply(_qnfs_ci, axis=1)
-    base = base.rename(columns={
+    _gren = {
         "NFIG60": "NFI-GSAx/60", "QNFS_pct": "QNFS%",
         "QS_GSAx_pct": "QS-GSAx%", "QS_GSAx_lo": "QS-GSAx (95% lower)",
-    })
+    }
+    base = base.rename(columns=_gren)
+    rank_cohort = rank_cohort.rename(columns=_gren)
     base = base.sort_values("NFI-GSAx/60", ascending=False, na_position="last").reset_index(drop=True)
 
     cols = ["Goalie", "Team", "GP", "NFI-GSAx/60", "QNFS%", "QS-GSAx%"]
@@ -1470,6 +1518,10 @@ def render_goalies(season_label: str, game_type: str) -> None:
     if "GP" in disp:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
+    _apply_ranks(disp, fmt, rank_cohort, ["NFI-GSAx/60", "QNFS%", "QS-GSAx%"])
+    st.caption("Each metric shows its **(rank)** — #1 = best — across all goalies "
+               "meeting the Min-Shots filter. Blanks (below a metric's floor) are "
+               "unranked.")
     _sort_hint()
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
     st.caption(
