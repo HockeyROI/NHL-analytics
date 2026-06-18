@@ -394,7 +394,7 @@ def render_header() -> None:
           <div class="hockeyroi-brand"><span class="hockey">HOCKEY</span><span class="roi">ROI</span></div>
           <div style="color:#2E7DC4; font-size:0.9rem; padding-bottom:0.45rem;">How these metrics work → <strong>Methodology</strong> tab (far right)</div>
         </div>
-        <div class="tagline">NHL Net-Front Impact &amp; Zone Analytics</div>
+        <div class="tagline">NHL Net-Front Impact, Zone Impact, Quality Games &amp; Quality Starts (GSAx)</div>
         <div style="color:#888888; font-size:0.85rem; margin-top:0.15rem;">
           Data through the 2025-26 season ·
           <a href="https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md" style="color:#2E7DC4;">methodology on GitHub</a>
@@ -1652,7 +1652,7 @@ def render_global_sidebar() -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 def main() -> None:
     st.set_page_config(
-        page_title="HockeyROI — NHL Net-Front Impact & Zone Analytics",
+        page_title="HockeyROI — NHL Net-Front Impact, Zone Impact, Quality Games & Quality Starts (GSAx)",
         page_icon="🏒",
         layout="wide",
         initial_sidebar_state="expanded",
