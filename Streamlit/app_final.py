@@ -861,6 +861,86 @@ def _player_trend(pid: int) -> pd.DataFrame:
     return trend.sort_values("season").reset_index(drop=True)
 
 
+def _league_rank(series, value, lower=False):
+    """Competition rank of `value` within the full-league `series` (#1 = best,
+    ties share a rank). lower=True → lowest value is best. None if no value."""
+    s = pd.to_numeric(series, errors="coerce").dropna()
+    if pd.isna(value) or s.empty:
+        return None
+    better = int((s < value).sum()) if lower else int((s > value).sum())
+    return better + 1
+
+
+def _player_season_ranks(pid: int) -> dict:
+    """For one player, the per-season LEAGUE rank of each display metric among
+    ALL skaters that season (#1 = best; NFI-S/60 lowest = #1). Returns
+    {display_col: {season_str: rank}}."""
+    pid = int(pid)
+    out = {}
+    nfi = load_nfi_player()
+    if not nfi.empty:
+        nfi = nfi.copy()
+        nfi["season"] = nfi["season"].astype(str)
+        for disp_c, src in (("NFI%", "NFI_pct"), ("RelNFI%", "RelNFI_pct"),
+                            ("RelNFI-A%", "RelNFI_F_pct"), ("RelNFI-S%", "RelNFI_A_pct")):
+            if src not in nfi.columns:
+                continue
+            d = {}
+            for ssn in PROFILE_SEASONS:
+                sub = nfi[nfi["season"] == ssn]
+                pv = sub.loc[sub["player_id"] == pid, src]
+                if len(pv):
+                    d[ssn] = _league_rank(sub[src], pv.iloc[0])
+            out[disp_c] = d
+    g = load_as_counts()
+    if not g.empty:
+        g = g.copy()
+        g["season"] = g["season"].astype(str)
+        ok = g["es_toi_min"] > 0
+        g["NFI-A/60"] = np.where(ok, g["for_att"] / g["es_toi_min"] * 60.0, np.nan)
+        g["NFI-S/60"] = np.where(ok, g["ag_att"] / g["es_toi_min"] * 60.0, np.nan)
+        for disp_c, low in (("NFI-A/60", False), ("NFI-S/60", True)):
+            d = {}
+            for ssn in PROFILE_SEASONS:
+                sub = g[g["season"] == ssn]
+                pv = sub.loc[sub["player_id"] == pid, disp_c]
+                if len(pv):
+                    d[ssn] = _league_rank(sub[disp_c], pv.iloc[0], lower=low)
+            out[disp_c] = d
+    z = load_zone_per_season()
+    if not z.empty and not nfi.empty:
+        prow = nfi[nfi["player_id"] == pid]
+        if len(prow):
+            name = prow["player_name"].iloc[0]
+            pos_group = "D" if str(prow["position"].iloc[0]) == "D" else "F"
+            for m in ("NZI", "DZI", "OZI"):
+                if m not in z.columns:
+                    continue
+                d = {}
+                for ssn in PROFILE_SEASONS:
+                    sub = z[z["season"] == ssn]  # all skaters (F+D) that season
+                    pv = sub.loc[(sub["player_name"] == name)
+                                 & (sub["_pos_group"] == pos_group), m]
+                    if len(pv) and pd.notna(pv.iloc[0]):
+                        d[ssn] = _league_rank(sub[m], pv.iloc[0])
+                out[m] = d
+    qg = load_qg_player_season()
+    if not qg.empty:
+        qg = qg.copy()
+        qg["season"] = qg["season"].astype(str)
+        for disp_c, src in (("NFI_QG%", "NFI_QG_pct"), ("xG_QG%", "xG_QG_pct")):
+            if src not in qg.columns:
+                continue
+            d = {}
+            for ssn in PROFILE_SEASONS:
+                sub = qg[qg["season"] == ssn]
+                pv = sub.loc[sub["player_id"] == pid, src]
+                if len(pv) and pd.notna(pv.iloc[0]):
+                    d[ssn] = _league_rank(sub[src], pv.iloc[0])
+            out[disp_c] = d
+    return out
+
+
 def _render_player_profile(pid: int) -> None:
     """Per-season trend table + auto-showing line charts for one player."""
     trend = _player_trend(pid)
@@ -871,20 +951,37 @@ def _render_player_profile(pid: int) -> None:
     rate_cols = ["NFI-A/60", "NFI-S/60"]
     zone_cols = ["NZI", "DZI", "OZI"]
     qg_cols = ["NFI_QG%", "xG_QG%"]
-    order = ["Season"] + share_cols + rate_cols + zone_cols + qg_cols
-    tbl = trend[[c for c in order if c in trend.columns]].copy()
+    metric_cols = [c for c in share_cols + rate_cols + zone_cols + qg_cols
+                   if c in trend.columns]
 
-    fmt = {}
+    # Per-season LEAGUE rank (all skaters that season) appended to each cell.
+    # The 4-row trend isn't sorted, so string cells are fine; charts below use
+    # the numeric `trend` frame, unaffected.
+    ranks = _player_season_ranks(pid)
+    _b = {}
     for c in ("NFI%", "NFI_QG%", "xG_QG%"):
-        if c in tbl:
-            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
+        _b[c] = lambda v: f"{v * 100:.1f}%"
     for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%"):
-        if c in tbl:
-            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
+        _b[c] = lambda v: f"{v:+.2f}"
     for c in ("NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI"):
-        if c in tbl:
-            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
-    st.dataframe(tbl.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+        _b[c] = lambda v: f"{v:.1f}"
+    rows = []
+    for _, r in trend.iterrows():
+        ssn = r["season"]
+        row = {"Season": r["Season"]}
+        for c in metric_cols:
+            v = r[c]
+            if pd.isna(v):
+                row[c] = "—"
+            else:
+                txt = _b.get(c, lambda v: f"{v}")(v)
+                rk = ranks.get(c, {}).get(ssn)
+                row[c] = f"{txt} ({rk})" if rk is not None else txt
+        rows.append(row)
+    st.caption("Each value shows its **(rank)** — league rank among all skaters "
+               "that season. NFI-S/60 (shots against): lowest = #1.")
+    st.dataframe(pd.DataFrame(rows, columns=["Season"] + metric_cols),
+                 width="stretch", hide_index=True)
 
     def _chart(title: str, cols: list[str]) -> None:
         ys = [c for c in cols if c in trend.columns and trend[c].notna().any()]
@@ -1043,7 +1140,7 @@ def render_players(season_label: str, game_type: str) -> None:
     _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better={"NFI-S/60"})
     _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
                      "D": "defense"}[pos]
-    st.caption(f"Each metric shows its **(rank)** — #1 = best — within "
+    st.caption(f"Each metric shows its **(rank)** within "
                f"**{_cohort_label}** (set by the Position filter; players meeting "
                f"Min-TOI). NFI-S/60 (shots against): lowest = #1.")
     _sort_hint()
@@ -1293,7 +1390,7 @@ def render_teams(season_label: str, game_type: str) -> None:
     _team_rank = (["NFI%", "Attack events", "Suppress events"] + zcols
                   + ["xG_QG%", "NFI_QG%"])
     _apply_ranks(disp, fmt, disp, _team_rank, lower_better={"Suppress events"})
-    st.caption("Each metric shows its **(rank)** — #1 = best — across all 32 teams. "
+    st.caption("Each metric shows its **(rank)** across all 32 teams. "
                "Suppress events (shots against): lowest = #1.")
     _sort_hint()
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
@@ -1380,21 +1477,60 @@ def _goalie_trend(gid: int) -> pd.DataFrame:
     return base.sort_values("season").reset_index(drop=True)
 
 
+def _goalie_season_ranks(gid: int) -> dict:
+    """Per-season LEAGUE rank of each metric among all goalies that season
+    (#1 = best). Returns {display_col: {season_int: rank}}."""
+    gid = int(gid)
+    out = {}
+    seasons_int = [20222023, 20232024, 20242025, 20252026]
+    for loader, src, disp_c in (
+        (load_goalie_nfi_by_season, "GSAx_per60", "NFI-GSAx/60"),
+        (load_qnfs_by_season, "QNFS_pct", "QNFS%"),
+        (load_qs_by_season, "QS_GSAx_pct", "QS-GSAx%"),
+    ):
+        df = loader()
+        if df.empty or src not in df.columns:
+            continue
+        df = df.copy()
+        df["season"] = df["season"].astype(int)
+        d = {}
+        for ssn in seasons_int:
+            sub = df[df["season"] == ssn]
+            pv = sub.loc[sub["goalie_id"] == gid, src]
+            if len(pv) and pd.notna(pv.iloc[0]):
+                d[ssn] = _league_rank(sub[src], pv.iloc[0])
+        out[disp_c] = d
+    return out
+
+
 def _render_goalie_profile(gid: int) -> None:
     """Per-season trend table + line charts for one goalie."""
     trend = _goalie_trend(gid)
     if trend.empty:
         st.info("No per-season data available for this goalie.")
         return
-    order = ["Season", "NFI-GSAx/60", "QNFS%", "QS-GSAx%"]
-    tbl = trend[[c for c in order if c in trend.columns]].copy()
-    fmt = {}
-    if "NFI-GSAx/60" in tbl:
-        fmt["NFI-GSAx/60"] = lambda x: "—" if pd.isna(x) else f"{x:+.3f}"
-    for c in ("QNFS%", "QS-GSAx%"):
-        if c in tbl:
-            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
-    st.dataframe(tbl.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    metric_cols = [c for c in ("NFI-GSAx/60", "QNFS%", "QS-GSAx%")
+                   if c in trend.columns]
+    ranks = _goalie_season_ranks(gid)
+    _b = {"NFI-GSAx/60": lambda v: f"{v:+.3f}",
+          "QNFS%": lambda v: f"{v:.1f}%", "QS-GSAx%": lambda v: f"{v:.1f}%"}
+    rows = []
+    for _, r in trend.iterrows():
+        ssn = int(r["season"])
+        row = {"Season": r["Season"]}
+        for c in metric_cols:
+            v = r[c]
+            if pd.isna(v):
+                row[c] = "—"
+            else:
+                txt = _b.get(c, lambda v: f"{v}")(v)
+                rk = ranks.get(c, {}).get(ssn)
+                row[c] = f"{txt} ({rk})" if rk is not None else txt
+        rows.append(row)
+    st.caption("Each value shows its **(rank)** — league rank among all goalies "
+               "that season.")
+    st.dataframe(pd.DataFrame(rows, columns=["Season"] + metric_cols),
+                 width="stretch", hide_index=True)
 
     # CHOICE: split into 2 small multiples. NFI-GSAx/60 is a per-60 rate (~±0.3);
     # QNFS%/QS-GSAx% are percentages (~0–100). On a single shared axis the rate
@@ -1519,7 +1655,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
     _apply_ranks(disp, fmt, rank_cohort, ["NFI-GSAx/60", "QNFS%", "QS-GSAx%"])
-    st.caption("Each metric shows its **(rank)** — #1 = best — across all goalies "
+    st.caption("Each metric shows its **(rank)** across all goalies "
                "meeting the Min-Shots filter. Blanks (below a metric's floor) are "
                "unranked.")
     _sort_hint()
