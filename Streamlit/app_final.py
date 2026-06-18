@@ -721,6 +721,144 @@ def _as_rates(scope_key: str) -> pd.DataFrame:
     return agg[["player_id", "NFI_A_rate", "NFI_S_rate"]]
 
 
+# --- In-tab profiles (Gate F): per-season trends ----------------------------
+PROFILE_SEASONS = ["20222023", "20232024", "20242025", "20252026"]  # 4yr, excl 2021-22
+SEASON_DISPLAY = {"20222023": "2022-23", "20232024": "2023-24",
+                  "20242025": "2024-25", "20252026": "2025-26"}
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_zone_per_season() -> pd.DataFrame:
+    """Per-season NZI/DZI/OZI (0–10), name-keyed, for profile trends. Long frame:
+    season(str), player_name, _pos_group, NZI, DZI, OZI. Same higher-GP
+    duplicate-name guard and (player_name, _pos_group) keying as load_zone_2yr."""
+    sub = ADJ / "per_season"
+    out = []
+    for season in PROFILE_SEASONS:
+        for pos_file, grp in (("forwards", "F"), ("defense", "D")):
+            merged = None
+            for m in ("NZI", "DZI", "OZI"):
+                fp = sub / f"{season}_{m}_{pos_file}.csv"
+                if not fp.exists():
+                    continue
+                d = pd.read_csv(fp)
+                if "player_name" not in d.columns or "raw_score" not in d.columns:
+                    continue
+                gp = d["GP_in_scope"] if "GP_in_scope" in d.columns else 0
+                d = pd.DataFrame({"player_name": d["player_name"], "_gp": gp,
+                                  m: d["raw_score"]})
+                d = (d.sort_values("_gp", ascending=False)
+                       .drop_duplicates("player_name", keep="first")
+                       .drop(columns="_gp"))
+                merged = d if merged is None else merged.merge(d, on="player_name",
+                                                               how="outer")
+            if merged is not None:
+                merged["season"] = season
+                merged["_pos_group"] = grp
+                out.append(merged)
+    if not out:
+        return pd.DataFrame()
+    return pd.concat(out, ignore_index=True)
+
+
+def _player_trend(pid: int) -> pd.DataFrame:
+    """Per-season (2022-23..2025-26, excl 2021-22) metric trend for one
+    player_id. CRITICAL: every source's season is normalized to an 8-digit
+    STRING before merging (player_fully_adjusted is str, load_as_counts is str,
+    QG is str) — a str/int mismatch would silently empty the merge. Ordered
+    ascending by season."""
+    pid = int(pid)
+    nfi = load_nfi_player()
+    if nfi.empty:
+        return pd.DataFrame()
+    p = nfi[nfi["player_id"] == pid].copy()
+    if p.empty:
+        return pd.DataFrame()
+    p["season"] = p["season"].astype(str)
+    p = p[p["season"].isin(PROFILE_SEASONS)]
+    trend = p[["season", "NFI_pct", "RelNFI_pct", "RelNFI_F_pct", "RelNFI_A_pct"]].rename(
+        columns={"NFI_pct": "NFI%", "RelNFI_pct": "RelNFI%",
+                 "RelNFI_F_pct": "RelNFI-A%", "RelNFI_A_pct": "RelNFI-S%"})
+
+    # Raw attack/suppress per-60 (ES CNFI+MNFI on-ice for/against) per season.
+    g = load_as_counts()
+    if not g.empty:
+        a = g[g["player_id"] == pid].copy()
+        a["season"] = a["season"].astype(str)
+        a = a[a["season"].isin(PROFILE_SEASONS)]
+        ok = a["es_toi_min"] > 0
+        a["NFI-A/60"] = np.where(ok, a["for_att"] / a["es_toi_min"] * 60.0, np.nan)
+        a["NFI-S/60"] = np.where(ok, a["ag_att"] / a["es_toi_min"] * 60.0, np.nan)
+        trend = trend.merge(a[["season", "NFI-A/60", "NFI-S/60"]], on="season", how="outer")
+
+    # Zone (name-keyed) — resolve this player's (name, pos-group) from the NFI
+    # row; Pettersson/Aho split by pos-group, no same-name same-position dupes.
+    name = p["player_name"].iloc[0]
+    pos_group = "D" if str(p["position"].iloc[0]) == "D" else "F"
+    z = load_zone_per_season()
+    if not z.empty:
+        zz = z[(z["player_name"] == name) & (z["_pos_group"] == pos_group)]
+        if not zz.empty:
+            zcols = ["season"] + [c for c in ("NZI", "DZI", "OZI") if c in zz.columns]
+            trend = trend.merge(zz[zcols], on="season", how="outer")
+
+    # Quality Games per season.
+    qg = load_qg_player_season()
+    if not qg.empty:
+        q = qg[qg["player_id"] == pid].copy()
+        q["season"] = q["season"].astype(str)
+        q = q[q["season"].isin(PROFILE_SEASONS)]
+        keep = ["season"] + [c for c in ("NFI_QG_pct", "xG_QG_pct") if c in q.columns]
+        q = q[keep].rename(columns={"NFI_QG_pct": "NFI_QG%", "xG_QG_pct": "xG_QG%"})
+        trend = trend.merge(q, on="season", how="outer")
+
+    trend = trend[trend["season"].isin(PROFILE_SEASONS)].copy()
+    trend["Season"] = trend["season"].map(SEASON_DISPLAY).fillna(trend["season"])
+    return trend.sort_values("season").reset_index(drop=True)
+
+
+def _render_player_profile(pid: int) -> None:
+    """Per-season trend table + auto-showing line charts for one player."""
+    trend = _player_trend(pid)
+    if trend.empty:
+        st.info("No per-season data available for this player.")
+        return
+    share_cols = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%"]
+    rate_cols = ["NFI-A/60", "NFI-S/60"]
+    zone_cols = ["NZI", "DZI", "OZI"]
+    qg_cols = ["NFI_QG%", "xG_QG%"]
+    order = ["Season"] + share_cols + rate_cols + zone_cols + qg_cols
+    tbl = trend[[c for c in order if c in trend.columns]].copy()
+
+    fmt = {}
+    for c in ("NFI%", "NFI_QG%", "xG_QG%"):
+        if c in tbl:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
+    for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%"):
+        if c in tbl:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
+    for c in ("NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI"):
+        if c in tbl:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    st.dataframe(tbl.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+
+    def _chart(title: str, cols: list[str]) -> None:
+        ys = [c for c in cols if c in trend.columns and trend[c].notna().any()]
+        if not ys:
+            return
+        st.caption(title)
+        st.line_chart(trend.set_index("Season")[ys])
+
+    # Scales differ across families — one chart per scale so none flattens.
+    # NFI% (0–1 absolute share) is split from the RelNFI family (points, ~±5).
+    _chart("NFI% (share)", ["NFI%"])
+    _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
+           ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
+    _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", rate_cols)
+    _chart("Zone Impact 0–10 (NZI, DZI, OZI)", zone_cols)
+    _chart("Quality Games % (NFI_QG%, xG_QG%)", qg_cols)
+
+
 def _build_players_frame(season_label: str) -> tuple[pd.DataFrame, bool]:
     """Return (long per-player frame, is_pooled). NFI + QG, plus NZI/DZI/OZI in
     the pooled view only (zone data has no season axis)."""
@@ -863,6 +1001,27 @@ def render_players(season_label: str, game_type: str) -> None:
         f"{len(disp):,} players · {season_label} · sorted by RelNFI% descending · "
         f"min {min_toi:,} ES min{zone_note}"
     )
+
+    # --- In-tab player profile (Gate F) — per-season trend for one player.
+    # Options come from the full `frame` (not the filtered/searched table), so
+    # the picker is independent of the leaderboard's name filter.
+    st.markdown("---")
+    st.markdown(
+        f"<h3 style='color:{PALETTE['text']}; margin:0.3rem 0 0.1rem;'>Player profile</h3>",
+        unsafe_allow_html=True,
+    )
+    popts = (frame[["player_id", "player_name", "position"]]
+             .dropna(subset=["player_id"]).drop_duplicates("player_id")
+             .sort_values("player_name"))
+    pid_list = [int(x) for x in popts["player_id"].tolist()]
+    plabel = {int(r.player_id): f"{r.player_name} ({r.position})"
+              for r in popts.itertuples()}
+    sel = st.selectbox(
+        "Select a player for a per-season trend (2022-23 → 2025-26)",
+        pid_list, index=None, placeholder="— select a player —",
+        format_func=lambda i: plabel.get(i, str(i)), key="players_profile")
+    if sel is not None:
+        _render_player_profile(int(sel))
 
 
 # ---------------------------------------------------------------------------
@@ -1049,6 +1208,70 @@ def load_qs_by_season() -> pd.DataFrame:
     return df
 
 
+def _goalie_trend(gid: int) -> pd.DataFrame:
+    """Per-season (2022-23..2025-26) NFI-GSAx/60, QNFS%, QS-GSAx% for one
+    goalie_id, outer-merged on season. Season normalized to INT before merging
+    (all three by-season loaders cast to int) to avoid silent empty merges. The
+    NFI-GSAx file includes a 2021-22 row; it's dropped here."""
+    gid = int(gid)
+    seasons_int = [20222023, 20232024, 20242025, 20252026]
+    parts = []
+    n = load_goalie_nfi_by_season()
+    if not n.empty:
+        parts.append(n[n["goalie_id"] == gid][["season", "GSAx_per60"]]
+                     .rename(columns={"GSAx_per60": "NFI-GSAx/60"}))
+    q = load_qnfs_by_season()
+    if not q.empty:
+        parts.append(q[q["goalie_id"] == gid][["season", "QNFS_pct"]]
+                     .rename(columns={"QNFS_pct": "QNFS%"}))
+    s = load_qs_by_season()
+    if not s.empty:
+        parts.append(s[s["goalie_id"] == gid][["season", "QS_GSAx_pct"]]
+                     .rename(columns={"QS_GSAx_pct": "QS-GSAx%"}))
+    parts = [p for p in parts if not p.empty]
+    if not parts:
+        return pd.DataFrame()
+    base = None
+    for p in parts:
+        p = p.copy()
+        p["season"] = p["season"].astype(int)
+        base = p if base is None else base.merge(p, on="season", how="outer")
+    base = base[base["season"].isin(seasons_int)].copy()
+    base["Season"] = (base["season"].astype(str).map(SEASON_DISPLAY)
+                      .fillna(base["season"].astype(str)))
+    return base.sort_values("season").reset_index(drop=True)
+
+
+def _render_goalie_profile(gid: int) -> None:
+    """Per-season trend table + line charts for one goalie."""
+    trend = _goalie_trend(gid)
+    if trend.empty:
+        st.info("No per-season data available for this goalie.")
+        return
+    order = ["Season", "NFI-GSAx/60", "QNFS%", "QS-GSAx%"]
+    tbl = trend[[c for c in order if c in trend.columns]].copy()
+    fmt = {}
+    if "NFI-GSAx/60" in tbl:
+        fmt["NFI-GSAx/60"] = lambda x: "—" if pd.isna(x) else f"{x:+.3f}"
+    for c in ("QNFS%", "QS-GSAx%"):
+        if c in tbl:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
+    st.dataframe(tbl.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+
+    # CHOICE: split into 2 small multiples. NFI-GSAx/60 is a per-60 rate (~±0.3);
+    # QNFS%/QS-GSAx% are percentages (~0–100). On a single shared axis the rate
+    # collapses to a flat line near zero, so the rate gets its own chart and the
+    # two percentages share one.
+    if "NFI-GSAx/60" in trend.columns and trend["NFI-GSAx/60"].notna().any():
+        st.caption("NFI-GSAx per 60")
+        st.line_chart(trend.set_index("Season")[["NFI-GSAx/60"]])
+    pct = [c for c in ("QNFS%", "QS-GSAx%")
+           if c in trend.columns and trend[c].notna().any()]
+    if pct:
+        st.caption("Consistency % (QNFS%, QS-GSAx%)")
+        st.line_chart(trend.set_index("Season")[pct])
+
+
 def render_goalies(season_label: str, game_type: str) -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Goalies</h2>",
@@ -1169,6 +1392,24 @@ def render_goalies(season_label: str, game_type: str) -> None:
         "with ≥3 net-front shots/game; QS-GSAx ≥10 shots/game, ≥25 GP/season).</p>",
         unsafe_allow_html=True,
     )
+
+    # --- In-tab goalie profile (Gate F) — per-season trend for one goalie.
+    # Options use the full season cohort (name_map, built pre-filter), so the
+    # picker is independent of the Min-Shots / name leaderboard filters.
+    st.markdown("---")
+    st.markdown(
+        f"<h3 style='color:{PALETTE['text']}; margin:0.3rem 0 0.1rem;'>Goalie profile</h3>",
+        unsafe_allow_html=True,
+    )
+    g_opts = name_map.dropna()
+    glabel = {int(k): v for k, v in g_opts.items()}
+    gid_list = sorted(glabel, key=lambda i: glabel[i])
+    gsel = st.selectbox(
+        "Select a goalie for a per-season trend (2022-23 → 2025-26)",
+        gid_list, index=None, placeholder="— select a goalie —",
+        format_func=lambda i: glabel.get(i, str(i)), key="goalies_profile")
+    if gsel is not None:
+        _render_goalie_profile(int(gsel))
 
 
 # ---------------------------------------------------------------------------
