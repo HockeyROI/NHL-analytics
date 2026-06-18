@@ -145,11 +145,11 @@ PALETTE = {
 }
 
 # Per-series line-chart colors. Orange (primary) is line 1; light blue is the
-# 2nd line on every chart; navy (dark blue) is the 3rd line on the 3-line charts
-# (RelNFI, Zone). NZI is the orange line in the Zone chart, by request.
+# 2nd line on every chart; the 3rd line on the 3-line charts (RelNFI, Zone) is
+# brand blue. NZI is the orange line in the Zone chart, by request.
 _CHART_PRIMARY = PALETTE["orange"]       # #FF6B35
 _CHART_SECOND = PALETTE["lightblue"]     # #4AB3E8 light blue
-_CHART_THIRD = PALETTE["text"]           # #1B3A5C navy (dark blue)
+_CHART_THIRD = PALETTE["blue"]           # #2E7DC4 brand blue (reads blue, not black)
 _CHART_COLORS = {
     "NFI%": _CHART_PRIMARY,
     "RelNFI%": _CHART_PRIMARY, "RelNFI-A%": _CHART_SECOND, "RelNFI-S%": _CHART_THIRD,
