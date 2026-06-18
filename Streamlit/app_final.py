@@ -609,6 +609,47 @@ def load_zone_pooled() -> pd.DataFrame:
     return z.drop_duplicates(subset=["player_name", "_pos_group"], keep="first")
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_zone_2yr() -> pd.DataFrame:
+    """2-year (2024-25 + 2025-26) pooled NZI/DZI/OZI (0–10) from the uncapped
+    2yr_recent_{NZI,DZI,OZI}_{forwards,defense}.csv files. Lens is in the
+    filename; `raw_score` is the 0–10 value. Name-keyed (no player_id), so the
+    merge mirrors load_zone_pooled exactly: on (player_name, _pos_group).
+
+    DUPLICATE-NAME GUARD: a name can repeat within a position group (two
+    distinct players, e.g. Sam/Samuel splits). Within each lens file we keep the
+    higher-GP_in_scope row deterministically before merging the three lenses, so
+    the final frame is unique per (player_name, _pos_group) and a left-join to
+    the Players frame never multiplies rows or attaches the wrong player's zone.
+    """
+    sub = ADJ / "per_season"
+    frames = []
+    for pos_file, grp in (("forwards", "F"), ("defense", "D")):
+        merged = None
+        for m in ("NZI", "DZI", "OZI"):
+            fp = sub / f"2yr_recent_{m}_{pos_file}.csv"
+            if not fp.exists():
+                continue
+            d = pd.read_csv(fp)
+            if "player_name" not in d.columns or "raw_score" not in d.columns:
+                continue
+            gp = d["GP_in_scope"] if "GP_in_scope" in d.columns else 0
+            d = pd.DataFrame({"player_name": d["player_name"], "_gp": gp,
+                              m: d["raw_score"]})
+            d = (d.sort_values("_gp", ascending=False)
+                   .drop_duplicates("player_name", keep="first")
+                   .drop(columns="_gp"))
+            merged = d if merged is None else merged.merge(d, on="player_name",
+                                                           how="outer")
+        if merged is not None:
+            merged["_pos_group"] = grp
+            frames.append(merged)
+    if not frames:
+        return pd.DataFrame()
+    z = pd.concat(frames, ignore_index=True)
+    return z.drop_duplicates(subset=["player_name", "_pos_group"], keep="first")
+
+
 def _qg_pooled(qg: pd.DataFrame) -> pd.DataFrame:
     """Career-pooled QG: rates = total quality games / total qualifying GP."""
     if qg.empty:
@@ -622,6 +663,62 @@ def _qg_pooled(qg: pd.DataFrame) -> pd.DataFrame:
     g["xG_QG_pct"] = np.where(g["_xq"] > 0, g["_xc"] / g["_xq"], np.nan)
     g["NFI_QG_pct"] = np.where(g["_nq"] > 0, g["_nc"] / g["_nq"], np.nan)
     return g[["player_id", "GP", "qualifying_GP", "xG_QG_pct", "NFI_QG_pct"]]
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_as_counts() -> pd.DataFrame:
+    """Per-(player_id, season) building blocks for raw attack/suppress per-60.
+
+    Source: NFI/output/player_counts_by_state_zone_per_season.csv (Gate D).
+    Keep ES, zone in {CNFI, MNFI}; sum on-ice for/against attempts per
+    (player_id, season). ES TOI is per-(player, season, state) — identical
+    across the zone rows — so it's taken once (`first`), NOT summed over zones.
+    Returns counts + ES TOI (additive) so any scope's rate is the correct
+    ratio-of-sums: sum(counts) / sum(ES TOI) * 60.
+    """
+    fp = REPO_ROOT / "NFI" / "output" / "player_counts_by_state_zone_per_season.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df = df[(df["state"] == "ES") & (df["zone"].isin(["CNFI", "MNFI"]))].copy()
+    if df.empty:
+        return pd.DataFrame()
+    df["season"] = df["season"].astype(str)
+    g = df.groupby(["player_id", "season"]).agg(
+        for_att=("onice_for_att", "sum"),
+        ag_att=("onice_ag_att", "sum"),
+        es_toi_min=("toi_min", "first"),   # ES TOI constant across CNFI/MNFI rows
+    ).reset_index()
+    return g
+
+
+def _as_rates(scope_key: str) -> pd.DataFrame:
+    """Raw attack/suppress per-60 for one scope, by ratio-of-sums.
+
+    scope_key is the SEASON_KEY value: "pooled" (4yr 2022-26, EXCLUDES 2021-22),
+    "pooled_2yr" (2024-26), or a single-season string like "20252026". Counts
+    and ES TOI are summed across the scope's seasons, then divided — pooling on
+    rates would be wrong; pooling on counts+TOI is correct.
+    """
+    g = load_as_counts()
+    if g.empty:
+        return pd.DataFrame()
+    if scope_key == "pooled":
+        sub = g[g["season"].isin(POOLED_SEASONS)]            # 4yr, no 2021-22
+    elif scope_key == "pooled_2yr":
+        sub = g[g["season"].isin(POOLED_2YR_SEASONS)]        # 2024-25 + 2025-26
+    else:
+        sub = g[g["season"] == scope_key]                    # single season
+    if sub.empty:
+        return pd.DataFrame()
+    agg = sub.groupby("player_id").agg(
+        for_att=("for_att", "sum"), ag_att=("ag_att", "sum"),
+        es_toi_min=("es_toi_min", "sum"),
+    ).reset_index()
+    ok = agg["es_toi_min"] > 0
+    agg["NFI_A_rate"] = np.where(ok, agg["for_att"] / agg["es_toi_min"] * 60.0, np.nan)
+    agg["NFI_S_rate"] = np.where(ok, agg["ag_att"] / agg["es_toi_min"] * 60.0, np.nan)
+    return agg[["player_id", "NFI_A_rate", "NFI_S_rate"]]
 
 
 def _build_players_frame(season_label: str) -> tuple[pd.DataFrame, bool]:
@@ -644,7 +741,9 @@ def _build_players_frame(season_label: str) -> tuple[pd.DataFrame, bool]:
         if not qg.empty:
             qg_src = qg if key == "pooled" else qg[qg["season"].isin(POOLED_2YR_SEASONS)]
             base = base.merge(_qg_pooled(qg_src), on="player_id", how="left")
-        zone = load_zone_pooled()
+        # Zone Impact: the 2yr view uses the real 2024-25+2025-26 pool
+        # (2yr_recent files); the full pooled view uses the all-season build.
+        zone = load_zone_2yr() if key == "pooled_2yr" else load_zone_pooled()
         if not zone.empty and not base.empty:
             base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
             base = base.merge(zone, on=["player_name", "_pos_group"], how="left")
@@ -655,6 +754,12 @@ def _build_players_frame(season_label: str) -> tuple[pd.DataFrame, bool]:
                      "xG_QG_pct", "NFI_QG_pct"]
             base = base.merge(qg[[c for c in qcols if c in qg.columns]],
                               on=["player_id", "season"], how="left")
+
+    # Raw attack/suppress per-60 (ES CNFI+MNFI on-ice for/against), scoped to the
+    # same seasons as the view via ratio-of-sums. Joins on player_id.
+    as_df = _as_rates(key)
+    if not as_df.empty and not base.empty:
+        base = base.merge(as_df, on="player_id", how="left")
     return base, is_pooled
 
 
@@ -712,12 +817,16 @@ def render_players(season_label: str, game_type: str) -> None:
         "player_name": "Player", "position": "Pos", "team": "Team", "toi_min": "TOI",
         "NFI_pct": "NFI%", "RelNFI_pct": "RelNFI%",
         "RelNFI_F_pct": "RelNFI-A%", "RelNFI_A_pct": "RelNFI-S%",
+        "NFI_A_rate": "NFI-A/60", "NFI_S_rate": "NFI-S/60",
         "xG_QG_pct": "xG_QG%", "NFI_QG_pct": "NFI_QG%",
     })
 
     # Always show the full column set (Compact view removed; Qual GP dropped).
+    # NFI-A/60 / NFI-S/60 are RAW per-60 rates; RelNFI-A% / RelNFI-S% are the
+    # relative (vs own-team) versions — both coexist, placed side by side.
     cols = ["Player", "Pos", "Team", "GP", "TOI", "NFI%", "RelNFI%", "RelNFI-A%",
-            "RelNFI-S%", "NZI", "DZI", "OZI", "xG_QG%", "NFI_QG%"]
+            "RelNFI-S%", "NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI",
+            "xG_QG%", "NFI_QG%"]
     if not is_pooled:  # zone metrics are pooled-only — hide for single-season views
         cols = [c for c in cols if c not in ("NZI", "DZI", "OZI")]
     cols = [c for c in cols if c in df.columns]
@@ -730,6 +839,9 @@ def render_players(season_label: str, game_type: str) -> None:
     for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
+    for c in ("NFI-A/60", "NFI-S/60"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     for c in ("NZI", "DZI", "OZI"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
@@ -741,8 +853,12 @@ def render_players(season_label: str, game_type: str) -> None:
 
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
-    zone_note = (" · NZI/DZI/OZI pooled across all seasons" if is_pooled
-                 else " · Zone Impact hidden (pooled-only) in single-season view")
+    if not is_pooled:
+        zone_note = " · Zone Impact hidden (pooled-only) in single-season view"
+    elif SEASON_KEY.get(season_label) == "pooled_2yr":
+        zone_note = " · NZI/DZI/OZI pooled 2024-25 + 2025-26"
+    else:
+        zone_note = " · NZI/DZI/OZI pooled across all seasons"
     st.caption(
         f"{len(disp):,} players · {season_label} · sorted by RelNFI% descending · "
         f"min {min_toi:,} ES min{zone_note}"
