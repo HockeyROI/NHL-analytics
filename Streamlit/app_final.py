@@ -457,7 +457,8 @@ def _aggregate_nfi_pooled(df: pd.DataFrame) -> pd.DataFrame:
 GITHUB_METHODOLOGY_URL = (
     "https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md"
 )
-TAB_LABELS = ["Players", "Teams", "Goalies", "Referees", "Methodology"]
+TAB_LABELS = ["Player List", "Player Detail", "Goalie List", "Goalie Detail",
+              "Teams", "Referees", "Methodology"]
 
 
 def _meth_framework(name: str, body: str) -> str:
@@ -728,17 +729,22 @@ SEASON_DISPLAY = {"20222023": "2022-23", "20232024": "2023-24",
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def load_zone_per_season() -> pd.DataFrame:
-    """Per-season NZI/DZI/OZI (0–10), name-keyed, for profile trends. Long frame:
-    season(str), player_name, _pos_group, NZI, DZI, OZI. Same higher-GP
-    duplicate-name guard and (player_name, _pos_group) keying as load_zone_2yr."""
+def load_zone_per_season(season: str | None = None) -> pd.DataFrame:
+    """Per-season NZI/DZI/OZI (0–10), name-keyed. Same higher-GP duplicate-name
+    guard and (player_name, _pos_group) keying as load_zone_2yr.
+
+    season=None → long multi-season frame (season, player_name, _pos_group,
+    NZI, DZI, OZI) used by the per-player trend. season="20252026" → just that
+    season's rows keyed on (player_name, _pos_group), season column dropped, for
+    a single-season leaderboard join (mirrors load_zone_pooled's shape)."""
     sub = ADJ / "per_season"
     out = []
-    for season in PROFILE_SEASONS:
+    seasons = [season] if season is not None else PROFILE_SEASONS
+    for ssn in seasons:
         for pos_file, grp in (("forwards", "F"), ("defense", "D")):
             merged = None
             for m in ("NZI", "DZI", "OZI"):
-                fp = sub / f"{season}_{m}_{pos_file}.csv"
+                fp = sub / f"{ssn}_{m}_{pos_file}.csv"
                 if not fp.exists():
                     continue
                 d = pd.read_csv(fp)
@@ -753,12 +759,15 @@ def load_zone_per_season() -> pd.DataFrame:
                 merged = d if merged is None else merged.merge(d, on="player_name",
                                                                how="outer")
             if merged is not None:
-                merged["season"] = season
+                merged["season"] = ssn
                 merged["_pos_group"] = grp
                 out.append(merged)
     if not out:
         return pd.DataFrame()
-    return pd.concat(out, ignore_index=True)
+    full = pd.concat(out, ignore_index=True)
+    if season is not None:
+        return full.drop(columns=["season"]).reset_index(drop=True)
+    return full
 
 
 def _player_trend(pid: int) -> pd.DataFrame:
@@ -892,6 +901,12 @@ def _build_players_frame(season_label: str) -> tuple[pd.DataFrame, bool]:
                      "xG_QG_pct", "NFI_QG_pct"]
             base = base.merge(qg[[c for c in qcols if c in qg.columns]],
                               on=["player_id", "season"], how="left")
+        # Per-season Zone Impact (uncapped per-season files), name-keyed on
+        # (player_name, pos-group) like the pooled/2yr zone joins.
+        zone = load_zone_per_season(SEASON_KEY[season_label])
+        if not zone.empty and not base.empty:
+            base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
+            base = base.merge(zone, on=["player_name", "_pos_group"], how="left")
 
     # Raw attack/suppress per-60 (ES CNFI+MNFI on-ice for/against), scoped to the
     # same seasons as the view via ratio-of-sums. Joins on player_id.
@@ -903,7 +918,7 @@ def _build_players_frame(season_label: str) -> tuple[pd.DataFrame, bool]:
 
 def render_players(season_label: str, game_type: str) -> None:
     st.markdown(
-        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Players</h2>",
+        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Player List</h2>",
         unsafe_allow_html=True,
     )
     if game_type == "Playoffs":
@@ -916,7 +931,7 @@ def render_players(season_label: str, game_type: str) -> None:
                  "(`NFI/output/fully_adjusted/player_fully_adjusted.csv`).")
         return
 
-    c1, c2, c3, c4 = st.columns([1.0, 1.5, 1.1, 1.5])
+    c1, c2, c3 = st.columns([1.0, 1.6, 1.3])
     with c1:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
     with c2:
@@ -926,8 +941,6 @@ def render_players(season_label: str, game_type: str) -> None:
     with c3:
         team_opts = ["All"] + sorted(frame["team"].dropna().unique().tolist())
         team_sel = st.selectbox("Team", team_opts, key="players_team")
-    with c4:
-        name_q = st.text_input("Player name contains", key="players_name").strip().lower()
 
     df = frame.copy()
     if pos in ("F", "D"):
@@ -937,8 +950,6 @@ def render_players(season_label: str, game_type: str) -> None:
     df = df[df["toi_min"].fillna(0) >= min_toi]
     if team_sel != "All":
         df = df[df["team"] == team_sel]
-    if name_q:
-        df = df[df["player_name"].str.lower().str.contains(name_q, na=False)]
     if df.empty:
         st.markdown(
             f"<p style='color:{PALETTE['text']};'>No players match the current filters. "
@@ -965,8 +976,8 @@ def render_players(season_label: str, game_type: str) -> None:
     cols = ["Player", "Pos", "Team", "GP", "TOI", "NFI%", "RelNFI%", "RelNFI-A%",
             "RelNFI-S%", "NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI",
             "xG_QG%", "NFI_QG%"]
-    if not is_pooled:  # zone metrics are pooled-only — hide for single-season views
-        cols = [c for c in cols if c not in ("NZI", "DZI", "OZI")]
+    # Zone now populates for single seasons too (per-season files), so it is no
+    # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
     disp = df[cols].copy()
 
@@ -991,25 +1002,34 @@ def render_players(season_label: str, game_type: str) -> None:
 
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
-    if not is_pooled:
-        zone_note = " · Zone Impact hidden (pooled-only) in single-season view"
-    elif SEASON_KEY.get(season_label) == "pooled_2yr":
+    if SEASON_KEY.get(season_label) == "pooled_2yr":
         zone_note = " · NZI/DZI/OZI pooled 2024-25 + 2025-26"
-    else:
+    elif is_pooled:
         zone_note = " · NZI/DZI/OZI pooled across all seasons"
+    else:
+        zone_note = " · NZI/DZI/OZI for this season"
     st.caption(
         f"{len(disp):,} players · {season_label} · sorted by RelNFI% descending · "
         f"min {min_toi:,} ES min{zone_note}"
     )
 
-    # --- In-tab player profile (Gate F) — per-season trend for one player.
-    # Options come from the full `frame` (not the filtered/searched table), so
-    # the picker is independent of the leaderboard's name filter.
-    st.markdown("---")
+
+def render_player_detail(season_label: str, game_type: str) -> None:
+    """Player Detail tab — searchable selector → per-season trend table + charts.
+    Reuses _player_trend / _render_player_profile; selector options come from the
+    full (unfiltered) player frame."""
     st.markdown(
-        f"<h3 style='color:{PALETTE['text']}; margin:0.3rem 0 0.1rem;'>Player profile</h3>",
+        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Player Detail</h2>",
         unsafe_allow_html=True,
     )
+    if game_type == "Playoffs":
+        st.info("Playoff player metrics — coming soon.")
+        return
+    frame, _ = _build_players_frame(season_label)
+    if frame.empty:
+        st.error("Player data not found "
+                 "(`NFI/output/fully_adjusted/player_fully_adjusted.csv`).")
+        return
     popts = (frame[["player_id", "player_name", "position"]]
              .dropna(subset=["player_id"]).drop_duplicates("player_id")
              .sort_values("player_name"))
@@ -1022,6 +1042,8 @@ def render_players(season_label: str, game_type: str) -> None:
         format_func=lambda i: plabel.get(i, str(i)), key="players_profile")
     if sel is not None:
         _render_player_profile(int(sel))
+    else:
+        st.caption("Pick a player to see their season-by-season trend and charts.")
 
 
 # ---------------------------------------------------------------------------
@@ -1274,7 +1296,7 @@ def _render_goalie_profile(gid: int) -> None:
 
 def render_goalies(season_label: str, game_type: str) -> None:
     st.markdown(
-        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Goalies</h2>",
+        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Goalie List</h2>",
         unsafe_allow_html=True,
     )
     if game_type == "Playoffs":
@@ -1365,8 +1387,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
     })
     base = base.sort_values("NFI-GSAx/60", ascending=False, na_position="last").reset_index(drop=True)
 
-    cols = ["Goalie", "Team", "GP", "NFI-GSAx/60", "QNFS%", "QNFS 95% CI",
-            "QS-GSAx%", "QS-GSAx (95% lower)"]
+    cols = ["Goalie", "Team", "GP", "NFI-GSAx/60", "QNFS%", "QS-GSAx%"]
     disp = base[[c for c in cols if c in base.columns]].copy()
 
     fmt = {}
@@ -1393,16 +1414,25 @@ def render_goalies(season_label: str, game_type: str) -> None:
         unsafe_allow_html=True,
     )
 
-    # --- In-tab goalie profile (Gate F) — per-season trend for one goalie.
-    # Options use the full season cohort (name_map, built pre-filter), so the
-    # picker is independent of the Min-Shots / name leaderboard filters.
-    st.markdown("---")
+
+def render_goalie_detail(season_label: str, game_type: str) -> None:
+    """Goalie Detail tab — searchable selector → per-season trend table + charts.
+    Reuses _goalie_trend / _render_goalie_profile; options span the full goalie
+    universe (by-season GSAx file), independent of the leaderboard filters."""
     st.markdown(
-        f"<h3 style='color:{PALETTE['text']}; margin:0.3rem 0 0.1rem;'>Goalie profile</h3>",
+        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Goalie Detail</h2>",
         unsafe_allow_html=True,
     )
-    g_opts = name_map.dropna()
-    glabel = {int(k): v for k, v in g_opts.items()}
+    if game_type == "Playoffs":
+        st.info("Goalie playoff metrics aren't available yet — these are "
+                "regular-season GSAx-based metrics.")
+        return
+    n = load_goalie_nfi_by_season()
+    if n.empty:
+        st.info("No goalie data available.")
+        return
+    nn = n[["goalie_id", "goalie_name"]].dropna().drop_duplicates("goalie_id")
+    glabel = {int(r.goalie_id): r.goalie_name for r in nn.itertuples()}
     gid_list = sorted(glabel, key=lambda i: glabel[i])
     gsel = st.selectbox(
         "Select a goalie for a per-season trend (2022-23 → 2025-26)",
@@ -1410,6 +1440,8 @@ def render_goalies(season_label: str, game_type: str) -> None:
         format_func=lambda i: glabel.get(i, str(i)), key="goalies_profile")
     if gsel is not None:
         _render_goalie_profile(int(gsel))
+    else:
+        st.caption("Pick a goalie to see their season-by-season trend and charts.")
 
 
 # ---------------------------------------------------------------------------
@@ -1569,13 +1601,18 @@ def main() -> None:
     season_label, game_type = render_global_sidebar()
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
 
-    players_tab, teams_tab, goalies_tab, refs_tab, meth_tab = st.tabs(TAB_LABELS)
-    with players_tab:
+    (player_list_tab, player_detail_tab, goalie_list_tab, goalie_detail_tab,
+     teams_tab, refs_tab, meth_tab) = st.tabs(TAB_LABELS)
+    with player_list_tab:
         render_players(season_label, game_type)
+    with player_detail_tab:
+        render_player_detail(season_label, game_type)
+    with goalie_list_tab:
+        render_goalies(season_label, game_type)
+    with goalie_detail_tab:
+        render_goalie_detail(season_label, game_type)
     with teams_tab:
         render_teams(season_label, game_type)
-    with goalies_tab:
-        render_goalies(season_label, game_type)
     with refs_tab:
         render_referees(season_label, game_type)
     with meth_tab:
