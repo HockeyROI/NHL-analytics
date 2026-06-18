@@ -1076,13 +1076,64 @@ def load_team_qg() -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_team_attack_suppress() -> pd.DataFrame:
-    """2025-26 post-audit Attack/Suppress per game (single-season snapshot)."""
+    """Per-(season, team) team Attack/Suppress: raw counts + games + per-game
+    rates, all seasons 2022-23..2025-26. Counts/games are additive, so pooled
+    windows use ratio-of-sums (see _team_attack_suppress)."""
     fp = REPO_ROOT / "NFI" / "output" / "team_nfi_verification_and_attack_suppress.csv"
     if not fp.exists():
         return pd.DataFrame()
     df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    df["team"] = df["team"].replace({"ARI": "UTA"})  # franchise continuity for pools
+    keep = ["season", "team", "attack_count", "suppress_count",
+            "games_played", "attack_per_game", "suppress_per_game"]
+    return df[[c for c in keep if c in df.columns]].copy()
+
+
+def _team_attack_suppress(key: str) -> pd.DataFrame:
+    """Team Attack/Suppress per-game for a scope, named for direct merge.
+    key: 'pooled' (4yr 2022-26), 'pooled_2yr' (2024-26), or a season string.
+    Pools are ratio-of-sums: sum(counts)/sum(games) — NOT averaged per-game."""
+    a = load_team_attack_suppress()
+    if a.empty:
+        return pd.DataFrame()
+    if key == "pooled":
+        sub = a[a["season"].isin(POOLED_SEASONS)]
+    elif key == "pooled_2yr":
+        sub = a[a["season"].isin(POOLED_2YR_SEASONS)]
+    else:
+        sub = a[a["season"] == key]
+    if sub.empty:
+        return pd.DataFrame()
+    g = sub.groupby("team").agg(_ac=("attack_count", "sum"),
+                                _sc=("suppress_count", "sum"),
+                                _gp=("games_played", "sum")).reset_index()
+    ok = g["_gp"] > 0
+    g["Attack events"] = np.where(ok, g["_ac"] / g["_gp"], np.nan)
+    g["Suppress events"] = np.where(ok, g["_sc"] / g["_gp"], np.nan)
+    return g[["team", "Attack events", "Suppress events"]]
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_team_zone() -> pd.DataFrame:
+    """Team Zone Impact (NZI/OZI/DZI + composite) per window from
+    NFI/output/team_zone.csv (built by NFI/scripts/build_team_zone.py).
+    Windows: '4y_pool' (2022-26), '2y_2426' (2024-26). TOI-weighted."""
+    fp = REPO_ROOT / "NFI" / "output" / "team_zone.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
     df["team"] = df["team"].replace({"ARI": "UTA"})
-    return df[["team", "attack_per_game", "suppress_per_game"]].copy()
+    return df
+
+
+def _team_zone_window(key: str) -> str:
+    """Season key → team-zone window. No raw single-season team zone (2024-25 is
+    hit-zoneCode distorted), so single seasons map to their pool: 2024-26 era →
+    2y_2426, 2022-24 era + full pooled → 4y_pool."""
+    if key in ("pooled_2yr", "20242025", "20252026"):
+        return "2y_2426"
+    return "4y_pool"
 
 
 def _team_nfi_share(df: pd.DataFrame) -> np.ndarray:
@@ -1150,23 +1201,29 @@ def render_teams(season_label: str, game_type: str) -> None:
         st.info("No team data for this season.")
         return
 
-    # Attack / Suppress events — 2025-26 snapshot only
-    if season_label == "2025-26":
-        a = load_team_attack_suppress().rename(
-            columns={"attack_per_game": "Attack events", "suppress_per_game": "Suppress events"})
+    # Attack / Suppress events — all seasons + pools (ratio-of-sums for pools).
+    a = _team_attack_suppress(key)
+    if not a.empty:
         team = team.merge(a, on="team", how="left")
-    else:
-        team["Attack events"] = np.nan
-        team["Suppress events"] = np.nan
 
-    for c in ("TOI", "xG_QG%", "NFI_QG%"):
+    # Team Zone Impact (NZI/DZI/OZI + Composite). Single seasons show their
+    # pooled window — no raw single-season team zone (2024-25 is hit-distorted).
+    zwin = _team_zone_window(key)
+    tz = load_team_zone()
+    if not tz.empty:
+        tzw = (tz[tz["window"] == zwin][["team", "NZI", "DZI", "OZI", "composite"]]
+               .rename(columns={"composite": "Composite"}))
+        team = team.merge(tzw, on="team", how="left")
+
+    for c in ("TOI", "xG_QG%", "NFI_QG%", "Attack events", "Suppress events",
+              "NZI", "DZI", "OZI", "Composite"):
         if c not in team.columns:
             team[c] = np.nan
 
     team = team.rename(columns={"team": "Team"})
     team = team.sort_values("NFI%", ascending=False, na_position="last").reset_index(drop=True)
     cols = ["Team", "GP", "TOI", "NFI%", "Attack events", "Suppress events",
-            "xG_QG%", "NFI_QG%"]
+            "NZI", "DZI", "OZI", "Composite", "xG_QG%", "NFI_QG%"]
     disp = team[[c for c in cols if c in team.columns]].copy()
 
     fmt = {}
@@ -1176,6 +1233,9 @@ def render_teams(season_label: str, game_type: str) -> None:
     for c in ("Attack events", "Suppress events"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    for c in ("NZI", "DZI", "OZI", "Composite"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
     if "TOI" in disp:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     if "GP" in disp:
@@ -1183,10 +1243,11 @@ def render_teams(season_label: str, game_type: str) -> None:
 
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
-    cap = f"{len(disp)} teams · {season_label} · sorted by NFI% (CNFI+MNFI share) descending"
-    if season_label != "2025-26":
-        cap += (" · Attack and Suppress events are currently only computed for 2025-26. "
-                "Per-season history requires a pipeline run not yet performed.")
+    zwin_label = "4-year pool (2022-26)" if zwin == "4y_pool" else "2-year pool (2024-26)"
+    cap = (f"{len(disp)} teams · {season_label} · sorted by NFI% (CNFI+MNFI share) "
+           f"descending · Zone Impact (NZI/DZI/OZI/Composite) is TOI-weighted, shown "
+           f"as the {zwin_label}; single seasons display their pooled window "
+           f"(2022-24 → 4yr, 2024-26 → 2yr) since single-season team zone isn't published.")
     st.caption(cap)
 
 
