@@ -172,7 +172,12 @@ def inject_css() -> None:
             font-family: 'Inter', Arial, sans-serif;
         }}
         [data-testid="stHeader"] {{ background: {PALETTE['bg']}; }}
-        [data-testid="stSidebar"] {{ background-color: {PALETTE['panel']} !important; }}
+        /* Sidebar removed — filters live in the main page body. Hide the panel
+           and its expand/collapse control entirely. */
+        [data-testid="stSidebar"],
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid="stSidebarCollapseButton"],
+        [data-testid="collapsedControl"] {{ display: none !important; }}
         /* Sidebar label text stays white, but EXCLUDE input controls (handled below) */
         [data-testid="stSidebar"] label,
         [data-testid="stSidebar"] h1,
@@ -411,7 +416,6 @@ def render_header() -> None:
         </div>
         <div class="tagline">NHL Net-Front Impact, Zone Impact, Quality Games &amp; Quality Starts (GSAx)</div>
         <div style="color:#888888; font-size:0.85rem; margin-top:0.15rem;">
-          Data through the 2025-26 season ·
           <a href="https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md" style="color:#2E7DC4;">methodology on GitHub</a>
         </div>
         """,
@@ -1848,20 +1852,17 @@ def render_referees(season_label: str, game_type: str) -> None:
 # ---------------------------------------------------------------------------
 # Global sidebar (Season + Game type — apply to every tab)
 # ---------------------------------------------------------------------------
-def render_global_sidebar() -> tuple[str, str]:
-    st.sidebar.markdown(
-        f"<div style='font-family:\"Bebas Neue\",Impact,sans-serif; font-size:1.4rem; "
-        f"color:{PALETTE['text']}; letter-spacing:1px; margin-bottom:0.3rem;'>Filters</div>",
-        unsafe_allow_html=True,
-    )
+def render_global_filters() -> tuple[str, str]:
+    """Season + game-type filters in the main page body (no sidebar)."""
     st.session_state.setdefault("g_season", "2025-26")
     st.session_state.setdefault("g_game_type", "Regular Season")
-    season = st.sidebar.selectbox("Season", list(SEASON_KEY.keys()), key="g_season")
-    game_type = st.sidebar.radio("Game type", ["Regular Season", "Playoffs"],
-                                 key="g_game_type")
-    st.sidebar.caption(
-        "Season and game type apply across all tabs."
-    )
+    c1, c2 = st.columns([1.2, 2.4])
+    with c1:
+        season = st.selectbox("Season", list(SEASON_KEY.keys()), key="g_season")
+    with c2:
+        game_type = st.radio("Game type", ["Regular Season", "Playoffs"],
+                             horizontal=True, key="g_game_type")
+    st.caption("Season and game type apply across all tabs.")
     return season, game_type
 
 
@@ -1873,11 +1874,11 @@ def main() -> None:
         page_title="HockeyROI — NHL Net-Front Impact, Zone Impact, Quality Games & Quality Starts (GSAx)",
         page_icon="🏒",
         layout="wide",
-        initial_sidebar_state="expanded",
+        initial_sidebar_state="collapsed",
     )
     inject_css()
     render_header()
-    season_label, game_type = render_global_sidebar()
+    season_label, game_type = render_global_filters()
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
 
     (player_list_tab, player_detail_tab, goalie_list_tab, goalie_detail_tab,
