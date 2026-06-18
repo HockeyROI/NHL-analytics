@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Team NFI% verification + attack/suppression per-game pull, 2025-26.
+Team NFI% verification + attack/suppression per-game pull, all seasons
+2022-23..2025-26 (identical definition per season; 2025-26 unchanged).
 
 Methodology:
   - Source: post-audit raw events file (nhl_shot_events.v2.csv, 4-season pool
     2022-23..2025-26)
-  - Season filter: 20252026
+  - Seasons: 20222023, 20232024, 20242025, 20252026 (one row-block each)
   - State filter: 5v5 ES (situation_code = 1551, which guarantees no empty net)
   - Period filter: regulation only (1-3)
   - Event filter: Fenwick (shot-on-goal + missed-shot + goal); blocked-shot
@@ -26,7 +27,9 @@ import pandas as pd
 ROOT = Path("/Users/ashgarg/Documents/HockeyROI")
 SHOT_CSV = ROOT / "Data" / "nhl_shot_events.v2.csv"
 TLM_CSV = ROOT / "NFI" / "output" / "team_level_all_metrics.csv"
-OUT_CSV = ROOT / "Output" / "team_nfi_verification_and_attack_suppress.csv"
+# Write to the Streamlit app's read path (NFI/output/), not the legacy
+# top-level Output/ dir, so the Teams tab picks up all seasons directly.
+OUT_CSV = ROOT / "NFI" / "output" / "team_nfi_verification_and_attack_suppress.csv"
 
 PRE_AUDIT = {
     "COL":0.5690,"OTT":0.5536,"CAR":0.5521,"VGK":0.5479,"TBL":0.5466,
@@ -64,89 +67,119 @@ df = pd.read_csv(SHOT_CSV,
                  dtype={"season":str,"situation_code":str})
 print(f"  raw rows loaded: {len(df):,}")
 
-# Filter to 2025-26 regulation 5v5 ES
-# Bug fix May 2026: add game_type filter to prevent playoff contamination for prior-season extensions.
-sub = df[(df["season"]=="20252026") & (df["game_type"]=="regular") &
-         (df["period"].between(1,3)) & (df["situation_code"].astype(str)=="1551")].copy()
-print(f"  after season/period/state filter (5v5 ES, reg, 2025-26): {len(sub):,}")
-
-# Event-type counts BEFORE Fenwick filter
-print(f"\n  Event type breakdown (pre-Fenwick filter):")
-for et, n in sub["event_type"].value_counts().items():
-    print(f"    {et:<14} {n:,}")
-
-# Fenwick filter (drop blocked-shot)
-fen = sub[sub["event_type"].isin(["shot-on-goal","missed-shot","goal"])].copy()
-fen = fen.dropna(subset=["x_coord_norm","y_coord_norm"])
-print(f"\n  Fenwick (SOG + missed + goal): {len(fen):,}")
-
-# Zone classification (NO blocks → no abs() coordinate fix needed; SOG/missed/
-# goal events have correct coords)
-fen["abs_y"] = fen["y_coord_norm"].abs()
-fen["zone"] = np.where(
-    (fen["x_coord_norm"].between(74, 89)) & (fen["abs_y"] <= 9), "CNFI",
-    np.where((fen["x_coord_norm"].between(55, 73)) & (fen["abs_y"] <= 15), "MNFI",
-    np.where((fen["x_coord_norm"].between(25, 54)) & (fen["abs_y"] <= 15), "FNFI", "OTHER")))
-
-print(f"\n  Zone tally (post-coord-filter, Fenwick):")
-for z, n in fen["zone"].value_counts().items():
-    print(f"    {z:<8} {n:,}")
-
-# Defending team (the team that did NOT shoot)
-fen["_shoot_home"] = fen["shooting_team_id"]==fen["home_team_id"]
-fen["defending_team_abbrev"] = np.where(fen["_shoot_home"],
-                                          fen["away_team_abbrev"],
-                                          fen["home_team_abbrev"])
-
-# Restrict to CNFI + MNFI only (FNFI explicitly excluded)
-cmnfi = fen[fen["zone"].isin(["CNFI","MNFI"])].copy()
-print(f"\n  CNFI + MNFI only (FNFI excluded): {len(cmnfi):,}")
-print(f"  FNFI events excluded: {(fen['zone']=='FNFI').sum():,}")
-print(f"  → FNFI events excluded: yes")
-
-# ----- Per-team aggregation -----
-attack = cmnfi.groupby("shooting_team_abbrev").size().rename("attack_count").reset_index()\
-              .rename(columns={"shooting_team_abbrev":"team"})
-suppress = cmnfi.groupby("defending_team_abbrev").size().rename("suppress_count").reset_index()\
-                .rename(columns={"defending_team_abbrev":"team"})
-
-# GP from team_level_all_metrics
+# GP from team_level_all_metrics (loaded once, sliced per season in the loop)
 tlm = pd.read_csv(TLM_CSV, dtype={"season":str})
-gp_2526 = tlm[tlm["season"]=="20252026"][["team","gp"]].copy()
 
-m = gp_2526.merge(attack, on="team", how="left").merge(suppress, on="team", how="left")
-m[["attack_count","suppress_count"]] = m[["attack_count","suppress_count"]].fillna(0).astype(int)
-m["total_events"] = m["attack_count"] + m["suppress_count"]
-m["attack_per_game"] = m["attack_count"] / m["gp"]
-m["suppress_per_game"] = m["suppress_count"] / m["gp"]
-m["team_nfi_pct_post_audit"] = m["attack_count"] / m["total_events"]
-m["team_nfi_pct_pre_audit"] = m["team"].map(PRE_AUDIT)
-m["delta_value"] = m["team_nfi_pct_post_audit"] - m["team_nfi_pct_pre_audit"]
+# Process every season with the IDENTICAL definition. 2025-26 stays byte-
+# identical to the prior single-season output; the prior three seasons are
+# added. `m` / `fen` are left holding the last (2025-26) season for the
+# verification reporting block that follows.
+SEASONS = ["20222023", "20232024", "20242025", "20252026"]
+all_m = []
+m = None
+fen = None
 
-# Ranks
-m = m.sort_values("team_nfi_pct_post_audit", ascending=False).reset_index(drop=True)
-m["post_audit_rank"] = m["team_nfi_pct_post_audit"].rank(ascending=False, method="min").astype(int)
-pre_rank = (pd.Series(PRE_AUDIT).sort_values(ascending=False).rank(ascending=False, method="min").astype(int))
-m["pre_audit_rank"] = m["team"].map(pre_rank.to_dict())
-m["delta_rank"] = m["post_audit_rank"] - m["pre_audit_rank"]
+for season in SEASONS:
+    # Filter to <season> regulation 5v5 ES.
+    # game_type filter prevents playoff contamination (needed for prior seasons).
+    sub = df[(df["season"]==season) & (df["game_type"]=="regular") &
+             (df["period"].between(1,3)) & (df["situation_code"].astype(str)=="1551")].copy()
+    print(f"\n[{season}] after season/period/state filter (5v5 ES, reg): {len(sub):,}")
 
-# CNFI+MNFI-only column from CSV: TLM does not have one. Document that.
-m["nfi_pct_in_csv"] = np.nan
-m["csv_match_check"] = "N/A — no CNFI+MNFI-only share column in team_level_all_metrics; recomputed from raw counts"
+    # Event-type counts BEFORE Fenwick filter
+    print(f"  Event type breakdown (pre-Fenwick filter):")
+    for et, n in sub["event_type"].value_counts().items():
+        print(f"    {et:<14} {n:,}")
 
-# Reorder columns
-m = m.rename(columns={"gp":"games_played"})
-cols = ["team","games_played","attack_count","suppress_count","total_events",
-        "attack_per_game","suppress_per_game",
-        "team_nfi_pct_post_audit","team_nfi_pct_pre_audit","delta_value",
-        "post_audit_rank","pre_audit_rank","delta_rank",
-        "nfi_pct_in_csv","csv_match_check"]
-m = m[cols]
-m = m.sort_values("post_audit_rank").reset_index(drop=True)
+    # Fenwick filter (drop blocked-shot)
+    fen = sub[sub["event_type"].isin(["shot-on-goal","missed-shot","goal"])].copy()
+    fen = fen.dropna(subset=["x_coord_norm","y_coord_norm"])
+    print(f"  Fenwick (SOG + missed + goal): {len(fen):,}")
 
+    # Zone classification (NO blocks → no abs() coordinate fix needed; SOG/missed/
+    # goal events have correct coords)
+    fen["abs_y"] = fen["y_coord_norm"].abs()
+    fen["zone"] = np.where(
+        (fen["x_coord_norm"].between(74, 89)) & (fen["abs_y"] <= 9), "CNFI",
+        np.where((fen["x_coord_norm"].between(55, 73)) & (fen["abs_y"] <= 15), "MNFI",
+        np.where((fen["x_coord_norm"].between(25, 54)) & (fen["abs_y"] <= 15), "FNFI", "OTHER")))
+
+    print(f"  Zone tally (post-coord-filter, Fenwick):")
+    for z, n in fen["zone"].value_counts().items():
+        print(f"    {z:<8} {n:,}")
+
+    # Defending team (the team that did NOT shoot)
+    fen["_shoot_home"] = fen["shooting_team_id"]==fen["home_team_id"]
+    fen["defending_team_abbrev"] = np.where(fen["_shoot_home"],
+                                              fen["away_team_abbrev"],
+                                              fen["home_team_abbrev"])
+
+    # Restrict to CNFI + MNFI only (FNFI explicitly excluded)
+    cmnfi = fen[fen["zone"].isin(["CNFI","MNFI"])].copy()
+    print(f"  CNFI + MNFI only (FNFI excluded): {len(cmnfi):,} "
+          f"| FNFI events excluded: {(fen['zone']=='FNFI').sum():,}")
+
+    # ----- Per-team aggregation -----
+    attack = cmnfi.groupby("shooting_team_abbrev").size().rename("attack_count").reset_index()\
+                  .rename(columns={"shooting_team_abbrev":"team"})
+    suppress = cmnfi.groupby("defending_team_abbrev").size().rename("suppress_count").reset_index()\
+                    .rename(columns={"defending_team_abbrev":"team"})
+
+    gp_season = tlm[tlm["season"]==season][["team","gp"]].copy()
+
+    m = gp_season.merge(attack, on="team", how="left").merge(suppress, on="team", how="left")
+    m[["attack_count","suppress_count"]] = m[["attack_count","suppress_count"]].fillna(0).astype(int)
+    m["total_events"] = m["attack_count"] + m["suppress_count"]
+    m["attack_per_game"] = m["attack_count"] / m["gp"]
+    m["suppress_per_game"] = m["suppress_count"] / m["gp"]
+    m["team_nfi_pct_post_audit"] = m["attack_count"] / m["total_events"]
+
+    # Per-season post-audit rank is always valid.
+    m = m.sort_values("team_nfi_pct_post_audit", ascending=False).reset_index(drop=True)
+    m["post_audit_rank"] = m["team_nfi_pct_post_audit"].rank(ascending=False, method="min").astype(int)
+
+    # PRE_AUDIT comparison columns are a 2025-26 snapshot only — leave NaN for
+    # prior seasons (the attack/suppress/per_game columns are what matter and are
+    # correct for every season).
+    if season == "20252026":
+        m["team_nfi_pct_pre_audit"] = m["team"].map(PRE_AUDIT)
+        m["delta_value"] = m["team_nfi_pct_post_audit"] - m["team_nfi_pct_pre_audit"]
+        pre_rank = (pd.Series(PRE_AUDIT).sort_values(ascending=False)
+                    .rank(ascending=False, method="min").astype(int))
+        m["pre_audit_rank"] = m["team"].map(pre_rank.to_dict())
+        m["delta_rank"] = m["post_audit_rank"] - m["pre_audit_rank"]
+    else:
+        m["team_nfi_pct_pre_audit"] = np.nan
+        m["delta_value"] = np.nan
+        m["pre_audit_rank"] = np.nan
+        m["delta_rank"] = np.nan
+
+    # CNFI+MNFI-only column from CSV: TLM does not have one. Document that.
+    m["nfi_pct_in_csv"] = np.nan
+    m["csv_match_check"] = "N/A — no CNFI+MNFI-only share column in team_level_all_metrics; recomputed from raw counts"
+
+    # Rank columns → nullable Int64 so 2025-26 stays integer and prior-season
+    # blanks render as empty (not "5.0") in the combined CSV.
+    for c in ("post_audit_rank", "pre_audit_rank", "delta_rank"):
+        m[c] = m[c].astype("Int64")
+
+    # Reorder columns (season first)
+    m = m.rename(columns={"gp":"games_played"})
+    m["season"] = season
+    cols = ["season","team","games_played","attack_count","suppress_count","total_events",
+            "attack_per_game","suppress_per_game",
+            "team_nfi_pct_post_audit","team_nfi_pct_pre_audit","delta_value",
+            "post_audit_rank","pre_audit_rank","delta_rank",
+            "nfi_pct_in_csv","csv_match_check"]
+    m = m[cols]
+    m = m.sort_values("post_audit_rank").reset_index(drop=True)
+    all_m.append(m)
+
+# Combine all seasons → single file at the app's read path.
+combined = pd.concat(all_m, ignore_index=True)
 OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
-m.to_csv(OUT_CSV, index=False)
-print(f"\nWrote: {OUT_CSV}")
+combined.to_csv(OUT_CSV, index=False)
+print(f"\nWrote {len(combined)} rows ({len(SEASONS)} seasons) → {OUT_CSV}")
 
 # ============================================================================
 # Reporting
