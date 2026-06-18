@@ -416,7 +416,7 @@ def render_header() -> None:
         </div>
         <div class="tagline">NHL Net-Front Impact, Zone Impact, Quality Games &amp; Quality Starts (GSAx)</div>
         <div style="color:#888888; font-size:0.85rem; margin-top:0.15rem;">
-          <a href="https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md" style="color:#2E7DC4;">methodology on GitHub</a>
+          <a href="https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md" style="color:#2E7DC4;">Methodology on GitHub</a>
         </div>
         """,
         unsafe_allow_html=True,
