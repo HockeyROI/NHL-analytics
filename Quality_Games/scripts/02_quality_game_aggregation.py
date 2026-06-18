@@ -65,6 +65,17 @@ MIN_TOI_SEC = 480     # 8 min
 MIN_ATTEMPTS = 5      # for + against, both included
 TEAM_GP_FLOOR = 20    # 20+ GP with that team in that season
 
+# Playoff scope — mirror of script 01's QG_SCOPE. Reads per_player_game_playoffs,
+# writes *_playoffs outputs (per playoff season + an `all_playoffs` pooled row),
+# and drops the team-GP exclusion floor (playoff runs are short; the Streamlit
+# slider does the thresholding). The per-game qualifying floor (TOI>=480 &
+# attempts>=5) is the QG metric's own definition and is retained.
+SCOPE = os.environ.get("QG_SCOPE", "regular")
+_IS_PLAYOFF = SCOPE == "playoff"
+_SUF = "_playoffs" if _IS_PLAYOFF else ""
+if _IS_PLAYOFF:
+    TEAM_GP_FLOOR = 1     # no exclusion floor — any team with playoff games
+
 LOG_PATH = f"{OUT_DIR}/diagnostic_log.txt"
 _log_fh = open(LOG_PATH, "a")
 
@@ -94,7 +105,7 @@ log("-" * 78)
 log("STEP 1 — Load per_player_game.csv + apply per-game qualifying floor")
 log("-" * 78)
 
-df = pd.read_csv(f"{OUT_DIR}/per_player_game.csv")
+df = pd.read_csv(f"{OUT_DIR}/per_player_game{_SUF}.csv")
 log(f"  Loaded {len(df):,} rows  ({df.groupby(['player_id','season']).ngroups:,} player-seasons, "
     f"{df.groupby(['player_id','season','team_abbrev']).ngroups:,} player-season-teams)")
 
@@ -175,7 +186,7 @@ pm_df = pd.DataFrame([
     {'position': 'F', 'metric': 'NFI', 'median': medians[('F', 'NFI')], 'n_qualifying_games': int(qual_known[qual_known.position=='F'].NFI_pct_game.notna().sum())},
     {'position': 'D', 'metric': 'NFI', 'median': medians[('D', 'NFI')], 'n_qualifying_games': int(qual_known[qual_known.position=='D'].NFI_pct_game.notna().sum())},
 ])
-pm_path = f"{OUT_DIR}/position_medians.csv"
+pm_path = f"{OUT_DIR}/position_medians{_SUF}.csv"
 pm_df.to_csv(pm_path, index=False)
 log(f"  Wrote: {pm_path}")
 log()
@@ -244,7 +255,7 @@ for c in ['qualifying_GP','xG_QG_count','xG_qual_GP','NFI_qual_GP']:
     pst[c] = pst[c].astype(int)
 pst['NFI_QG_count'] = pst['NFI_QG_count'].astype(float)
 
-pst_path = f"{OUT_DIR}/per_player_season_team.csv"
+pst_path = f"{OUT_DIR}/per_player_season_team{_SUF}.csv"
 pst.to_csv(pst_path, index=False)
 log(f"  Wrote: {pst_path}  ({len(pst):,} rows)")
 log(f"  Distinct (player_id, season) reached via these rows: "
@@ -258,17 +269,27 @@ log("-" * 78)
 log("STEP 6 — Per (player_id, season) aggregation")
 log("-" * 78)
 
-ps = pst.groupby(['player_id', 'season']).agg(
-    position=('position', lambda x: x.mode().iloc[0] if not x.mode().empty else ''),
-    GP=('GP', 'sum'),
-    TOI_total_sec=('TOI_total_sec', 'sum'),
-    qualifying_GP=('qualifying_GP', 'sum'),
-    xG_QG_count=('xG_QG_count', 'sum'),
-    xG_qual_GP=('xG_qual_GP', 'sum'),
-    NFI_QG_count=('NFI_QG_count', 'sum'),
-    NFI_qual_GP=('NFI_qual_GP', 'sum'),
-    teams_in_season=('team_abbrev', lambda x: ','.join(sorted(set(x)))),
-).reset_index()
+def _player_agg(keys, season_label=None):
+    g = pst.groupby(keys).agg(
+        position=('position', lambda x: x.mode().iloc[0] if not x.mode().empty else ''),
+        GP=('GP', 'sum'),
+        TOI_total_sec=('TOI_total_sec', 'sum'),
+        qualifying_GP=('qualifying_GP', 'sum'),
+        xG_QG_count=('xG_QG_count', 'sum'),
+        xG_qual_GP=('xG_qual_GP', 'sum'),
+        NFI_QG_count=('NFI_QG_count', 'sum'),
+        NFI_qual_GP=('NFI_qual_GP', 'sum'),
+        teams_in_season=('team_abbrev', lambda x: ','.join(sorted(set(x)))),
+    ).reset_index()
+    if season_label is not None:
+        g['season'] = season_label
+    return g
+
+
+ps = _player_agg(['player_id', 'season'])
+if _IS_PLAYOFF:
+    # Pooled all_playoffs row per player: sum counts across playoff seasons.
+    ps = pd.concat([ps, _player_agg(['player_id'], 'all_playoffs')], ignore_index=True)
 
 ps['xG_QG_pct']  = np.where(ps.xG_qual_GP  > 0, ps.xG_QG_count  / ps.xG_qual_GP,  np.nan)
 ps['NFI_QG_pct'] = np.where(ps.NFI_qual_GP > 0, ps.NFI_QG_count / ps.NFI_qual_GP, np.nan)
@@ -282,7 +303,7 @@ if len(ps_blank) > 0:
     log("  Dropping these from per_player_season output.")
 ps = ps[ps.position.isin(['F','D'])].copy()
 
-ps_path = f"{OUT_DIR}/per_player_season.csv"
+ps_path = f"{OUT_DIR}/per_player_season{_SUF}.csv"
 ps_out = ps[['player_id','season','position','teams_in_season',
               'GP','qualifying_GP','TOI_total_sec',
               'xG_QG_count','xG_qual_GP','xG_QG_pct',
@@ -333,9 +354,35 @@ for (team, season), grp in elig.groupby(['team_abbrev', 'season']):
         'total_team_TOI_sec': int(grp.TOI_total_sec.sum()),
         'total_team_TOI_min': round(grp.TOI_total_sec.sum() / 60, 1),
     })
-team_df = pd.DataFrame(team_rows).sort_values(['season', 'team_abbrev']).reset_index(drop=True)
+if _IS_PLAYOFF:
+    # Pooled all_playoffs team rows: sum each player's GP/TOI-with-team across
+    # playoff seasons, weight by the player's all_playoffs rate.
+    pst_pool = pst.groupby(['player_id', 'team_abbrev']).agg(
+        GP=('GP', 'sum'), TOI_total_sec=('TOI_total_sec', 'sum')).reset_index()
+    pool_rates = ps[ps.season == 'all_playoffs'][['player_id', 'xG_QG_pct', 'NFI_QG_pct']]
+    pst_pool = pst_pool.merge(pool_rates, on='player_id', how='inner')
+    elig_pool = pst_pool[pst_pool.GP >= TEAM_GP_FLOOR].copy()
+    log(f"  pooled all_playoffs (player, team) rows: total={len(pst_pool):,}  "
+        f"eligible (GP>={TEAM_GP_FLOOR}): {len(elig_pool):,}")
+    for team, grp in elig_pool.groupby('team_abbrev'):
+        team_rows.append({
+            'team_abbrev': team,
+            'season': 'all_playoffs',
+            'team_xG_QG_pct': toi_weighted_mean(grp, 'xG_QG_pct'),
+            'team_NFI_QG_pct': toi_weighted_mean(grp, 'NFI_QG_pct'),
+            'n_eligible_players': int(len(grp)),
+            'n_with_valid_xG':  int(grp.xG_QG_pct.notna().sum()),
+            'n_with_valid_NFI': int(grp.NFI_QG_pct.notna().sum()),
+            'total_team_TOI_sec': int(grp.TOI_total_sec.sum()),
+            'total_team_TOI_min': round(grp.TOI_total_sec.sum() / 60, 1),
+        })
 
-ts_path = f"{OUT_DIR}/per_team_season.csv"
+team_df = pd.DataFrame(team_rows)
+if _IS_PLAYOFF:
+    team_df['season'] = team_df['season'].astype(str)  # mixed int + 'all_playoffs'
+team_df = team_df.sort_values(['season', 'team_abbrev']).reset_index(drop=True)
+
+ts_path = f"{OUT_DIR}/per_team_season{_SUF}.csv"
 team_df.to_csv(ts_path, index=False)
 log(f"  Wrote: {ts_path}  ({len(team_df):,} rows)")
 log(f"  Per-season team counts: {team_df.groupby('season').size().to_dict()}")

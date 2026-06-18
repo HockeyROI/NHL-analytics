@@ -64,6 +64,20 @@ HR_MATCH_FLOOR = 0.99   # sanity gate threshold for MP→HR join match rate
 
 NFI_ZONES = {"CNFI", "MNFI"}
 
+# Scope: "regular" (default, byte-identical) or "playoff" (QG_SCOPE=playoff).
+SCOPE = os.environ.get("QG_SCOPE", "regular")
+_IS_PLAYOFF = SCOPE == "playoff"
+_GTYPE_FLAG = 1 if _IS_PLAYOFF else 0        # MoneyPuck isPlayoffGame
+_GID_DIGITS = "03" if _IS_PLAYOFF else "02"  # HR game_id digits 4-5
+_OUT_SUFFIX = "_playoffs" if _IS_PLAYOFF else ""
+if _IS_PLAYOFF:
+    HR_MATCH_FLOOR = 0.85  # smaller playoff samples → relax the MP→HR gate
+    # HR shots_tagged has playoff data only through 2024-25; MoneyPuck's
+    # shots_2025 carries 2025-26 playoff shots that HR can't join. Restrict.
+    MP_SEASONS = [2022, 2023, 2024]
+    HR_SEASON = {k: v for k, v in HR_SEASON.items() if k in MP_SEASONS}
+    HR_SEASONS_SET = set(HR_SEASON.values())
+
 
 def classify_zone(x, y):
     """Lifted verbatim from 03_onice_attribution_pillars.py lines 71-82."""
@@ -129,7 +143,7 @@ for sy in MP_SEASONS:
     df = pd.read_csv(path, usecols=mp_keep_cols)
     n0 = len(df)
     mask = (
-        (df.isPlayoffGame == 0)
+        (df.isPlayoffGame == _GTYPE_FLAG)
         & df.event.isin(['SHOT', 'MISS', 'GOAL'])
         & df.period.between(1, 3)
         & (df.homeSkatersOnIce == 5) & (df.awaySkatersOnIce == 5)
@@ -178,7 +192,7 @@ n0 = len(hr_all)
 hr = hr_all[
     hr_all.season.isin(HR_SEASONS_SET)
     & hr_all.period.between(1, 3)
-    & (hr_all.game_id.astype(str).str[4:6] == '02')
+    & (hr_all.game_id.astype(str).str[4:6] == _GID_DIGITS)
 ].copy()
 hr['game_id'] = hr.game_id.astype(int)
 log(f"  shots_tagged.csv: {n0:,} → {len(hr):,} after 4-season+reg+period filter")
@@ -521,7 +535,7 @@ for (pid, gid) in all_keys:
 
 out_df = pd.DataFrame(rows).sort_values(['season', 'game_id', 'player_id']) \
                             .reset_index(drop=True)
-out_path = f"{OUT_DIR}/per_player_game.csv"
+out_path = f"{OUT_DIR}/per_player_game{_OUT_SUFFIX}.csv"
 out_df.to_csv(out_path, index=False)
 log(f"  Wrote: {out_path}  ({len(out_df):,} rows)")
 log(f"  Goalies dropped at emit: {n_goalie_dropped}")
