@@ -566,7 +566,7 @@ SEASON_KEY = {
     "2023-24": "20232024",
     "2022-23": "20222023",
     "2yr (2024–2026)": "pooled_2yr",
-    "Pooled (4yr)": "pooled",
+    "4yr (2022-2026)": "pooled",
 }
 
 # Seasons covered by the "2yr (2024–2026)" pooled-style view. Loaders that
@@ -1372,7 +1372,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
     # re-derived denominators (not a season average), so fall back gracefully.
     if SEASON_KEY.get(season_label) == "pooled_2yr":
         st.info("2-season (2024–2026) goalie view isn't available yet — pick a "
-                "single season or the full Pooled (4yr) view.")
+                "single season or the full 4yr (2022-2026) view.")
         return
 
     is_pooled = SEASON_KEY.get(season_label, "pooled") == "pooled"
