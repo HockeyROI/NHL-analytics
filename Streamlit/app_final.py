@@ -1020,9 +1020,112 @@ def _render_player_profile(pid: int) -> None:
     _chart("Quality Games % (NFI_QG%, xG_QG%)", qg_cols)
 
 
-def _build_players_frame(season_label: str) -> tuple[pd.DataFrame, bool]:
+# ===========================================================================
+# Playoff loaders — every producer wrote per playoff season PLUS an
+# `all_playoffs` pooled row. The app shows only the pooled view (per the spec);
+# the Min-TOI / Min-Shots sliders do the thresholding. Each loader returns the
+# all_playoffs rows in the same schema its regular counterpart yields.
+# NOTE: the playoff player NFI build never derived the team-relative RelNFI
+# family (RelNFI%/-A%/-S% are NaN for every playoff row), so the playoff Players
+# view omits those columns and sorts by NFI% instead.
+# ===========================================================================
+PLAYOFF_SCOPE = "all_playoffs"
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_nfi_player_playoffs() -> pd.DataFrame:
+    fp = NFI_ADJ / "player_fully_adjusted_playoffs.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    if "toi_min" not in df.columns and "toi_sec" in df.columns:
+        df["toi_min"] = df["toi_sec"] / 60
+    return df[df["season"] == PLAYOFF_SCOPE].copy()
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qg_player_playoffs() -> pd.DataFrame:
+    fp = REPO_ROOT / "Quality_Games" / "output" / "per_player_season_playoffs.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    df = df[df["season"] == PLAYOFF_SCOPE].copy()
+    if "player_id" in df.columns:
+        df["player_id"] = df["player_id"].astype("Int64")
+    return df
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_as_counts_playoffs() -> pd.DataFrame:
+    """Raw attack/suppress per-60 (ES CNFI+MNFI on-ice for/against) per player,
+    pooled all_playoffs, by ratio-of-sums — mirrors _as_rates."""
+    fp = REPO_ROOT / "NFI" / "output" / "player_counts_by_state_zone_playoffs.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    df = df[(df["season"] == PLAYOFF_SCOPE) & (df["state"] == "ES")
+            & (df["zone"].isin(["CNFI", "MNFI"]))].copy()
+    if df.empty:
+        return pd.DataFrame()
+    g = df.groupby("player_id").agg(
+        for_att=("onice_for_att", "sum"),
+        ag_att=("onice_ag_att", "sum"),
+        es_toi_min=("toi_min", "first"),   # ES TOI constant across CNFI/MNFI rows
+    ).reset_index()
+    ok = g["es_toi_min"] > 0
+    g["NFI_A_rate"] = np.where(ok, g["for_att"] / g["es_toi_min"] * 60.0, np.nan)
+    g["NFI_S_rate"] = np.where(ok, g["ag_att"] / g["es_toi_min"] * 60.0, np.nan)
+    return g[["player_id", "NFI_A_rate", "NFI_S_rate"]]
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_zone_playoffs() -> pd.DataFrame:
+    """Name-keyed playoff NZI/DZI/OZI for the all_playoffs pool, (player_name,
+    _pos_group)-keyed exactly like load_zone_pooled."""
+    zp = ZONES / "output" / "playoffs"
+    frames = []
+    for pos_file, grp in (("forwards", "F"), ("defense", "D")):
+        fp = zp / f"tnzi_adjusted_{pos_file}_playoffs.csv"
+        if not fp.exists():
+            continue
+        d = pd.read_csv(fp)
+        d["season"] = d["season"].astype(str)
+        d = d[d["season"] == PLAYOFF_SCOPE]
+        keep = [c for c in ("player_name", "NZI", "DZI", "OZI") if c in d.columns]
+        d = d[keep].copy()
+        d["_pos_group"] = grp
+        frames.append(d)
+    if not frames:
+        return pd.DataFrame()
+    z = pd.concat(frames, ignore_index=True)
+    return z.drop_duplicates(subset=["player_name", "_pos_group"], keep="first")
+
+
+def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.DataFrame, bool]:
     """Return (long per-player frame, is_pooled). NFI + QG, plus NZI/DZI/OZI in
     the pooled view only (zone data has no season axis)."""
+    if playoffs:
+        nfi = load_nfi_player_playoffs()
+        if nfi.empty:
+            return pd.DataFrame(), True
+        base = nfi.copy()
+        qg = load_qg_player_playoffs()
+        if not qg.empty:
+            qcols = ["player_id", "GP", "qualifying_GP", "xG_QG_pct", "NFI_QG_pct"]
+            base = base.merge(qg[[c for c in qcols if c in qg.columns]],
+                              on="player_id", how="left")
+        zone = load_zone_playoffs()
+        if not zone.empty:
+            base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
+            base = base.merge(zone, on=["player_name", "_pos_group"], how="left")
+        as_df = load_as_counts_playoffs()
+        if not as_df.empty:
+            base = base.merge(as_df, on="player_id", how="left")
+        return base, True
+
     nfi = load_nfi_player()
     if nfi.empty:
         return pd.DataFrame(), False
@@ -1073,23 +1176,29 @@ def render_players(season_label: str, game_type: str) -> None:
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Player List</h2>",
         unsafe_allow_html=True,
     )
-    if game_type == "Playoffs":
-        st.info("Playoff player metrics — coming soon.")
-        return
-
-    frame, is_pooled = _build_players_frame(season_label)
+    playoffs = game_type == "Playoffs"
+    scope_label = "all playoffs (2022-2025 pooled)" if playoffs else season_label
+    if playoffs:
+        st.caption("Playoff view — all playoff games (2022-23 → 2024-25) pooled. "
+                   "Use the Min ES TOI slider to threshold small samples.")
+    frame, is_pooled = _build_players_frame(season_label, playoffs=playoffs)
     if frame.empty:
         st.error("Player data not found "
-                 "(`NFI/output/fully_adjusted/player_fully_adjusted.csv`).")
+                 "(`NFI/output/fully_adjusted/player_fully_adjusted"
+                 f"{'_playoffs' if playoffs else ''}.csv`).")
         return
 
     c1, c2, c3 = st.columns([1.0, 1.6, 1.3])
     with c1:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
     with c2:
-        toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
-        default_toi = 2000 if is_pooled else 500
-        min_toi = st.slider("Min ES TOI (min)", 0, 7500, default_toi, 50, key=toi_key)
+        if playoffs:
+            min_toi = st.slider("Min ES TOI (min)", 0, 1500, 100, 25,
+                                key="players_toi_playoffs")
+        else:
+            toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
+            default_toi = 2000 if is_pooled else 500
+            min_toi = st.slider("Min ES TOI (min)", 0, 7500, default_toi, 50, key=toi_key)
     with c3:
         team_opts = ["All"] + sorted(frame["team"].dropna().unique().tolist())
         team_sel = st.selectbox("Team", team_opts, key="players_team")
@@ -1111,7 +1220,8 @@ def render_players(season_label: str, game_type: str) -> None:
         )
         return
 
-    df = df.sort_values("RelNFI_pct", ascending=False, na_position="last").reset_index(drop=True)
+    _sort_col = "NFI_pct" if playoffs else "RelNFI_pct"
+    df = df.sort_values(_sort_col, ascending=False, na_position="last").reset_index(drop=True)
     # Storage → display: RelNFI_F (attack / for) shows as "RelNFI-A%",
     # RelNFI_A (suppress / against) shows as "RelNFI-S%". Do NOT sign-flip — the
     # underlying _F/_A columns are unchanged; only the display labels swap A/S.
@@ -1131,6 +1241,10 @@ def render_players(season_label: str, game_type: str) -> None:
     cols = ["Player", "Pos", "Team", "GP", "TOI", "NFI%", "RelNFI%", "RelNFI-A%",
             "RelNFI-S%", "NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI",
             "xG_QG%", "NFI_QG%"]
+    # The playoff NFI build has no team-relative RelNFI family — drop those empty
+    # columns in playoff mode (sort is by NFI% there).
+    if playoffs:
+        cols = [c for c in cols if c not in ("RelNFI%", "RelNFI-A%", "RelNFI-S%")]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
@@ -1166,16 +1280,57 @@ def render_players(season_label: str, game_type: str) -> None:
     _sort_hint()
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
-    if SEASON_KEY.get(season_label) == "pooled_2yr":
+    if playoffs:
+        zone_note = " · NZI/DZI/OZI pooled across playoffs · RelNFI not available for playoffs"
+    elif SEASON_KEY.get(season_label) == "pooled_2yr":
         zone_note = " · NZI/DZI/OZI pooled 2024-25 + 2025-26"
     elif is_pooled:
         zone_note = " · NZI/DZI/OZI pooled across all seasons"
     else:
         zone_note = " · NZI/DZI/OZI for this season"
+    _sort_desc = "NFI%" if playoffs else "RelNFI%"
     st.caption(
-        f"{len(disp):,} players · {season_label} · sorted by RelNFI% descending · "
+        f"{len(disp):,} players · {scope_label} · sorted by {_sort_desc} descending · "
         f"min {min_toi:,} ES min{zone_note}"
     )
+
+
+def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
+    """Pooled all-playoffs metric summary for one player (the playoff Detail view
+    — no per-season trend; playoff producers publish the pooled view)."""
+    row = frame[frame["player_id"] == pid]
+    if row.empty:
+        st.info("No pooled playoff data for this player.")
+        return
+    r = row.iloc[0]
+
+    def _f(col, kind):
+        v = r.get(col)
+        if pd.isna(v):
+            return "—"
+        if kind == "pct":
+            return f"{v * 100:.1f}%"
+        if kind == "rate":
+            return f"{v:.1f}"
+        if kind == "toi":
+            return f"{v:,.0f}"
+        return f"{v}"
+
+    items = [
+        ("NFI%", _f("NFI_pct", "pct")),
+        ("NFI-A/60", _f("NFI_A_rate", "rate")),
+        ("NFI-S/60", _f("NFI_S_rate", "rate")),
+        ("NZI", _f("NZI", "rate")),
+        ("DZI", _f("DZI", "rate")),
+        ("OZI", _f("OZI", "rate")),
+        ("xG_QG%", _f("xG_QG_pct", "pct")),
+        ("NFI_QG%", _f("NFI_QG_pct", "pct")),
+        ("ES TOI (min)", _f("toi_min", "toi")),
+    ]
+    st.caption(f"**{r['player_name']} ({r['position']})** · pooled playoffs "
+               "(2022-23 → 2024-25). RelNFI is not available for playoffs.")
+    st.dataframe(pd.DataFrame(items, columns=["Metric", "Value"]),
+                 width="stretch", hide_index=True)
 
 
 def render_player_detail(season_label: str, game_type: str) -> None:
@@ -1186,13 +1341,12 @@ def render_player_detail(season_label: str, game_type: str) -> None:
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Player Detail</h2>",
         unsafe_allow_html=True,
     )
-    if game_type == "Playoffs":
-        st.info("Playoff player metrics — coming soon.")
-        return
-    frame, _ = _build_players_frame(season_label)
+    playoffs = game_type == "Playoffs"
+    frame, _ = _build_players_frame(season_label, playoffs=playoffs)
     if frame.empty:
         st.error("Player data not found "
-                 "(`NFI/output/fully_adjusted/player_fully_adjusted.csv`).")
+                 "(`NFI/output/fully_adjusted/player_fully_adjusted"
+                 f"{'_playoffs' if playoffs else ''}.csv`).")
         return
     popts = (frame[["player_id", "player_name", "position"]]
              .dropna(subset=["player_id"]).drop_duplicates("player_id")
@@ -1200,14 +1354,20 @@ def render_player_detail(season_label: str, game_type: str) -> None:
     pid_list = [int(x) for x in popts["player_id"].tolist()]
     plabel = {int(r.player_id): f"{r.player_name} ({r.position})"
               for r in popts.itertuples()}
+    _prompt = ("Select a player for their pooled playoff profile"
+               if playoffs else
+               "Select a player for a per-season trend (2022-23 → 2025-26)")
     sel = st.selectbox(
-        "Select a player for a per-season trend (2022-23 → 2025-26)",
-        pid_list, index=None, placeholder="— select a player —",
+        _prompt, pid_list, index=None, placeholder="— select a player —",
         format_func=lambda i: plabel.get(i, str(i)), key="players_profile")
-    if sel is not None:
-        _render_player_profile(int(sel))
+    if sel is None:
+        st.caption("Pick a player to see their "
+                   + ("pooled playoff metrics." if playoffs
+                      else "season-by-season trend and charts."))
+    elif playoffs:
+        _render_player_playoff_summary(frame, int(sel))
     else:
-        st.caption("Pick a player to see their season-by-season trend and charts.")
+        _render_player_profile(int(sel))
 
 
 # ---------------------------------------------------------------------------
@@ -1308,13 +1468,113 @@ def _team_nfi_share(df: pd.DataFrame) -> np.ndarray:
     return np.where(denom > 0, ffor / denom, np.nan)
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_team_playoffs() -> pd.DataFrame:
+    """Pooled all_playoffs team NFI% + Attack/Suppress events (per game) from
+    team_nfi_verification_and_attack_suppress_playoffs.csv. NFI% is the
+    post-audit CNFI+MNFI share (fraction), Attack/Suppress are per-game counts."""
+    fp = REPO_ROOT / "NFI" / "output" / "team_nfi_verification_and_attack_suppress_playoffs.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    df = df[df["season"] == PLAYOFF_SCOPE].copy()
+    df["team"] = df["team"].replace({"ARI": "UTA"})
+    return df.rename(columns={"games_played": "GP",
+                              "team_nfi_pct_post_audit": "NFI%",
+                              "attack_per_game": "Attack events",
+                              "suppress_per_game": "Suppress events"})[
+        ["team", "GP", "NFI%", "Attack events", "Suppress events"]]
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_team_qg_playoffs() -> pd.DataFrame:
+    fp = REPO_ROOT / "Quality_Games" / "output" / "per_team_season_playoffs.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp).rename(columns={"team_abbrev": "team"})
+    df["season"] = df["season"].astype(str)
+    df["team"] = df["team"].replace({"ARI": "UTA"})
+    return df[df["season"] == PLAYOFF_SCOPE].copy()
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_team_zone_playoffs() -> pd.DataFrame:
+    fp = REPO_ROOT / "NFI" / "output" / "team_zone_playoffs.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["window"] = df["window"].astype(str)
+    df["team"] = df["team"].replace({"ARI": "UTA"})
+    return df[df["window"] == PLAYOFF_SCOPE].copy()
+
+
+def _render_teams_playoffs(season_label: str) -> None:
+    """Teams tab, pooled all-playoffs view (2022-23 → 2024-25)."""
+    st.caption("Playoff view — all playoff games (2022-23 → 2024-25) pooled.")
+    team = load_team_playoffs()
+    if team.empty:
+        st.error("Playoff team data not found "
+                 "(`NFI/output/team_nfi_verification_and_attack_suppress_playoffs.csv`).")
+        return
+
+    qg = load_team_qg_playoffs()
+    if not qg.empty:
+        q = qg[["team", "total_team_TOI_min", "team_xG_QG_pct", "team_NFI_QG_pct"]].rename(
+            columns={"total_team_TOI_min": "TOI",
+                     "team_xG_QG_pct": "xG_QG%", "team_NFI_QG_pct": "NFI_QG%"})
+        team = team.merge(q, on="team", how="left")
+
+    zcols = ["NZI", "DZI", "OZI"]
+    tz = load_team_zone_playoffs()
+    if not tz.empty:
+        team = team.merge(tz[["team", "NZI", "DZI", "OZI"]], on="team", how="left")
+
+    for c in ["TOI", "xG_QG%", "NFI_QG%"] + zcols:
+        if c not in team.columns:
+            team[c] = np.nan
+
+    team = team.rename(columns={"team": "Team"})
+    team = team.sort_values("NFI%", ascending=False, na_position="last").reset_index(drop=True)
+    cols = (["Team", "GP", "TOI", "NFI%", "Attack events", "Suppress events"]
+            + zcols + ["xG_QG%", "NFI_QG%"])
+    disp = team[[c for c in cols if c in team.columns]].copy()
+
+    fmt = {}
+    for c in ("NFI%", "xG_QG%", "NFI_QG%"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
+    for c in ("Attack events", "Suppress events"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    for c in zcols:
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    if "TOI" in disp:
+        fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
+    if "GP" in disp:
+        fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
+
+    _team_rank = ["NFI%", "Attack events", "Suppress events"] + zcols + ["xG_QG%", "NFI_QG%"]
+    _apply_ranks(disp, fmt, disp, _team_rank, lower_better={"Suppress events"})
+    st.caption("Each metric shows its **(rank)** across playoff teams. "
+               "Suppress events (shots against): lowest = #1.")
+    _sort_hint()
+    st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    st.caption(
+        f"{len(disp)} teams · all playoffs (2022-2025 pooled) · sorted by NFI% "
+        "(CNFI+MNFI share) descending · Zone Impact (NZI/DZI/OZI) is TOI-weighted."
+    )
+
+
 def render_teams(season_label: str, game_type: str) -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Teams</h2>",
         unsafe_allow_html=True,
     )
-    if game_type == "Playoffs":
-        st.info("Playoff team metrics — coming soon.")
+    playoffs = game_type == "Playoffs"
+    if playoffs:
+        _render_teams_playoffs(season_label)
         return
 
     tl = load_team_level()
@@ -1463,6 +1723,36 @@ def load_qs_by_season() -> pd.DataFrame:
     return df
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_goalie_nfi_playoffs() -> pd.DataFrame:
+    fp = REPO_ROOT / "NFI" / "output" / "goalie_nfi_gsax_by_season_playoffs.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    return df[df["season"] == PLAYOFF_SCOPE].copy()
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qnfs_playoffs() -> pd.DataFrame:
+    fp = _QC / "qnfs_per_season_playoffs.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    return df[df["season"] == PLAYOFF_SCOPE].copy()
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qs_playoffs() -> pd.DataFrame:
+    fp = _QC / "qs_gsax_per_season_playoffs.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    return df[df["season"] == PLAYOFF_SCOPE].copy()
+
+
 def _goalie_trend(gid: int) -> pd.DataFrame:
     """Per-season (2022-23..2025-26) NFI-GSAx/60, QNFS%, QS-GSAx% for one
     goalie_id, outer-merged on season. Season normalized to INT before merging
@@ -1573,21 +1863,32 @@ def render_goalies(season_label: str, game_type: str) -> None:
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Goalie List</h2>",
         unsafe_allow_html=True,
     )
-    if game_type == "Playoffs":
-        st.info("Goalie playoff metrics aren't available yet — these are "
-                "regular-season GSAx-based metrics.")
-        return
+    playoffs = game_type == "Playoffs"
+    if playoffs:
+        st.caption("Playoff view — all playoff games (2022-23 → 2024-25) pooled. "
+                   "Use Min Shots Faced to threshold small samples.")
 
     # FOLLOW-UP: no 2-year pooled goalie build exists. Goalie GSAx is published
     # as full-pooled (2022–2026) or per single season; a faithful 2yr pool needs
     # re-derived denominators (not a season average), so fall back gracefully.
-    if SEASON_KEY.get(season_label) == "pooled_2yr":
+    if not playoffs and SEASON_KEY.get(season_label) == "pooled_2yr":
         st.info("2-season (2024–2026) goalie view isn't available yet — pick a "
                 "single season or the full 4yr (2022-2026) view.")
         return
 
-    is_pooled = SEASON_KEY.get(season_label, "pooled") == "pooled"
-    if is_pooled:
+    is_pooled = (not playoffs) and SEASON_KEY.get(season_label, "pooled") == "pooled"
+    if playoffs:
+        n = load_goalie_nfi_playoffs()
+        nfi = (n[["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60"]]
+               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60"})
+               if not n.empty else pd.DataFrame())
+        q = load_qnfs_playoffs()
+        qn = (q[["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi"]]
+              .rename(columns={"GP": "GP_qn"}) if not q.empty else pd.DataFrame())
+        s = load_qs_playoffs()
+        qs = (s[["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo"]]
+              .rename(columns={"GP": "GP_qs"}) if not s.empty else pd.DataFrame())
+    elif is_pooled:
         n = load_goalie_nfi()
         nfi = (n[["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60"]]
                .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60"})
@@ -1635,9 +1936,13 @@ def render_goalies(season_label: str, game_type: str) -> None:
 
     c1, c2 = st.columns([2, 1])
     with c1:
-        default_shots = 500 if is_pooled else 150
-        shots_key = "goalies_minshots_pooled" if is_pooled else "goalies_minshots_season"
-        min_shots = st.slider("Min Shots Faced", 0, 3000, default_shots, 50, key=shots_key)
+        if playoffs:
+            default_shots, shots_key, smax = 50, "goalies_minshots_playoffs", 1500
+        elif is_pooled:
+            default_shots, shots_key, smax = 500, "goalies_minshots_pooled", 3000
+        else:
+            default_shots, shots_key, smax = 150, "goalies_minshots_season", 3000
+        min_shots = st.slider("Min Shots Faced", 0, smax, default_shots, 50, key=shots_key)
         st.caption("Min Shots Faced filter suppresses small-sample noise in per-60 "
                    "rates. Defaults match the methodology's qualifying floors and the "
                    "previous app's discipline.")
@@ -1682,19 +1987,64 @@ def render_goalies(season_label: str, game_type: str) -> None:
                "unranked.")
     _sort_hint()
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    _goalie_scope = "all playoffs (2022-2025 pooled)" if playoffs else season_label
     st.caption(
-        f"{len(disp)} goalies · {season_label} · sorted by NFI-GSAx/60 descending · "
+        f"{len(disp)} goalies · {_goalie_scope} · sorted by NFI-GSAx/60 descending · "
         "blanks = below that metric's qualifying floor (not zero)"
     )
-    st.markdown(
-        f"<p style='color:{PALETTE['text_secondary']}; font-size:0.82rem; max-width:62rem;'>"
-        "Goalies shown are the union of qualified cohorts across the three metrics. "
-        "Backup goalies appearing only in unqualified QNFS rows are excluded — see "
-        "Methodology for full qualifying floors. Qualifying floors differ by metric "
-        "(NFI-GSAx ≥300 net-front shots pooled / ≥100 per season; QNFS% ≥25 GP/season "
-        "with ≥3 net-front shots/game; QS-GSAx ≥10 shots/game, ≥25 GP/season).</p>",
-        unsafe_allow_html=True,
-    )
+    if playoffs:
+        st.markdown(
+            f"<p style='color:{PALETTE['text_secondary']}; font-size:0.82rem; max-width:62rem;'>"
+            "Pooled across all playoff games (2022-23 → 2024-25). No qualifying "
+            "floor is applied — every goalie with playoff data appears; use Min "
+            "Shots Faced to threshold. Per-game metric definitions (QNFS ≥3 "
+            "net-front shots/game; QS-GSAx ≥10 shots/game) are retained.</p>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"<p style='color:{PALETTE['text_secondary']}; font-size:0.82rem; max-width:62rem;'>"
+            "Goalies shown are the union of qualified cohorts across the three metrics. "
+            "Backup goalies appearing only in unqualified QNFS rows are excluded — see "
+            "Methodology for full qualifying floors. Qualifying floors differ by metric "
+            "(NFI-GSAx ≥300 net-front shots pooled / ≥100 per season; QNFS% ≥25 GP/season "
+            "with ≥3 net-front shots/game; QS-GSAx ≥10 shots/game, ≥25 GP/season).</p>",
+            unsafe_allow_html=True,
+        )
+
+
+def _render_goalie_playoff_summary(gid: int) -> None:
+    """Pooled all-playoffs metric summary for one goalie (playoff Detail view)."""
+    n, q, s = load_goalie_nfi_playoffs(), load_qnfs_playoffs(), load_qs_playoffs()
+
+    def pick(df, col):
+        if df.empty or col not in df.columns:
+            return np.nan
+        r = df[df["goalie_id"] == gid]
+        return r[col].iloc[0] if len(r) else np.nan
+
+    name = next((str(v) for v in (pick(n, "goalie_name"), pick(q, "goalie_name"),
+                                  pick(s, "goalie_name")) if pd.notna(v)), str(gid))
+
+    def fmt(v, kind):
+        if pd.isna(v):
+            return "—"
+        if kind == "gsax":
+            return f"{v:+.3f}"
+        if kind == "pct":
+            return f"{v:.1f}%"
+        return f"{int(v):,}"
+
+    items = [
+        ("NFI-GSAx/60", fmt(pick(n, "GSAx_per60"), "gsax")),
+        ("QNFS%", fmt(pick(q, "QNFS_pct"), "pct")),
+        ("QS-GSAx%", fmt(pick(s, "QS_GSAx_pct"), "pct")),
+        ("Games (GSAx)", fmt(pick(n, "games"), "int")),
+        ("Shots faced", fmt(pick(n, "total_faced"), "int")),
+    ]
+    st.caption(f"**{name}** · pooled playoffs (2022-23 → 2024-25).")
+    st.dataframe(pd.DataFrame(items, columns=["Metric", "Value"]),
+                 width="stretch", hide_index=True)
 
 
 def render_goalie_detail(season_label: str, game_type: str) -> None:
@@ -1705,17 +2055,24 @@ def render_goalie_detail(season_label: str, game_type: str) -> None:
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Goalie Detail</h2>",
         unsafe_allow_html=True,
     )
-    if game_type == "Playoffs":
-        st.info("Goalie playoff metrics aren't available yet — these are "
-                "regular-season GSAx-based metrics.")
-        return
-    n = load_goalie_nfi_by_season()
+    playoffs = game_type == "Playoffs"
+    n = load_goalie_nfi_playoffs() if playoffs else load_goalie_nfi_by_season()
     if n.empty:
         st.info("No goalie data available.")
         return
     nn = n[["goalie_id", "goalie_name"]].dropna().drop_duplicates("goalie_id")
     glabel = {int(r.goalie_id): r.goalie_name for r in nn.itertuples()}
     gid_list = sorted(glabel, key=lambda i: glabel[i])
+    if playoffs:
+        gsel = st.selectbox(
+            "Select a goalie for their pooled playoff profile",
+            gid_list, index=None, placeholder="— select a goalie —",
+            format_func=lambda i: glabel.get(i, str(i)), key="goalies_profile")
+        if gsel is not None:
+            _render_goalie_playoff_summary(int(gsel))
+        else:
+            st.caption("Pick a goalie to see their pooled playoff metrics.")
+        return
     gsel = st.selectbox(
         "Select a goalie for a per-season trend (2022-23 → 2025-26)",
         gid_list, index=None, placeholder="— select a goalie —",
