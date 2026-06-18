@@ -493,7 +493,8 @@ def render_methodology() -> None:
             "NFI — Net-Front Impact",
             "Fenwick shot share (shots + misses + goals, blocks excluded) in the CNFI "
             "(close net-front) and MNFI (mid / high-slot) zones while a player is on ice. "
-            "<b>RelNFI%</b> is the two-way version (generation + suppression).",
+            "<b>RelNFI%</b> measures net-front impact relative to a player's own team "
+            "(on-ice vs off-ice), isolating individual contribution from team strength.",
         )
         + _meth_framework(
             "Quality Games (QG)",
@@ -559,12 +560,18 @@ def render_methodology() -> None:
 # Players tab — NFI + Quality Games (+ Zone Impact in the Pooled view)
 # ---------------------------------------------------------------------------
 SEASON_KEY = {
-    "Pooled (2022–2026)": "pooled",
     "2025-26": "20252026",
     "2024-25": "20242025",
     "2023-24": "20232024",
     "2022-23": "20222023",
+    "2yr (2024–2026)": "pooled_2yr",
+    "Pooled (2022–2026)": "pooled",
 }
+
+# Seasons covered by the "2yr (2024–2026)" pooled-style view. Loaders that
+# aggregate across seasons restrict to these when the season key is
+# "pooled_2yr"; tabs without per-season support for 2yr fall back gracefully.
+POOLED_2YR_SEASONS = ["20242025", "20252026"]
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -624,12 +631,19 @@ def _build_players_frame(season_label: str) -> tuple[pd.DataFrame, bool]:
     if nfi.empty:
         return pd.DataFrame(), False
     qg = load_qg_player_season()
-    is_pooled = SEASON_KEY.get(season_label, "pooled") == "pooled"
+    key = SEASON_KEY.get(season_label, "pooled")
+    # "pooled_2yr" is treated like the full pooled view but restricted to the
+    # 2024–2026 seasons for the per-season-aware sources (NFI, QG). Zone Impact
+    # has no season axis, so the 2yr view shows the all-season pooled zone
+    # values (noted in the caption) — FOLLOW-UP: a true 2yr zone build.
+    is_pooled = key in ("pooled", "pooled_2yr")
 
     if is_pooled:
-        base = _aggregate_nfi_pooled(nfi)
+        nfi_src = nfi if key == "pooled" else nfi[nfi["season"].isin(POOLED_2YR_SEASONS)]
+        base = _aggregate_nfi_pooled(nfi_src)
         if not qg.empty:
-            base = base.merge(_qg_pooled(qg), on="player_id", how="left")
+            qg_src = qg if key == "pooled" else qg[qg["season"].isin(POOLED_2YR_SEASONS)]
+            base = base.merge(_qg_pooled(qg_src), on="player_id", how="left")
         zone = load_zone_pooled()
         if not zone.empty and not base.empty:
             base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
@@ -650,11 +664,7 @@ def render_players(season_label: str, game_type: str) -> None:
         unsafe_allow_html=True,
     )
     if game_type == "Playoffs":
-        st.info(
-            "Individual player samples in playoffs are too small for meaningful "
-            "analysis (median 7–28 games per player). Regular-season player "
-            "metrics are available on this tab."
-        )
+        st.info("Playoff player metrics — coming soon.")
         return
 
     frame, is_pooled = _build_players_frame(season_label)
@@ -663,15 +673,18 @@ def render_players(season_label: str, game_type: str) -> None:
                  "(`NFI/output/fully_adjusted/player_fully_adjusted.csv`).")
         return
 
-    c1, c2, c3 = st.columns([1.1, 1.7, 1.0])
+    c1, c2, c3, c4 = st.columns([1.0, 1.5, 1.1, 1.5])
     with c1:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
     with c2:
         toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
-        default_toi = 2000 if is_pooled else 200
+        default_toi = 2000 if is_pooled else 500
         min_toi = st.slider("Min ES TOI (min)", 0, 7500, default_toi, 50, key=toi_key)
     with c3:
-        view = st.radio("View", ["Compact", "Full"], horizontal=True, key="players_view")
+        team_opts = ["All"] + sorted(frame["team"].dropna().unique().tolist())
+        team_sel = st.selectbox("Team", team_opts, key="players_team")
+    with c4:
+        name_q = st.text_input("Player name contains", key="players_name").strip().lower()
 
     df = frame.copy()
     if pos in ("F", "D"):
@@ -679,6 +692,10 @@ def render_players(season_label: str, game_type: str) -> None:
     else:
         df = df[df["position"].isin(["F", "D"])]
     df = df[df["toi_min"].fillna(0) >= min_toi]
+    if team_sel != "All":
+        df = df[df["team"] == team_sel]
+    if name_q:
+        df = df[df["player_name"].str.lower().str.contains(name_q, na=False)]
     if df.empty:
         st.markdown(
             f"<p style='color:{PALETTE['text']};'>No players match the current filters. "
@@ -688,17 +705,19 @@ def render_players(season_label: str, game_type: str) -> None:
         return
 
     df = df.sort_values("RelNFI_pct", ascending=False, na_position="last").reset_index(drop=True)
+    # Storage → display: RelNFI_F (attack / for) shows as "RelNFI-A%",
+    # RelNFI_A (suppress / against) shows as "RelNFI-S%". Do NOT sign-flip — the
+    # underlying _F/_A columns are unchanged; only the display labels swap A/S.
     df = df.rename(columns={
         "player_name": "Player", "position": "Pos", "team": "Team", "toi_min": "TOI",
         "NFI_pct": "NFI%", "RelNFI_pct": "RelNFI%",
-        "RelNFI_F_pct": "RelNFI_F%", "RelNFI_A_pct": "RelNFI_A%",
-        "xG_QG_pct": "xG_QG%", "NFI_QG_pct": "NFI_QG%", "qualifying_GP": "Qual GP",
+        "RelNFI_F_pct": "RelNFI-A%", "RelNFI_A_pct": "RelNFI-S%",
+        "xG_QG_pct": "xG_QG%", "NFI_QG_pct": "NFI_QG%",
     })
 
-    full_cols = ["Player", "Pos", "Team", "GP", "TOI", "NFI%", "RelNFI%", "RelNFI_F%",
-                 "RelNFI_A%", "NZI", "DZI", "OZI", "xG_QG%", "NFI_QG%", "Qual GP"]
-    compact_cols = ["Player", "Pos", "Team", "TOI", "NFI%", "RelNFI%", "NFI_QG%", "xG_QG%"]
-    cols = full_cols if view == "Full" else compact_cols
+    # Always show the full column set (Compact view removed; Qual GP dropped).
+    cols = ["Player", "Pos", "Team", "GP", "TOI", "NFI%", "RelNFI%", "RelNFI-A%",
+            "RelNFI-S%", "NZI", "DZI", "OZI", "xG_QG%", "NFI_QG%"]
     if not is_pooled:  # zone metrics are pooled-only — hide for single-season views
         cols = [c for c in cols if c not in ("NZI", "DZI", "OZI")]
     cols = [c for c in cols if c in df.columns]
@@ -708,7 +727,7 @@ def render_players(season_label: str, game_type: str) -> None:
     for c in ("NFI%", "xG_QG%", "NFI_QG%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
-    for c in ("RelNFI%", "RelNFI_F%", "RelNFI_A%"):
+    for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
     for c in ("NZI", "DZI", "OZI"):
@@ -716,7 +735,7 @@ def render_players(season_label: str, game_type: str) -> None:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "TOI" in disp.columns:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
-    for c in ("GP", "Qual GP"):
+    for c in ("GP",):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
@@ -783,8 +802,7 @@ def render_teams(season_label: str, game_type: str) -> None:
         unsafe_allow_html=True,
     )
     if game_type == "Playoffs":
-        st.info("Team playoff metrics aren't available yet — the team pipeline "
-                "currently covers regular season only.")
+        st.info("Playoff team metrics — coming soon.")
         return
 
     tl = load_team_level()
@@ -792,7 +810,10 @@ def render_teams(season_label: str, game_type: str) -> None:
         st.error("Team data not found (`NFI/output/team_level_all_metrics.csv`).")
         return
     qg = load_team_qg()
-    is_pooled = SEASON_KEY.get(season_label, "pooled") == "pooled"
+    key = SEASON_KEY.get(season_label, "pooled")
+    is_pooled = key in ("pooled", "pooled_2yr")
+    # "pooled_2yr" aggregates only 2024–2026; full pooled aggregates all four.
+    pooled_seasons = POOLED_2YR_SEASONS if key == "pooled_2yr" else POOLED_SEASONS
 
     def _wmean(g: pd.DataFrame, col: str) -> float:
         w = g["total_team_TOI_min"].astype(float)
@@ -801,7 +822,7 @@ def render_teams(season_label: str, game_type: str) -> None:
         return float(np.average(v[m], weights=w[m])) if m.any() else np.nan
 
     if is_pooled:
-        sub = tl[tl["season"].isin(POOLED_SEASONS)]
+        sub = tl[tl["season"].isin(pooled_seasons)]
         agg = sub.groupby("team").agg(
             CNFI_FF=("CNFI_FF", "sum"), MNFI_FF=("MNFI_FF", "sum"),
             CNFI_FA=("CNFI_FA", "sum"), MNFI_FA=("MNFI_FA", "sum"),
@@ -810,7 +831,7 @@ def render_teams(season_label: str, game_type: str) -> None:
         agg["NFI%"] = _team_nfi_share(agg)
         team = agg[["team", "GP", "NFI%"]]
         if not qg.empty:
-            q = qg[qg["season"].isin(POOLED_SEASONS)]
+            q = qg[qg["season"].isin(pooled_seasons)]
             qrows = [{"team": t, "TOI": g["total_team_TOI_min"].sum(),
                       "xG_QG%": _wmean(g, "team_xG_QG_pct"),
                       "NFI_QG%": _wmean(g, "team_NFI_QG_pct")}
@@ -832,37 +853,32 @@ def render_teams(season_label: str, game_type: str) -> None:
         st.info("No team data for this season.")
         return
 
-    # Attack / Suppress — 2025-26 snapshot only
+    # Attack / Suppress events — 2025-26 snapshot only
     if season_label == "2025-26":
         a = load_team_attack_suppress().rename(
-            columns={"attack_per_game": "Attack rate", "suppress_per_game": "Suppress rate"})
+            columns={"attack_per_game": "Attack events", "suppress_per_game": "Suppress events"})
         team = team.merge(a, on="team", how="left")
     else:
-        team["Attack rate"] = np.nan
-        team["Suppress rate"] = np.nan
+        team["Attack events"] = np.nan
+        team["Suppress events"] = np.nan
 
-    for c in ("NZI", "DZI", "OZI"):   # deliberate team-level placeholders
-        team[c] = np.nan
     for c in ("TOI", "xG_QG%", "NFI_QG%"):
         if c not in team.columns:
             team[c] = np.nan
 
     team = team.rename(columns={"team": "Team"})
     team = team.sort_values("NFI%", ascending=False, na_position="last").reset_index(drop=True)
-    cols = ["Team", "GP", "TOI", "NFI%", "Attack rate", "Suppress rate",
-            "NZI", "DZI", "OZI", "xG_QG%", "NFI_QG%"]
+    cols = ["Team", "GP", "TOI", "NFI%", "Attack events", "Suppress events",
+            "xG_QG%", "NFI_QG%"]
     disp = team[[c for c in cols if c in team.columns]].copy()
 
     fmt = {}
     for c in ("NFI%", "xG_QG%", "NFI_QG%"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
-    for c in ("Attack rate", "Suppress rate"):
+    for c in ("Attack events", "Suppress events"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
-    for c in ("NZI", "DZI", "OZI"):
-        if c in disp:
-            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "TOI" in disp:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     if "GP" in disp:
@@ -872,9 +888,8 @@ def render_teams(season_label: str, game_type: str) -> None:
 
     cap = f"{len(disp)} teams · {season_label} · sorted by NFI% (CNFI+MNFI share) descending"
     if season_label != "2025-26":
-        cap += (" · Attack and Suppress rates are currently only computed for 2025-26. "
+        cap += (" · Attack and Suppress events are currently only computed for 2025-26. "
                 "Per-season history requires a pipeline run not yet performed.")
-    cap += " · NZI/DZI/OZI are team-level placeholders (not yet computed)."
     st.caption(cap)
 
 
@@ -928,6 +943,14 @@ def render_goalies(season_label: str, game_type: str) -> None:
                 "regular-season GSAx-based metrics.")
         return
 
+    # FOLLOW-UP: no 2-year pooled goalie build exists. Goalie GSAx is published
+    # as full-pooled (2022–2026) or per single season; a faithful 2yr pool needs
+    # re-derived denominators (not a season average), so fall back gracefully.
+    if SEASON_KEY.get(season_label) == "pooled_2yr":
+        st.info("2-season (2024–2026) goalie view isn't available yet — pick a "
+                "single season or the full Pooled (2022–2026) view.")
+        return
+
     is_pooled = SEASON_KEY.get(season_label, "pooled") == "pooled"
     if is_pooled:
         n = load_goalie_nfi()
@@ -975,19 +998,21 @@ def render_goalies(season_label: str, game_type: str) -> None:
     base["GP"] = base[gp_cols].bfill(axis=1).iloc[:, 0] if gp_cols else np.nan
     base["Team"] = base["team"] if "team" in base.columns else np.nan
 
-    c1, c2 = st.columns([1, 2])
+    c1, c2 = st.columns([2, 1])
     with c1:
-        view = st.radio("View", ["Compact", "Full"], horizontal=True, key="goalies_view")
-    with c2:
         default_shots = 500 if is_pooled else 150
         shots_key = "goalies_minshots_pooled" if is_pooled else "goalies_minshots_season"
         min_shots = st.slider("Min Shots Faced", 0, 3000, default_shots, 50, key=shots_key)
         st.caption("Min Shots Faced filter suppresses small-sample noise in per-60 "
                    "rates. Defaults match the methodology's qualifying floors and the "
                    "previous app's discipline.")
+    with c2:
+        name_q = st.text_input("Goalie name contains", key="goalies_name").strip().lower()
     base = base[base["total_faced"].fillna(0) >= min_shots]
+    if name_q:
+        base = base[base["Goalie"].str.lower().str.contains(name_q, na=False)]
     if base.empty:
-        st.info("No goalies meet the current Min Shots Faced filter.")
+        st.info("No goalies match the current filters.")
         return
 
     def _qnfs_ci(r):
@@ -1001,10 +1026,8 @@ def render_goalies(season_label: str, game_type: str) -> None:
     })
     base = base.sort_values("NFI-GSAx/60", ascending=False, na_position="last").reset_index(drop=True)
 
-    full = ["Goalie", "Team", "GP", "NFI-GSAx/60", "QNFS%", "QNFS 95% CI",
+    cols = ["Goalie", "Team", "GP", "NFI-GSAx/60", "QNFS%", "QNFS 95% CI",
             "QS-GSAx%", "QS-GSAx (95% lower)"]
-    compact = ["Goalie", "Team", "GP", "NFI-GSAx/60", "QNFS%", "QS-GSAx%"]
-    cols = full if view == "Full" else compact
     disp = base[[c for c in cols if c in base.columns]].copy()
 
     fmt = {}
@@ -1066,7 +1089,8 @@ def _ref_table(df: pd.DataFrame) -> pd.DataFrame:
         home = int((ha == "home").sum())
         away = int((ha == "away").sum())
         row = {"Referee": ref, "Games": games, "Pen/Game": pens / games if games else np.nan,
-               "Home Pen%": (home / (home + away) * 100) if (home + away) else np.nan}
+               "Home Pen%": (home / (home + away) * 100) if (home + away) else np.nan,
+               "Away Pen%": (away / (home + away) * 100) if (home + away) else np.nan}
         for t in REF_TYPES:
             row[f"{t}/G"] = (g["penalty_type"] == t).sum() / games if games else np.nan
         rows.append(row)
@@ -1098,7 +1122,10 @@ def render_referees(season_label: str, game_type: str) -> None:
         st.error("Referee data not found "
                  "(`Referees/output/all_teams_penalties_3seasons.csv`).")
         return
-    if SEASON_KEY.get(season_label, "pooled") != "pooled":
+    key = SEASON_KEY.get(season_label, "pooled")
+    if key == "pooled_2yr":
+        df = df[df["season"].isin([20242025, 20252026])]
+    elif key != "pooled":
         sk = REF_SEASON_INT.get(season_label)
         df = df[df["season"] == sk]
 
@@ -1110,7 +1137,6 @@ def render_referees(season_label: str, game_type: str) -> None:
         unsafe_allow_html=True,
     )
 
-    view = st.radio("View", ["Compact", "Full"], horizontal=True, key="refs_view")
     name_q = st.text_input("Referee name contains", key="refs_name").strip().lower()
 
     tbl = _ref_table(df)
@@ -1124,14 +1150,14 @@ def render_referees(season_label: str, game_type: str) -> None:
         tbl = tbl[tbl["Referee"].str.lower().str.contains(name_q, na=False)]
     out = pd.concat([avg, tbl], ignore_index=True)
 
-    full = ["Referee", "Games", "Pen/Game", "Home Pen%"] + [f"{t}/G" for t in REF_TYPES]
-    compact = ["Referee", "Games", "Pen/Game", "Home Pen%"]
-    cols = full if view == "Full" else compact
+    cols = (["Referee", "Games", "Pen/Game", "Home Pen%", "Away Pen%"]
+            + [f"{t}/G" for t in REF_TYPES])
     disp = out[[c for c in cols if c in out.columns]].copy()
 
     fmt = {"Games": lambda x: "—" if pd.isna(x) else f"{int(x):,}",
            "Pen/Game": lambda x: "—" if pd.isna(x) else f"{x:.2f}",
-           "Home Pen%": lambda x: "—" if pd.isna(x) else f"{x:.1f}%"}
+           "Home Pen%": lambda x: "—" if pd.isna(x) else f"{x:.1f}%",
+           "Away Pen%": lambda x: "—" if pd.isna(x) else f"{x:.1f}%"}
     for t in REF_TYPES:
         c = f"{t}/G"
         if c in disp:
@@ -1160,14 +1186,13 @@ def render_global_sidebar() -> tuple[str, str]:
         f"color:{PALETTE['text']}; letter-spacing:1px; margin-bottom:0.3rem;'>Filters</div>",
         unsafe_allow_html=True,
     )
-    st.session_state.setdefault("g_season", "Pooled (2022–2026)")
+    st.session_state.setdefault("g_season", "2025-26")
     st.session_state.setdefault("g_game_type", "Regular Season")
     season = st.sidebar.selectbox("Season", list(SEASON_KEY.keys()), key="g_season")
     game_type = st.sidebar.radio("Game type", ["Regular Season", "Playoffs"],
                                  key="g_game_type")
     st.sidebar.caption(
-        "Season and game type apply across all tabs. Zone Impact (NZI/DZI/OZI) is "
-        "pooled-only and appears in the Pooled season view."
+        "Season and game type apply across all tabs."
     )
     return season, game_type
 
