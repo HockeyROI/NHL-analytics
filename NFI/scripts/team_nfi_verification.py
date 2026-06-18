@@ -289,3 +289,80 @@ print(f"    columns referenced:   gp (only — for games-played count)")
 print(f"    columns NOT used:     TNFI_pct (would include FNFI)")
 print()
 print(f"  Output:                 {OUT_CSV}")
+
+# ============================================================================
+# PLAYOFF PASS — identical definition (5v5 ES, regulation periods, Fenwick,
+# CNFI+MNFI) but game_type == "playoff". Per playoff season (2022-25 only — no
+# 2025-26 playoffs) plus an "all_playoffs" pooled row. Written to a SEPARATE
+# _playoffs file; the regular-season output above is untouched. Playoff GP per
+# team comes from game_ids (home/away), since team_level GP is regular-only.
+# ============================================================================
+GAME_CSV = ROOT / "Data" / "game_ids.csv"
+OUT_PLAYOFF = OUT_CSV.parent / "team_nfi_verification_and_attack_suppress_playoffs.csv"
+PLAYOFF_SEASONS = ["20222023", "20232024", "20242025"]
+_REL = {"ARI": "UTA"}  # franchise continuity
+
+
+def _team_as_counts(scope_df):
+    """CNFI+MNFI 5v5-ES Fenwick attack/suppress counts per team for a slice."""
+    s = scope_df[(scope_df["period"].between(1, 3)) &
+                 (scope_df["situation_code"].astype(str) == "1551")]
+    f = s[s["event_type"].isin(["shot-on-goal", "missed-shot", "goal"])] \
+        .dropna(subset=["x_coord_norm", "y_coord_norm"]).copy()
+    f["abs_y"] = f["y_coord_norm"].abs()
+    f["zone"] = np.where((f["x_coord_norm"].between(74, 89)) & (f["abs_y"] <= 9), "CNFI",
+                np.where((f["x_coord_norm"].between(55, 73)) & (f["abs_y"] <= 15), "MNFI", "OTHER"))
+    f["_sh_home"] = f["shooting_team_id"] == f["home_team_id"]
+    f["def_team"] = np.where(f["_sh_home"], f["away_team_abbrev"], f["home_team_abbrev"])
+    cm = f[f["zone"].isin(["CNFI", "MNFI"])]
+    atk = cm.groupby("shooting_team_abbrev").size().rename("attack_count")
+    sup = cm.groupby("def_team").size().rename("suppress_count")
+    return atk, sup
+
+
+print("\n" + "=" * 78)
+print("PLAYOFF PASS")
+print("=" * 78)
+_g = pd.read_csv(GAME_CSV, dtype={"season": str})
+_gpo = _g[(_g["game_type"] == "playoff") & (_g["season"].isin(PLAYOFF_SEASONS))].copy()
+_gpo["home_abbrev"] = _gpo["home_abbrev"].replace(_REL)
+_gpo["away_abbrev"] = _gpo["away_abbrev"].replace(_REL)
+
+
+def _playoff_gp(seasons):
+    sub = _gpo[_gpo["season"].isin(seasons)]
+    both = pd.concat([sub[["home_abbrev"]].rename(columns={"home_abbrev": "team"}),
+                      sub[["away_abbrev"]].rename(columns={"away_abbrev": "team"})])
+    return both.groupby("team").size().rename("games_played")
+
+
+_po_df = df[df["game_type"] == "playoff"].copy()
+for _c in ("shooting_team_abbrev", "home_team_abbrev", "away_team_abbrev"):
+    _po_df[_c] = _po_df[_c].replace(_REL)
+
+po_all = []
+for season in PLAYOFF_SEASONS + ["all_playoffs"]:
+    seasons = PLAYOFF_SEASONS if season == "all_playoffs" else [season]
+    atk, sup = _team_as_counts(_po_df[_po_df["season"].isin(seasons)])
+    mt = _playoff_gp(seasons).reset_index()
+    mt = mt.merge(atk.reset_index().rename(columns={"shooting_team_abbrev": "team"}),
+                  on="team", how="left")
+    mt = mt.merge(sup.reset_index().rename(columns={"def_team": "team"}),
+                  on="team", how="left")
+    mt[["attack_count", "suppress_count"]] = mt[["attack_count", "suppress_count"]].fillna(0).astype(int)
+    mt["total_events"] = mt["attack_count"] + mt["suppress_count"]
+    mt["attack_per_game"] = mt["attack_count"] / mt["games_played"]
+    mt["suppress_per_game"] = mt["suppress_count"] / mt["games_played"]
+    mt["team_nfi_pct_post_audit"] = np.where(mt["total_events"] > 0,
+                                             mt["attack_count"] / mt["total_events"], np.nan)
+    mt = mt.sort_values("team_nfi_pct_post_audit", ascending=False).reset_index(drop=True)
+    mt["post_audit_rank"] = mt["team_nfi_pct_post_audit"].rank(ascending=False, method="min").astype("Int64")
+    mt["season"] = season
+    po_all.append(mt[["season", "team", "games_played", "attack_count", "suppress_count",
+                      "total_events", "attack_per_game", "suppress_per_game",
+                      "team_nfi_pct_post_audit", "post_audit_rank"]])
+    print(f"  [{season}] {len(mt)} teams")
+
+po_combined = pd.concat(po_all, ignore_index=True)
+po_combined.to_csv(OUT_PLAYOFF, index=False)
+print(f"  Wrote {len(po_combined)} rows ({len(PLAYOFF_SEASONS)} seasons + pooled) → {OUT_PLAYOFF}")
