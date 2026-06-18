@@ -566,7 +566,7 @@ SEASON_KEY = {
     "2023-24": "20232024",
     "2022-23": "20222023",
     "2yr (2024–2026)": "pooled_2yr",
-    "Pooled (2022–2026)": "pooled",
+    "Pooled (4yr)": "pooled",
 }
 
 # Seasons covered by the "2yr (2024–2026)" pooled-style view. Loaders that
@@ -1206,24 +1206,26 @@ def render_teams(season_label: str, game_type: str) -> None:
     if not a.empty:
         team = team.merge(a, on="team", how="left")
 
-    # Team Zone Impact (NZI/DZI/OZI + Composite). Single seasons show their
-    # pooled window — no raw single-season team zone (2024-25 is hit-distorted).
+    # Team Zone Impact (NZI/DZI/OZI). Single seasons show their pooled window —
+    # no raw single-season team zone (2024-25 is hit-distorted). Headers carry
+    # the window suffix so the displayed pool is unambiguous.
     zwin = _team_zone_window(key)
+    zsfx = "2yr" if zwin == "2y_2426" else "4yr"
+    zcols = [f"NZI ({zsfx})", f"DZI ({zsfx})", f"OZI ({zsfx})"]
     tz = load_team_zone()
     if not tz.empty:
-        tzw = (tz[tz["window"] == zwin][["team", "NZI", "DZI", "OZI", "composite"]]
-               .rename(columns={"composite": "Composite"}))
+        tzw = (tz[tz["window"] == zwin][["team", "NZI", "DZI", "OZI"]]
+               .rename(columns={"NZI": zcols[0], "DZI": zcols[1], "OZI": zcols[2]}))
         team = team.merge(tzw, on="team", how="left")
 
-    for c in ("TOI", "xG_QG%", "NFI_QG%", "Attack events", "Suppress events",
-              "NZI", "DZI", "OZI", "Composite"):
+    for c in ["TOI", "xG_QG%", "NFI_QG%", "Attack events", "Suppress events"] + zcols:
         if c not in team.columns:
             team[c] = np.nan
 
     team = team.rename(columns={"team": "Team"})
     team = team.sort_values("NFI%", ascending=False, na_position="last").reset_index(drop=True)
-    cols = ["Team", "GP", "TOI", "NFI%", "Attack events", "Suppress events",
-            "NZI", "DZI", "OZI", "Composite", "xG_QG%", "NFI_QG%"]
+    cols = (["Team", "GP", "TOI", "NFI%", "Attack events", "Suppress events"]
+            + zcols + ["xG_QG%", "NFI_QG%"])
     disp = team[[c for c in cols if c in team.columns]].copy()
 
     fmt = {}
@@ -1233,7 +1235,7 @@ def render_teams(season_label: str, game_type: str) -> None:
     for c in ("Attack events", "Suppress events"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
-    for c in ("NZI", "DZI", "OZI", "Composite"):
+    for c in zcols:
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
     if "TOI" in disp:
@@ -1245,8 +1247,8 @@ def render_teams(season_label: str, game_type: str) -> None:
 
     zwin_label = "4-year pool (2022-26)" if zwin == "4y_pool" else "2-year pool (2024-26)"
     cap = (f"{len(disp)} teams · {season_label} · sorted by NFI% (CNFI+MNFI share) "
-           f"descending · Zone Impact (NZI/DZI/OZI/Composite) is TOI-weighted, shown "
-           f"as the {zwin_label}; single seasons display their pooled window "
+           f"descending · Zone Impact (NZI/DZI/OZI) is TOI-weighted, shown as the "
+           f"{zwin_label}; single seasons display their pooled window "
            f"(2022-24 → 4yr, 2024-26 → 2yr) since single-season team zone isn't published.")
     st.caption(cap)
 
@@ -1370,7 +1372,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
     # re-derived denominators (not a season average), so fall back gracefully.
     if SEASON_KEY.get(season_label) == "pooled_2yr":
         st.info("2-season (2024–2026) goalie view isn't available yet — pick a "
-                "single season or the full Pooled (2022–2026) view.")
+                "single season or the full Pooled (4yr) view.")
         return
 
     is_pooled = SEASON_KEY.get(season_label, "pooled") == "pooled"
