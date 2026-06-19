@@ -2210,17 +2210,45 @@ def render_referees(season_label: str, game_type: str) -> None:
 # ---------------------------------------------------------------------------
 # Global sidebar (Season + Game type — apply to every tab)
 # ---------------------------------------------------------------------------
+POOLED_4YR_LABEL = "4yr (2022-2026)"
+
+
 def render_global_filters() -> tuple[str, str]:
-    """Season + game-type filters in the main page body (no sidebar)."""
-    st.session_state.setdefault("g_season", "2025-26")
+    """Season + game-type filters in the main page body (no sidebar).
+
+    Playoffs only ship the pooled view (single-playoff-year samples are too
+    small), so when Playoffs is selected the Season filter is locked to the
+    4-year pooled view — shown disabled, with the user's regular-season pick
+    preserved (separate widget key) for when they switch back."""
     st.session_state.setdefault("g_game_type", "Regular Season")
+    # Non-widget mirror of the regular-season pick. Streamlit drops a widget's
+    # state when it isn't rendered (i.e. while the Season box is hidden in
+    # playoff mode), so we stash the choice here to restore it on the way back.
+    st.session_state.setdefault("g_season_pick", "2025-26")
+    is_playoffs = st.session_state.get("g_game_type") == "Playoffs"
+    season_opts = list(SEASON_KEY.keys())
     c1, c2 = st.columns([1.2, 2.4])
     with c1:
-        season = st.selectbox("Season", list(SEASON_KEY.keys()), key="g_season")
+        if is_playoffs:
+            st.selectbox("Season", season_opts,
+                         index=season_opts.index(POOLED_4YR_LABEL),
+                         disabled=True, key="g_season_locked")
+            season = POOLED_4YR_LABEL
+        else:
+            season = st.selectbox(
+                "Season", season_opts,
+                index=season_opts.index(st.session_state["g_season_pick"]),
+                key="g_season")
+            st.session_state["g_season_pick"] = season
     with c2:
         game_type = st.radio("Game type", ["Regular Season", "Playoffs"],
                              horizontal=True, key="g_game_type")
-    st.caption("Season and game type apply across all tabs.")
+    if game_type == "Playoffs":
+        st.caption("Playoffs pool all seasons (2022-23 → 2024-25) — single-season "
+                   "samples are too small, so the Season filter is locked to the "
+                   "pooled view.")
+    else:
+        st.caption("Season and game type apply across all tabs.")
     return season, game_type
 
 
