@@ -709,15 +709,43 @@ def _qg_pooled(qg: pd.DataFrame) -> pd.DataFrame:
     """Career-pooled QG: rates = total quality games / total qualifying GP."""
     if qg.empty:
         return qg
-    g = qg.groupby("player_id").agg(
+    # QG-flag rates (xG/NFI/RelxG/RelNFI _QG) pool by ratio-of-sums on their
+    # count/qual_GP denominators. RelxG_pct is a per-60 rate with no count
+    # denominator, so it pools by TOI-weighted mean (weights = TOI_total_sec) —
+    # the same method _aggregate_nfi_pooled uses for RelNFI_pct.
+    aggs = dict(
         GP=("GP", "sum"),
         qualifying_GP=("qualifying_GP", "sum"),
         _xc=("xG_QG_count", "sum"), _xq=("xG_qual_GP", "sum"),
         _nc=("NFI_QG_count", "sum"), _nq=("NFI_qual_GP", "sum"),
-    ).reset_index()
+    )
+    _has_rel = {"RelxG_QG_count", "RelxG_qual_GP",
+                "RelNFI_QG_count", "RelNFI_qual_GP"}.issubset(qg.columns)
+    if _has_rel:
+        aggs.update(_rxc=("RelxG_QG_count", "sum"), _rxq=("RelxG_qual_GP", "sum"),
+                    _rnc=("RelNFI_QG_count", "sum"), _rnq=("RelNFI_qual_GP", "sum"))
+    g = qg.groupby("player_id").agg(**aggs).reset_index()
     g["xG_QG_pct"] = np.where(g["_xq"] > 0, g["_xc"] / g["_xq"], np.nan)
     g["NFI_QG_pct"] = np.where(g["_nq"] > 0, g["_nc"] / g["_nq"], np.nan)
-    return g[["player_id", "GP", "qualifying_GP", "xG_QG_pct", "NFI_QG_pct"]]
+    out_cols = ["player_id", "GP", "qualifying_GP", "xG_QG_pct", "NFI_QG_pct"]
+    if _has_rel:
+        g["RelxG_QG_pct"] = np.where(g["_rxq"] > 0, g["_rxc"] / g["_rxq"], np.nan)
+        g["RelNFI_QG_pct"] = np.where(g["_rnq"] > 0, g["_rnc"] / g["_rnq"], np.nan)
+        out_cols += ["RelxG_QG_pct", "RelNFI_QG_pct"]
+    # RelxG_pct — TOI-weighted mean of per-season values (no count denominator),
+    # mirroring _aggregate_nfi_pooled's pooling of RelNFI_pct.
+    if {"RelxG_pct", "TOI_total_sec"}.issubset(qg.columns):
+        t = qg[["player_id", "RelxG_pct", "TOI_total_sec"]].copy()
+        t["RelxG_pct"] = pd.to_numeric(t["RelxG_pct"], errors="coerce")
+        t["w"] = pd.to_numeric(t["TOI_total_sec"], errors="coerce")
+        t = t[t["RelxG_pct"].notna() & (t["w"] > 0)]
+        t["_num"] = t["RelxG_pct"] * t["w"]
+        rx = t.groupby("player_id").agg(_num=("_num", "sum"),
+                                        _den=("w", "sum")).reset_index()
+        rx["RelxG_pct"] = np.where(rx["_den"] > 0, rx["_num"] / rx["_den"], np.nan)
+        g = g.merge(rx[["player_id", "RelxG_pct"]], on="player_id", how="left")
+        out_cols.append("RelxG_pct")
+    return g[out_cols]
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -1153,7 +1181,8 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         base = nfi.copy()
         qg = load_qg_player_playoffs()
         if not qg.empty:
-            qcols = ["player_id", "GP", "qualifying_GP", "xG_QG_pct", "NFI_QG_pct"]
+            qcols = ["player_id", "GP", "qualifying_GP", "xG_QG_pct", "NFI_QG_pct",
+                     "RelNFI_QG_pct", "RelxG_QG_pct", "RelxG_pct"]
             base = base.merge(qg[[c for c in qcols if c in qg.columns]],
                               on="player_id", how="left")
         zone = load_zone_playoffs()
@@ -1192,7 +1221,8 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         base = nfi[nfi["season"] == SEASON_KEY[season_label]].copy()
         if not qg.empty:
             qcols = ["player_id", "season", "GP", "qualifying_GP",
-                     "xG_QG_pct", "NFI_QG_pct"]
+                     "xG_QG_pct", "NFI_QG_pct",
+                     "RelNFI_QG_pct", "RelxG_QG_pct", "RelxG_pct"]
             base = base.merge(qg[[c for c in qcols if c in qg.columns]],
                               on=["player_id", "season"], how="left")
         # Per-season Zone Impact (uncapped per-season files), name-keyed on
@@ -1217,7 +1247,7 @@ PLAYER_FAMILY_COLS = {
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
     "Zone Impact": ["NZI", "DZI", "OZI"],
-    "Quality Games": ["xG_QG%", "NFI_QG%"],
+    "Quality Games": ["RelNFI_QG%", "NFI_QG%", "RelxG%", "RelxG_QG%", "xG_QG%"],
 }
 
 
@@ -1287,6 +1317,8 @@ def render_players(season_label: str, game_type: str) -> None:
         "RelNFI_F_pct": "RelNFI-A%", "RelNFI_A_pct": "RelNFI-S%",
         "NFI_A_rate": "NFI-A/60", "NFI_S_rate": "NFI-S/60",
         "xG_QG_pct": "xG_QG%", "NFI_QG_pct": "NFI_QG%",
+        "RelNFI_QG_pct": "RelNFI_QG%", "RelxG_QG_pct": "RelxG_QG%",
+        "RelxG_pct": "RelxG%",
     }
     df = df.rename(columns=_ren)
     rank_cohort = rank_cohort.rename(columns=_ren)
@@ -1296,7 +1328,7 @@ def render_players(season_label: str, game_type: str) -> None:
     # relative (vs own-team) versions — both coexist, placed side by side.
     cols = ["Player", "Pos", "Team", "GP", "TOI", "RelNFI%", "RelNFI-A%",
             "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI",
-            "xG_QG%", "NFI_QG%"]
+            "RelNFI_QG%", "NFI_QG%", "RelxG%", "RelxG_QG%", "xG_QG%"]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
@@ -1307,10 +1339,10 @@ def render_players(season_label: str, game_type: str) -> None:
     disp = df[cols].copy()
 
     fmt = {}
-    for c in ("NFI%", "xG_QG%", "NFI_QG%"):
+    for c in ("NFI%", "xG_QG%", "NFI_QG%", "RelNFI_QG%", "RelxG_QG%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
-    for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%"):
+    for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
     for c in ("NFI-A/60", "NFI-S/60"):
@@ -1326,7 +1358,8 @@ def render_players(season_label: str, game_type: str) -> None:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
-                    "NFI-S/60", "NZI", "DZI", "OZI", "xG_QG%", "NFI_QG%"]
+                    "NFI-S/60", "NZI", "DZI", "OZI",
+                    "RelNFI_QG%", "NFI_QG%", "RelxG%", "RelxG_QG%", "xG_QG%"]
     _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better={"NFI-S/60"})
     _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
                      "D": "defense"}[pos]
