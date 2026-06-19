@@ -1183,6 +1183,17 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     return base, is_pooled
 
 
+# Player List metric families — the collapse filter toggles each group's columns
+# (display names, post-rename). Identity columns (Player/Pos/Team/GP/TOI) always
+# show.
+PLAYER_FAMILY_COLS = {
+    "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
+                         "NFI-A/60", "NFI-S/60"],
+    "Zone Impact": ["NZI", "DZI", "OZI"],
+    "Quality Games": ["xG_QG%", "NFI_QG%"],
+}
+
+
 def render_players(season_label: str, game_type: str) -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Player List</h2>",
@@ -1203,6 +1214,11 @@ def render_players(season_label: str, game_type: str) -> None:
     c1, c2, c3 = st.columns([1.0, 1.6, 1.3])
     with c1:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
+        fam_sel = st.multiselect(
+            "Metric families", list(PLAYER_FAMILY_COLS),
+            default=list(PLAYER_FAMILY_COLS), key="players_families",
+            help="Collapse a group to hide its columns (Net Front Impact, "
+                 "Zone Impact, Quality Games).")
     with c2:
         if playoffs:
             min_toi = st.slider("Min ES TOI (min)", 0, 1500, 300, 25,
@@ -1255,6 +1271,10 @@ def render_players(season_label: str, game_type: str) -> None:
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
+    # Metric-family collapse: keep identity columns; drop a family's columns when
+    # it's deselected in the filter.
+    _fam_of = {col: fam for fam, fcols in PLAYER_FAMILY_COLS.items() for col in fcols}
+    cols = [c for c in cols if _fam_of.get(c) is None or _fam_of.get(c) in set(fam_sel)]
     disp = df[cols].copy()
 
     fmt = {}
