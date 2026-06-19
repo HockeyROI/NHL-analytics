@@ -156,6 +156,7 @@ _CHART_COLORS = {
     "NFI-A/60": _CHART_PRIMARY, "NFI-S/60": _CHART_SECOND,
     "NZI": _CHART_PRIMARY, "DZI": _CHART_SECOND, "OZI": _CHART_THIRD,
     "NFI_QG%": _CHART_PRIMARY, "xG_QG%": _CHART_SECOND,
+    "RelNFI_QG%": _CHART_PRIMARY, "RelxG_QG%": _CHART_SECOND, "RelxG%": _CHART_PRIMARY,
     "NFI-GSAx/60": _CHART_PRIMARY, "QNFS%": _CHART_PRIMARY, "QS-GSAx%": _CHART_SECOND,
 }
 
@@ -554,8 +555,13 @@ def render_methodology() -> None:
         + _meth_framework(
             "Quality Games (QG)",
             "Per-game consistency — the share of a player's 5v5 regulation games where their "
-            "on-ice danger share beat the position median, on two bases (MoneyPuck xG and NFI), "
-            "with a half-credit rule for exact-median ties.",
+            "on-ice danger share beat the position median, on two bases: MoneyPuck xG "
+            "(<b>xG-QG%</b>) and NFI (<b>NFI-QG%</b>), with a half-credit rule for exact-median "
+            "ties. <b>Relative QG</b> (<b>RelNFI-QG%</b>, <b>RelxG-QG%</b>) runs the same per-game "
+            "median test on the player's <i>team-relative</i> danger share (on-ice vs off-ice), so "
+            "it credits beating the bar after isolating individual contribution from team strength "
+            "— the QG analog of RelNFI%. <b>RelxG%</b> is the underlying season-level relative xG "
+            "rate itself (relative xG per 60, on-ice − off-ice), the xG counterpart to RelNFI%.",
         )
         + _meth_framework(
             "Teams",
@@ -870,8 +876,8 @@ def _player_trend(pid: int) -> pd.DataFrame:
         return pd.DataFrame()
     p["season"] = p["season"].astype(str)
     p = p[p["season"].isin(PROFILE_SEASONS)]
-    trend = p[["season", "NFI_pct", "RelNFI_pct", "RelNFI_F_pct", "RelNFI_A_pct"]].rename(
-        columns={"NFI_pct": "NFI%", "RelNFI_pct": "RelNFI%",
+    trend = p[["season", "team", "NFI_pct", "RelNFI_pct", "RelNFI_F_pct", "RelNFI_A_pct"]].rename(
+        columns={"team": "Team", "NFI_pct": "NFI%", "RelNFI_pct": "RelNFI%",
                  "RelNFI_F_pct": "RelNFI-A%", "RelNFI_A_pct": "RelNFI-S%"})
 
     # Raw attack/suppress per-60 (ES CNFI+MNFI on-ice for/against) per season.
@@ -902,8 +908,11 @@ def _player_trend(pid: int) -> pd.DataFrame:
         q = qg[qg["player_id"] == pid].copy()
         q["season"] = q["season"].astype(str)
         q = q[q["season"].isin(PROFILE_SEASONS)]
-        keep = ["season"] + [c for c in ("NFI_QG_pct", "xG_QG_pct") if c in q.columns]
-        q = q[keep].rename(columns={"NFI_QG_pct": "NFI_QG%", "xG_QG_pct": "xG_QG%"})
+        keep = ["season"] + [c for c in ("GP", "NFI_QG_pct", "xG_QG_pct",
+                "RelNFI_QG_pct", "RelxG_QG_pct", "RelxG_pct") if c in q.columns]
+        q = q[keep].rename(columns={"NFI_QG_pct": "NFI_QG%", "xG_QG_pct": "xG_QG%",
+                "RelNFI_QG_pct": "RelNFI_QG%", "RelxG_QG_pct": "RelxG_QG%",
+                "RelxG_pct": "RelxG%"})
         trend = trend.merge(q, on="season", how="outer")
 
     trend = trend[trend["season"].isin(PROFILE_SEASONS)].copy()
@@ -999,7 +1008,9 @@ def _player_season_ranks(pid: int, same_pos: bool = False) -> dict:
     if not qg.empty:
         qg = qg.copy()
         qg["season"] = qg["season"].astype(str)
-        for disp_c, src in (("NFI_QG%", "NFI_QG_pct"), ("xG_QG%", "xG_QG_pct")):
+        for disp_c, src in (("NFI_QG%", "NFI_QG_pct"), ("xG_QG%", "xG_QG_pct"),
+                            ("RelNFI_QG%", "RelNFI_QG_pct"), ("RelxG_QG%", "RelxG_QG_pct"),
+                            ("RelxG%", "RelxG_pct")):
             if src not in qg.columns:
                 continue
             d = {}
@@ -1024,23 +1035,29 @@ def _player_profile_table(pid: int, same_pos: bool = False
     share_cols = ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%"]
     rate_cols = ["NFI-A/60", "NFI-S/60"]
     zone_cols = ["NZI", "DZI", "OZI"]
-    qg_cols = ["NFI_QG%", "xG_QG%"]
+    qg_cols = ["RelNFI_QG%", "NFI_QG%", "RelxG%", "RelxG_QG%", "xG_QG%"]
     metric_cols = [c for c in share_cols + rate_cols + zone_cols + qg_cols
                    if c in trend.columns]
 
     # Per-season rank (cohort per same_pos) appended to each cell.
     ranks = _player_season_ranks(pid, same_pos=same_pos)
     _b = {}
-    for c in ("NFI%", "NFI_QG%", "xG_QG%"):
+    for c in ("NFI%", "NFI_QG%", "xG_QG%", "RelNFI_QG%", "RelxG_QG%"):
         _b[c] = lambda v: f"{v * 100:.1f}%"
-    for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%"):
+    for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%"):
         _b[c] = lambda v: f"{v:+.2f}"
     for c in ("NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI"):
         _b[c] = lambda v: f"{v:.1f}"
+    has_team = "Team" in trend.columns
+    has_gp = "GP" in trend.columns
     rows = []
     for _, r in trend.iterrows():
         ssn = r["season"]
         row = {"Season": r["Season"]}
+        if has_team:
+            row["Team"] = r["Team"] if pd.notna(r["Team"]) else "—"
+        if has_gp:
+            row["GP"] = f"{int(r['GP'])}" if pd.notna(r["GP"]) else "—"
         for c in metric_cols:
             v = r[c]
             if pd.isna(v):
@@ -1050,7 +1067,8 @@ def _player_profile_table(pid: int, same_pos: bool = False
                 rk = ranks.get(c, {}).get(ssn)
                 row[c] = f"{txt} ({rk})" if rk is not None else txt
         rows.append(row)
-    return pd.DataFrame(rows, columns=["Season"] + metric_cols), trend, metric_cols
+    lead = ["Season"] + (["Team"] if has_team else []) + (["GP"] if has_gp else [])
+    return pd.DataFrame(rows, columns=lead + metric_cols), trend, metric_cols
 
 
 def _render_player_profile(pid: int, same_pos: bool = False) -> None:
@@ -1084,7 +1102,10 @@ def _render_player_profile(pid: int, same_pos: bool = False) -> None:
            ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
     _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
     _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
-    _chart("Quality Games % (NFI_QG%, xG_QG%)", ["NFI_QG%", "xG_QG%"])
+    _chart("Quality Games % — raw (NFI_QG%, xG_QG%)", ["NFI_QG%", "xG_QG%"])
+    _chart("Quality Games % — relative (RelNFI_QG%, RelxG_QG%)",
+           ["RelNFI_QG%", "RelxG_QG%"])
+    _chart("Relative xG per 60 (RelxG%)", ["RelxG%"])
 
 
 # ===========================================================================
@@ -1419,8 +1440,11 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
         ("NZI", _f("NZI", "rate")),
         ("DZI", _f("DZI", "rate")),
         ("OZI", _f("OZI", "rate")),
-        ("xG_QG%", _f("xG_QG_pct", "pct")),
+        ("RelNFI_QG%", _f("RelNFI_QG_pct", "pct")),
         ("NFI_QG%", _f("NFI_QG_pct", "pct")),
+        ("RelxG%", _rel("RelxG_pct")),
+        ("RelxG_QG%", _f("RelxG_QG_pct", "pct")),
+        ("xG_QG%", _f("xG_QG_pct", "pct")),
         ("ES TOI (min)", _f("toi_min", "toi")),
     ]
     st.caption(f"**{r['player_name']} ({r['position']})** · pooled playoffs "
