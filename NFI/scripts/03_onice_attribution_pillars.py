@@ -209,6 +209,12 @@ plr_onice_for_att_s = defaultdict(lambda: defaultdict(int)) # (pid,season) -> on
 plr_onice_for_gl_s  = defaultdict(lambda: defaultdict(int))
 plr_onice_ag_att_s  = defaultdict(lambda: defaultdict(int))
 plr_onice_ag_gl_s   = defaultdict(lambda: defaultdict(int))
+# Fenwick (unblocked) on-ice for/against — same keying as the Corsi _att_s
+# buckets but excluding blocked-shot events. Add-only: these feed two new
+# trailing columns in player_counts_by_state_zone_per_season.csv and nothing
+# else. The Corsi _att_s buckets above are untouched.
+plr_onice_for_fen_s = defaultdict(lambda: defaultdict(int)) # (pid,season) -> on-ice for, Fenwick
+plr_onice_ag_fen_s  = defaultdict(lambda: defaultdict(int)) # (pid,season) -> on-ice against, Fenwick
 plr_toi_s = defaultdict(lambda: defaultdict(float))         # (pid, season) -> {state: seconds}
 
 # Goalie-level (faced)
@@ -333,6 +339,7 @@ for gid, gshots in shots_by_game.items():
         t = int(sh["abs_time"])
         state = sh["state"]; zone = sh["zone"]
         is_goal = int(sh["is_goal_i"])
+        is_fen = sh["event_type"] != "blocked-shot"   # Fenwick = unblocked attempts
         is_attempt = 1
         shoot_ab = sh["shooting_team_abbrev"]
         def_ab = away_ab if shoot_ab == home_ab else home_ab
@@ -369,6 +376,8 @@ for gid, gshots in shots_by_game.items():
         for p in onice_shoot:
             plr_onice_for_att[p][(state, zone)] += 1
             plr_onice_for_att_s[(p, season_str)][(state, zone)] += 1
+            if is_fen:
+                plr_onice_for_fen_s[(p, season_str)][(state, zone)] += 1
             if is_goal:
                 plr_onice_for_gl[p][(state, zone)] += 1
                 plr_onice_for_gl_s[(p, season_str)][(state, zone)] += 1
@@ -376,6 +385,8 @@ for gid, gshots in shots_by_game.items():
         for p in onice_def:
             plr_onice_ag_att[p][(state, zone)] += 1
             plr_onice_ag_att_s[(p, season_str)][(state, zone)] += 1
+            if is_fen:
+                plr_onice_ag_fen_s[(p, season_str)][(state, zone)] += 1
             if is_goal:
                 plr_onice_ag_gl[p][(state, zone)] += 1
                 plr_onice_ag_gl_s[(p, season_str)][(state, zone)] += 1
@@ -661,6 +672,10 @@ for (pid, sn) in keys_all:
                 "onice_for_gl": plr_onice_for_gl_s[(pid, sn)].get((state, zone), 0),
                 "onice_ag_att": plr_onice_ag_att_s[(pid, sn)].get((state, zone), 0),
                 "onice_ag_gl": plr_onice_ag_gl_s[(pid, sn)].get((state, zone), 0),
+                # Fenwick (no-blocks) siblings — appended last so existing columns
+                # stay byte-identical; the file just gains these two trailing cols.
+                "onice_for_fen": plr_onice_for_fen_s[(pid, sn)].get((state, zone), 0),
+                "onice_ag_fen": plr_onice_ag_fen_s[(pid, sn)].get((state, zone), 0),
             }
             rows.append(rec)
 pd.DataFrame(rows).to_csv(f"{OUT_DIR}/player_counts_by_state_zone_per_season.csv", index=False)
