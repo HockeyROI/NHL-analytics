@@ -1214,11 +1214,6 @@ def render_players(season_label: str, game_type: str) -> None:
     c1, c2, c3 = st.columns([1.0, 1.6, 1.3])
     with c1:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
-        collapse_fam = st.radio(
-            "Collapse a Metric Family", ["None"] + list(PLAYER_FAMILY_COLS),
-            horizontal=True, key="players_collapse",
-            help="Hide a metric group's columns (Net Front Impact, Zone Impact, "
-                 "Quality Games).")
     with c2:
         if playoffs:
             min_toi = st.slider("Min ES TOI (min)", 0, 1500, 300, 25,
@@ -1230,6 +1225,13 @@ def render_players(season_label: str, game_type: str) -> None:
     with c3:
         team_opts = ["All"] + sorted(frame["team"].dropna().unique().tolist())
         team_sel = st.selectbox("Team", team_opts, key="players_team")
+
+    # Full-width row so all options fit on one line.
+    collapse_fam = st.radio(
+        "Collapse a Metric Family", ["None"] + list(PLAYER_FAMILY_COLS),
+        horizontal=True, key="players_collapse",
+        help="Hide a metric group's columns (Net Front Impact, Zone Impact, "
+             "Quality Games).")
 
     df = frame.copy()
     if pos in ("F", "D"):
