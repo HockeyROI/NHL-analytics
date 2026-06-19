@@ -2108,6 +2108,9 @@ def load_ref_penalties() -> pd.DataFrame:
     return df[df["ref"] != ""].copy()
 
 
+REF_TEAM_MIN_GAMES = 5   # smaller floor — a ref works any one team only a handful of times
+
+
 def _ref_table(df: pd.DataFrame) -> pd.DataFrame:
     """One row per referee: games, pen/game, home-pen%, per-game type rates."""
     rows = []
@@ -2126,12 +2129,161 @@ def _ref_table(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _ref_league_avg(tbl: pd.DataFrame) -> pd.DataFrame:
-    avg = {"Referee": "LEAGUE AVERAGE", "Games": tbl["Games"].sum()}
-    for c in tbl.columns:
-        if c not in ("Referee", "Games"):
-            avg[c] = tbl[c].mean()
-    return pd.DataFrame([avg])
+def _delta_fmt(avg, dec=2, pct=False):
+    """Styler formatter: 'value (±Δ vs avg)'. Keeps the cell numeric (so the
+    column still header-sorts on the real value) while appending the bracket."""
+    suf = "%" if pct else ""
+    def f(x):
+        if pd.isna(x):
+            return "—"
+        return f"{x:.{dec}f}{suf} ({x - avg:+.{dec}f})"
+    return f
+
+
+def _ref_season_scope(df: pd.DataFrame, season_label: str) -> pd.DataFrame:
+    key = SEASON_KEY.get(season_label, "pooled")
+    if key == "pooled_2yr":
+        return df[df["season"].isin([20242025, 20252026])]
+    if key != "pooled":
+        return df[df["season"] == REF_SEASON_INT.get(season_label)]
+    return df
+
+
+def _render_ref_league(df: pd.DataFrame, season_label: str, name_q: str) -> None:
+    """League-wide referee table. Each rate carries a (± vs league average)
+    bracket."""
+    tbl = _ref_table(df)
+    tbl = tbl[tbl["Games"] >= REF_MIN_GAMES].copy()
+    if tbl.empty:
+        st.info(f"No referees meet the {REF_MIN_GAMES}-game floor for this view.")
+        return
+    metric_cols = ["Pen/Game", "Home Pen%", "Away Pen%"] + [f"{t}/G" for t in REF_TYPES]
+    avg = {c: float(tbl[c].mean()) for c in metric_cols if c in tbl.columns}
+
+    tbl = tbl.sort_values("Pen/Game", ascending=False).reset_index(drop=True)
+    if name_q:
+        tbl = tbl[tbl["Referee"].str.lower().str.contains(name_q, na=False)]
+    if tbl.empty:
+        st.info("No referees match the name filter.")
+        return
+
+    cols = (["Referee", "Games", "Pen/Game", "Home Pen%", "Away Pen%"]
+            + [f"{t}/G" for t in REF_TYPES])
+    disp = tbl[[c for c in cols if c in tbl.columns]].copy()
+    fmt = {"Games": lambda x: "—" if pd.isna(x) else f"{int(x):,}",
+           "Pen/Game": _delta_fmt(avg["Pen/Game"], 2),
+           "Home Pen%": _delta_fmt(avg["Home Pen%"], 1, pct=True),
+           "Away Pen%": _delta_fmt(avg["Away Pen%"], 1, pct=True)}
+    for t in REF_TYPES:
+        c = f"{t}/G"
+        if c in disp:
+            fmt[c] = _delta_fmt(avg[c], 2)
+    _sort_hint()
+    st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    st.caption(
+        f"{len(disp)} referees · {season_label} · sorted by Pen/Game descending · "
+        f"min {REF_MIN_GAMES} games. **Bracket = (± vs league average)** across all "
+        f"qualifying referees. League avg Pen/Game ≈ {avg['Pen/Game']:.2f}; "
+        f"Home Pen% ≈ {avg['Home Pen%']:.0f}% (share of penalties on the home team)."
+    )
+
+
+def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str) -> None:
+    """Per-team view: (A) what each referee calls AGAINST this team, with a
+    two-sided bracket (vs league avg / vs that ref's own average), and (B) the
+    team's penalties-taken per game by type, with a (vs league avg) bracket."""
+    dft = df[(df["home_team"] == team) | (df["away_team"] == team)].copy()
+    games_T = dft["game_id"].nunique()
+    if games_T == 0:
+        st.info(f"No referee data for {team} in this view.")
+        return
+    distinct_games = df["game_id"].nunique()
+    against = dft[dft["penalized_team"] == team]          # penalties on this team
+
+    # Per-ref baselines over the FULL scope (all teams). Each penalty is one
+    # exploded row per ref, so dividing a ref's total rows by (2 × games) gives
+    # their average penalties-against-a-single-team per game — comparable to the
+    # per-team rate below. The league baseline pools the same way.
+    ref_games_all = df.groupby("ref")["game_id"].nunique()
+    ref_pen_all = df.groupby("ref").size()
+    ref_base = ref_pen_all / (2 * ref_games_all)
+    L = len(df) / (2 * ref_games_all.sum()) if ref_games_all.sum() else np.nan
+
+    # ---- Table A: referees in TEAM's games ----
+    st.markdown(f"**Referees in {team}'s games — penalties called against {team}**")
+    rows = []
+    for ref, g in dft.groupby("ref"):
+        games_RT = g["game_id"].nunique()
+        if games_RT < REF_TEAM_MIN_GAMES:
+            continue
+        ag = against[against["ref"] == ref]
+        rate = len(ag) / games_RT
+        rb = float(ref_base.get(ref, np.nan))
+        row = {"Referee": ref, "Games": games_RT, f"Pen/G vs {team}": rate,
+               "Δ (vs league / vs ref avg)":
+                   f"({rate - L:+.2f} / {rate - rb:+.2f})" if pd.notna(rb) else "—"}
+        for t in REF_TYPES:
+            row[f"{t}/G"] = (ag["penalty_type"] == t).sum() / games_RT
+        rows.append(row)
+
+    if not rows:
+        st.info(f"No referee worked ≥{REF_TEAM_MIN_GAMES} games involving {team} "
+                "in this view.")
+    else:
+        ta = pd.DataFrame(rows).sort_values(f"Pen/G vs {team}", ascending=False)
+        if name_q:
+            ta = ta[ta["Referee"].str.lower().str.contains(name_q, na=False)]
+        if ta.empty:
+            st.info("No referees match the name filter.")
+        else:
+            ta = ta.reset_index(drop=True)
+            rate_col = f"Pen/G vs {team}"
+            fmt = {"Games": lambda x: "—" if pd.isna(x) else f"{int(x):,}",
+                   rate_col: lambda x: "—" if pd.isna(x) else f"{x:.2f}"}
+            for t in REF_TYPES:
+                c = f"{t}/G"
+                if c in ta:
+                    fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+            cols = (["Referee", "Games", rate_col, "Δ (vs league / vs ref avg)"]
+                    + [f"{t}/G" for t in REF_TYPES])
+            _sort_hint()
+            st.dataframe(ta[[c for c in cols if c in ta.columns]].style.format(fmt, na_rep="—"),
+                         width="stretch", hide_index=True)
+            st.caption(
+                f"Penalties called against {team} per game, by referee (min "
+                f"{REF_TEAM_MIN_GAMES} games with {team}). **Bracket = (Δ vs league "
+                "average / Δ vs that referee's own average).** First number: how this "
+                f"referee's penalty rate against {team} compares to the league-wide "
+                "average penalty rate against any team. Second number: how it compares "
+                "to that same referee's own average rate against all teams — a positive "
+                f"second number means the referee calls more against {team} than they "
+                "typically do."
+            )
+
+    # ---- Table B: TEAM penalties taken per game by type ----
+    st.markdown(f"**{team} penalties taken per game**")
+    # df is exploded (one row per referee), so every penalty appears twice — de-explode
+    # team and league counts by dividing by 2. games_T / distinct_games are already unique.
+    L_all = (len(df) / 2) / (2 * distinct_games) if distinct_games else np.nan
+    brows = []
+    for t in REF_TYPES:
+        cnt = (against["penalty_type"] == t).sum() / 2
+        rate = cnt / games_T
+        lt = ((df["penalty_type"] == t).sum() / 2) / (2 * distinct_games) if distinct_games else np.nan
+        brows.append({"Penalty": t, "Per game": rate,
+                      "Δ vs league": f"{rate - lt:+.2f}" if pd.notna(lt) else "—"})
+    rate_all = (len(against) / 2) / games_T
+    brows.append({"Penalty": "All penalties", "Per game": rate_all,
+                  "Δ vs league": f"{rate_all - L_all:+.2f}" if pd.notna(L_all) else "—"})
+    bt = pd.DataFrame(brows)
+    st.dataframe(
+        bt.style.format({"Per game": lambda x: "—" if pd.isna(x) else f"{x:.2f}"}, na_rep="—"),
+        width="stretch", hide_index=True)
+    st.caption(
+        f"{team}'s penalties taken per game over {games_T} games in this view. "
+        "**Bracket = (Δ vs league average)** for that penalty type — positive means "
+        f"{team} takes more of that penalty per game than a league-average team."
+    )
 
 
 def render_referees(season_label: str, game_type: str) -> None:
@@ -2151,12 +2303,10 @@ def render_referees(season_label: str, game_type: str) -> None:
         st.error("Referee data not found "
                  "(`Referees/output/all_teams_penalties_3seasons.csv`).")
         return
-    key = SEASON_KEY.get(season_label, "pooled")
-    if key == "pooled_2yr":
-        df = df[df["season"].isin([20242025, 20252026])]
-    elif key != "pooled":
-        sk = REF_SEASON_INT.get(season_label)
-        df = df[df["season"] == sk]
+    df = _ref_season_scope(df, season_label)
+    if df.empty:
+        st.info("No referee data for this season.")
+        return
 
     st.markdown(
         f"<p style='color:{PALETTE['text_secondary']}; font-size:0.85rem; font-style:italic; "
@@ -2166,45 +2316,21 @@ def render_referees(season_label: str, game_type: str) -> None:
         unsafe_allow_html=True,
     )
 
-    name_q = st.text_input("Referee name contains", key="refs_name").strip().lower()
+    teams = sorted({t for t in set(df["home_team"]) | set(df["away_team"])
+                    if isinstance(t, str) and len(t) == 3})
+    c1, c2 = st.columns([1.0, 1.6])
+    with c1:
+        team_sel = st.selectbox("Team", ["All teams"] + teams, key="refs_team")
+    with c2:
+        name_q = st.text_input("Referee name contains", key="refs_name").strip().lower()
+    st.caption("Use the **Season** filter at the top of the page to switch season "
+               "(2023-24 / 2024-25 / 2025-26) or pooled views. Pick a **Team** to see "
+               "what each referee calls against them and that team's penalties taken.")
 
-    tbl = _ref_table(df)
-    tbl = tbl[tbl["Games"] >= REF_MIN_GAMES]
-    if tbl.empty:
-        st.info("No referees meet the 40-game floor for this view.")
-        return
-    avg = _ref_league_avg(tbl)
-    tbl = tbl.sort_values("Pen/Game", ascending=False).reset_index(drop=True)
-    if name_q:
-        tbl = tbl[tbl["Referee"].str.lower().str.contains(name_q, na=False)]
-    out = pd.concat([avg, tbl], ignore_index=True)
-
-    cols = (["Referee", "Games", "Pen/Game", "Home Pen%", "Away Pen%"]
-            + [f"{t}/G" for t in REF_TYPES])
-    disp = out[[c for c in cols if c in out.columns]].copy()
-
-    fmt = {"Games": lambda x: "—" if pd.isna(x) else f"{int(x):,}",
-           "Pen/Game": lambda x: "—" if pd.isna(x) else f"{x:.2f}",
-           "Home Pen%": lambda x: "—" if pd.isna(x) else f"{x:.1f}%",
-           "Away Pen%": lambda x: "—" if pd.isna(x) else f"{x:.1f}%"}
-    for t in REF_TYPES:
-        c = f"{t}/G"
-        if c in disp:
-            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
-
-    def _bold_avg(row):
-        is_avg = row["Referee"] == "LEAGUE AVERAGE"
-        return [f"font-weight:700; color:{PALETTE['blue']};" if is_avg else "" for _ in row]
-
-    styler = disp.style.format(fmt, na_rep="—").apply(_bold_avg, axis=1)
-    _sort_hint()
-    st.dataframe(styler, width="stretch", hide_index=True)
-    n_refs = len(disp) - 1
-    st.caption(
-        f"{n_refs} referees · {season_label} · sorted by Pen/Game descending · "
-        "minimum 40 games · top row = league average. Home Pen% = share of a "
-        "referee's penalties assessed to the home team (league ≈ 47%)."
-    )
+    if team_sel == "All teams":
+        _render_ref_league(df, season_label, name_q)
+    else:
+        _render_ref_team(df, season_label, team_sel, name_q)
 
 
 # ---------------------------------------------------------------------------
