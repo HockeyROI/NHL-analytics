@@ -2193,15 +2193,13 @@ def _render_ref_league(df: pd.DataFrame, season_label: str, name_q: str) -> None
         is_avg = row["Referee"] == "LEAGUE AVERAGE"
         return [f"font-weight:700; color:{PALETTE['blue']};" if is_avg else "" for _ in row]
 
-    st.dataframe(disp.style.apply(_bold_avg, axis=1), width="stretch", hide_index=True)
     st.caption(
-        f"{len(disp) - 1} referees · {season_label} · sorted by Pen/Game descending · "
-        f"min {REF_MIN_GAMES} games. The highlighted top row is the **league average** "
-        "across all qualifying referees. For every referee, the number in brackets is "
-        "that referee **(± vs the league average)** — e.g. Pen/Game `7.92 (+1.06)` means "
-        "1.06 more penalties per game than the league-average referee. Home Pen% = share "
-        "of a referee's penalties assessed to the home team."
+        "For every referee, the number in brackets is that referee "
+        "**(± vs the league average)** — e.g. Pen/Game `7.92 (+1.06)` means 1.06 more "
+        "penalties per game than the league-average referee. Home Pen% = share of a "
+        "referee's penalties assessed to the home team."
     )
+    st.dataframe(disp.style.apply(_bold_avg, axis=1), width="stretch", hide_index=True)
 
 
 def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str) -> None:
@@ -2269,10 +2267,7 @@ def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str
             st.info("No referees match the name filter.")
         else:
             cols = ["Referee", "Games", rate_col] + [f"{t}/G" for t in REF_TYPES]
-            st.dataframe(ta[cols].reset_index(drop=True), width="stretch", hide_index=True)
             st.caption(
-                f"Penalties called against {team} per game, by referee (min "
-                f"{REF_TEAM_MIN_GAMES} games with {team}); overall and per penalty type. "
                 "Each cell is `rate (Δ vs league average / Δ vs that referee's own "
                 "average)`. **First bracket number:** how this referee's rate against "
                 f"{team} compares to the league-wide average rate against any team. "
@@ -2280,6 +2275,7 @@ def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str
                 f"rate against all teams — positive means the referee calls more against "
                 f"{team} than they normally do."
             )
+            st.dataframe(ta[cols].reset_index(drop=True), width="stretch", hide_index=True)
 
     # ---- Table B: TEAM penalties taken per game by type ----
     st.markdown(f"**{team} penalties taken per game**")
@@ -2293,12 +2289,11 @@ def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str
     brows.append({"Penalty": "All penalties",
                   "Per game": f"{rate_all:.2f} ({rate_all - L_overall:+.2f})"
                   if pd.notna(L_overall) else f"{rate_all:.2f}"})
-    st.dataframe(pd.DataFrame(brows), width="stretch", hide_index=True)
     st.caption(
-        f"{team}'s penalties taken per game over {games_T} games in this view, by type. "
         "Each cell is `rate (Δ vs league average)` — a positive bracket means "
         f"{team} takes more of that penalty per game than a league-average team."
     )
+    st.dataframe(pd.DataFrame(brows), width="stretch", hide_index=True)
 
 
 def render_referees(season_label: str, game_type: str) -> None:
@@ -2338,9 +2333,6 @@ def render_referees(season_label: str, game_type: str) -> None:
         team_sel = st.selectbox("Team", ["All teams"] + teams, key="refs_team")
     with c2:
         name_q = st.text_input("Referee name contains", key="refs_name").strip().lower()
-    st.caption("Use the **Season** filter at the top of the page to switch season "
-               "(2023-24 / 2024-25 / 2025-26) or pooled views. Pick a **Team** to see "
-               "what each referee calls against them and that team's penalties taken.")
 
     if team_sel == "All teams":
         _render_ref_league(df, season_label, name_q)
