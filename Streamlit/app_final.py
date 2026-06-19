@@ -444,6 +444,18 @@ def _sort_hint() -> None:
                "2nd descending, 3rd clears.")
 
 
+def _show_df(obj, **kwargs) -> None:
+    """st.dataframe with the leading identity column pinned (frozen on the left),
+    so it stays visible when a wide table is scrolled horizontally. Works for
+    plain DataFrames and Stylers (Styler.data holds the underlying frame)."""
+    cols = obj.data.columns if hasattr(obj, "data") else obj.columns
+    if len(cols):
+        cc = dict(kwargs.pop("column_config", {}) or {})
+        cc.setdefault(cols[0], st.column_config.Column(pinned=True))
+        kwargs["column_config"] = cc
+    st.dataframe(obj, **kwargs)
+
+
 def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=()):
     """Append ' (rank)' to each ranked column's DISPLAY string while leaving the
     underlying cell value numeric, so header-sort still orders by the real value.
@@ -1085,7 +1097,7 @@ def _render_player_profile(pid: int, same_pos: bool = False) -> None:
             cohort = "defense" if str(prow["position"].iloc[0]) == "D" else "forwards"
     st.caption(f"Each value shows its **(rank)** — rank among **{cohort}** that "
                "season. NFI-S/60 (shots against): lowest = #1.")
-    st.dataframe(disp, width="stretch", hide_index=True)
+    _show_df(disp, width="stretch", hide_index=True)
 
     def _chart(title: str, cols: list[str]) -> None:
         ys = [c for c in cols if c in trend.columns and trend[c].notna().any()]
@@ -1392,7 +1404,7 @@ def render_players(season_label: str, game_type: str) -> None:
                f"**{_cohort_label}** (set by the Position filter; players meeting "
                f"Min-TOI). NFI-S/60 (shots against): lowest = #1.")
     _sort_hint()
-    st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
     if playoffs:
         zone_note = " · NZI/DZI/OZI pooled across playoffs"
@@ -1452,7 +1464,7 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
     ]
     st.caption(f"**{r['player_name']} ({r['position']})** · pooled playoffs "
                "(2022-23 → 2024-25).")
-    st.dataframe(pd.DataFrame(items, columns=["Metric", "Value"]),
+    _show_df(pd.DataFrame(items, columns=["Metric", "Value"]),
                  width="stretch", hide_index=True)
 
 
@@ -1688,7 +1700,7 @@ def _render_teams_playoffs(season_label: str) -> None:
     st.caption("Each metric shows its **(rank)** across playoff teams. "
                "Suppress events (shots against): lowest = #1.")
     _sort_hint()
-    st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
     st.caption(
         f"{len(disp)} teams · all playoffs (2022-2025 pooled) · sorted by NFI% "
         "(CNFI+MNFI share) descending · Zone Impact (NZI/DZI/OZI) is TOI-weighted."
@@ -1801,7 +1813,7 @@ def render_teams(season_label: str, game_type: str) -> None:
     st.caption("Each metric shows its **(rank)** across all 32 teams. "
                "Suppress events (shots against): lowest = #1.")
     _sort_hint()
-    st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
     zwin_label = "4-year pool (2022-26)" if zwin == "4y_pool" else "2-year pool (2024-26)"
     cap = (f"{len(disp)} teams · {season_label} · sorted by NFI% (CNFI+MNFI share) "
@@ -1967,7 +1979,7 @@ def _render_goalie_profile(gid: int) -> None:
         rows.append(row)
     st.caption("Each value shows its **(rank)** — league rank among all goalies "
                "that season.")
-    st.dataframe(pd.DataFrame(rows, columns=["Season"] + metric_cols),
+    _show_df(pd.DataFrame(rows, columns=["Season"] + metric_cols),
                  width="stretch", hide_index=True)
 
     # CHOICE: split into 2 small multiples. NFI-GSAx/60 is a per-60 rate (~±0.3);
@@ -2114,7 +2126,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
                "meeting the Min-Shots filter. Blanks (below a metric's floor) are "
                "unranked.")
     _sort_hint()
-    st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
     _goalie_scope = "all playoffs (2022-2025 pooled)" if playoffs else season_label
     st.caption(
         f"{len(disp)} goalies · {_goalie_scope} · sorted by NFI-GSAx/60 descending · "
@@ -2171,7 +2183,7 @@ def _render_goalie_playoff_summary(gid: int) -> None:
         ("Shots faced", fmt(pick(n, "total_faced"), "int")),
     ]
     st.caption(f"**{name}** · pooled playoffs (2022-23 → 2024-25).")
-    st.dataframe(pd.DataFrame(items, columns=["Metric", "Value"]),
+    _show_df(pd.DataFrame(items, columns=["Metric", "Value"]),
                  width="stretch", hide_index=True)
 
 
@@ -2274,7 +2286,7 @@ def render_trade_analyzer(season_label: str, game_type: str) -> None:
         if disp.empty:
             st.info("No per-season data available for this player.")
         else:
-            st.dataframe(disp, width="stretch", hide_index=True)
+            _show_df(disp, width="stretch", hide_index=True)
 
 
 # ---------------------------------------------------------------------------
@@ -2392,7 +2404,7 @@ def _render_ref_league(df: pd.DataFrame, season_label: str, name_q: str) -> None
         "penalties per game than the league-average referee. Home Pen% = share of a "
         "referee's penalties assessed to the home team."
     )
-    st.dataframe(disp.style.apply(_bold_avg, axis=1), width="stretch", hide_index=True)
+    _show_df(disp.style.apply(_bold_avg, axis=1), width="stretch", hide_index=True)
 
 
 def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str) -> None:
@@ -2468,7 +2480,7 @@ def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str
                 f"rate against all teams — positive means the referee calls more against "
                 f"{team} than they normally do."
             )
-            st.dataframe(ta[cols].reset_index(drop=True), width="stretch", hide_index=True)
+            _show_df(ta[cols].reset_index(drop=True), width="stretch", hide_index=True)
 
     # ---- Table B: TEAM penalties taken per game by type ----
     st.markdown(f"**{team} penalties taken per game**")
@@ -2486,7 +2498,7 @@ def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str
         "Each cell is `rate (Δ vs league average)` — a positive bracket means "
         f"{team} takes more of that penalty per game than a league-average team."
     )
-    st.dataframe(pd.DataFrame(brows), width="stretch", hide_index=True)
+    _show_df(pd.DataFrame(brows), width="stretch", hide_index=True)
 
 
 def render_referees(season_label: str, game_type: str) -> None:
