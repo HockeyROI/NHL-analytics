@@ -1306,12 +1306,13 @@ def render_players(season_label: str, game_type: str) -> None:
         team_opts = ["All"] + sorted(frame["team"].dropna().unique().tolist())
         team_sel = st.selectbox("Team", team_opts, key="players_team")
 
-    # Full-width row. Multi-select so up to two families can be collapsed at once.
-    collapse_fams = st.multiselect(
+    # Full-width row of toggle buttons (like the Position filter) — click any
+    # number of families to collapse them; click again to bring them back.
+    collapse_fams = st.segmented_control(
         "Collapse Metric Families", list(PLAYER_FAMILY_COLS),
-        max_selections=2, key="players_collapse_multi",
-        help="Hide up to two metric groups' columns (Net Front Impact, "
-             "Zone Impact, Quality Games).")
+        selection_mode="multi", key="players_collapse_seg",
+        help="Click a metric group to hide its columns (Net Front Impact, "
+             "Zone Impact, Quality Games). Click again to show it.") or []
 
     df = frame.copy()
     if pos in ("F", "D"):
