@@ -1283,12 +1283,12 @@ def render_players(season_label: str, game_type: str) -> None:
         team_opts = ["All"] + sorted(frame["team"].dropna().unique().tolist())
         team_sel = st.selectbox("Team", team_opts, key="players_team")
 
-    # Full-width row so all options fit on one line.
-    collapse_fam = st.radio(
-        "Collapse a Metric Family", ["None"] + list(PLAYER_FAMILY_COLS),
-        horizontal=True, key="players_collapse",
-        help="Hide a metric group's columns (Net Front Impact, Zone Impact, "
-             "Quality Games).")
+    # Full-width row. Multi-select so up to two families can be collapsed at once.
+    collapse_fams = st.multiselect(
+        "Collapse Metric Families", list(PLAYER_FAMILY_COLS),
+        max_selections=2, key="players_collapse_multi",
+        help="Hide up to two metric groups' columns (Net Front Impact, "
+             "Zone Impact, Quality Games).")
 
     df = frame.copy()
     if pos in ("F", "D"):
@@ -1335,7 +1335,8 @@ def render_players(season_label: str, game_type: str) -> None:
     # Metric-family collapse: hide the selected family's columns (identity columns
     # and the other families stay).
     _fam_of = {col: fam for fam, fcols in PLAYER_FAMILY_COLS.items() for col in fcols}
-    cols = [c for c in cols if _fam_of.get(c) != collapse_fam]
+    _collapsed = set(collapse_fams)
+    cols = [c for c in cols if _fam_of.get(c) not in _collapsed]
     disp = df[cols].copy()
 
     fmt = {}
@@ -2233,11 +2234,16 @@ def render_trade_analyzer(season_label: str, game_type: str) -> None:
             _render_player_playoff_summary(frame, int(pid))
         return
 
-    st.caption("Each value shows its **(rank)** — league rank among all skaters "
+    cohort = st.radio("Rank against", ["All skaters", "Same position"],
+                      horizontal=True, key="trade_rank_cohort")
+    same_pos = cohort != "All skaters"
+    _cohort_txt = ("each player's own position group (F vs F, D vs D)"
+                   if same_pos else "all skaters")
+    st.caption(f"Each value shows its **(rank)** — rank among {_cohort_txt} "
                "that season. NFI-S/60 (shots against): lowest = #1.")
     for pid in sel:
         st.markdown(f"**{plabel.get(int(pid), str(pid))}**")
-        disp, _, _ = _player_profile_table(int(pid))
+        disp, _, _ = _player_profile_table(int(pid), same_pos=same_pos)
         if disp.empty:
             st.info("No per-season data available for this player.")
         else:
