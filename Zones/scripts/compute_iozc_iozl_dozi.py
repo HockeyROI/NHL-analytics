@@ -220,7 +220,8 @@ def shift_end_for(intervals_by_pid, pid, t):
         if a <= t < b: return b
     return None
 
-def process_game(gid, player_season_gp, player_bucket):
+def process_game(gid, player_season_gp, player_bucket,
+                 team_bucket=None, team_season_gp=None):
     pbp_path = RAW_PBP / f"{gid}.json"
     sh_path = RAW_SHIFTS / f"{gid}.json"
     if not pbp_path.exists() or not sh_path.exists():
@@ -235,10 +236,17 @@ def process_game(gid, player_season_gp, player_bucket):
     away_id = (pbp.get("awayTeam") or {}).get("id")
     if home_id is None or away_id is None:
         return
+    home_abbrev = norm_team((pbp.get("homeTeam") or {}).get("abbrev", "") or "")
+    away_abbrev = norm_team((pbp.get("awayTeam") or {}).get("abbrev", "") or "")
 
     intervals = build_shift_intervals(shifts)
     for pid in intervals:
         player_season_gp[(pid, season)] += 1
+    if team_season_gp is not None:
+        if home_abbrev:
+            team_season_gp[(home_abbrev, season)] += 1
+        if away_abbrev:
+            team_season_gp[(away_abbrev, season)] += 1
 
     plays = pbp.get("plays") or []
     ctx = None
@@ -251,6 +259,23 @@ def process_game(gid, player_season_gp, player_bucket):
             if team_id not in (home_id, away_id):
                 continue
             fo_from_team = fo_home if team_id == home_id else FLIP[fo_home]
+            team_abbrev = home_abbrev if team_id == home_id else away_abbrev
+            # Team wall-clock zone-time: count each context segment ONCE per
+            # team over the full [fo_t, close_t) window, oriented to this team
+            # — not once per on-ice player. Independent of player_bucket below.
+            if team_bucket is not None and team_abbrev:
+                tfilt = [(t, ez) for (t, ez, _ty) in ctx["events"]
+                         if ctx["fo_t"] <= t < close_t]
+                if tfilt:
+                    tb = team_bucket[(team_abbrev, season)]
+                    for i, (t, ez) in enumerate(tfilt):
+                        tn = tfilt[i + 1][0] if i + 1 < len(tfilt) else close_t
+                        dt = max(0.0, tn - t)
+                        ez_team = ez if team_id == home_id else FLIP[ez]
+                        tb["total_sec"] += dt
+                        if ez_team == "O":   tb["oz_sec"] += dt
+                        elif ez_team == "D": tb["dz_sec"] += dt
+                        else:                tb["nz_sec"] += dt
             for pid in pids:
                 sh_end = shift_end_for(intervals, pid, ctx["fo_t"])
                 if sh_end is None: continue
@@ -399,9 +424,13 @@ def main():
                                          "oz_sec": 0.0, "dz_sec": 0.0,
                                          "nz_sec": 0.0})
     player_season_gp = defaultdict(int)
+    team_bucket = defaultdict(lambda: {"total_sec": 0.0, "oz_sec": 0.0,
+                                       "nz_sec": 0.0, "dz_sec": 0.0})
+    team_season_gp = defaultdict(int)
     total = len(games)
     for i, (gid, _s) in enumerate(games):
-        process_game(gid, player_season_gp, player_bucket)
+        process_game(gid, player_season_gp, player_bucket,
+                     team_bucket, team_season_gp)
         if (i + 1) % 1000 == 0 or i + 1 == total:
             print(f"    {i+1}/{total}")
 
@@ -695,6 +724,7 @@ def main():
                           player_season_gp, norm01)
     write_2yr_pooled_csvs(OUT_DIR, player_meta, player_bucket,
                           player_season_gp)
+    write_team_zone_share_csv(OUT_DIR, team_bucket, team_season_gp)
 
     # ---- Print reports --------------------------------------------------
     print_top_tnzi(player_meta, scenario_gp[POOLED], adj_scores,
@@ -926,6 +956,42 @@ def write_top20_by_metric(out_dir):
         for r in rows_out:
             w.writerow([r[c] for c in cols])
     print(f"    wrote {path}  ({len(rows_out)} rows)")
+
+def write_team_zone_share_csv(out_dir, team_bucket, team_season_gp):
+    """Team-season 5v5 ES zone-time SHARE (oz/nz/dz %, summing to 100).
+
+    Raw shares aggregated by (team, season) from the same attacking-direction-
+    oriented zone seconds the player metric uses, summed across each team's
+    on-ice players. This is a DISTINCT metric from NZI/DZI/OZI (which are
+    position-normalized 0-10 faceoff-context scores), so it uses its own
+    column names (oz_pct/nz_pct/dz_pct). One row per (team, season).
+    """
+    path = out_dir / "team_zone_share_per_season.csv"
+    cols = ["season", "team", "gp", "total_zone_sec",
+            "oz_sec", "nz_sec", "dz_sec", "oz_pct", "nz_pct", "dz_pct"]
+    rows = []
+    for (team, season), b in team_bucket.items():
+        oz, nz, dz = b["oz_sec"], b["nz_sec"], b["dz_sec"]
+        tot = oz + nz + dz
+        if tot <= 0:
+            continue
+        rows.append({
+            "season": season, "team": team,
+            "gp": team_season_gp.get((team, season), 0),
+            "total_zone_sec": round(tot, 1),
+            "oz_sec": round(oz, 1), "nz_sec": round(nz, 1), "dz_sec": round(dz, 1),
+            "oz_pct": round(oz / tot * 100, 2),
+            "nz_pct": round(nz / tot * 100, 2),
+            "dz_pct": round(dz / tot * 100, 2),
+        })
+    rows.sort(key=lambda r: (r["season"], r["team"]))
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(cols)
+        for r in rows:
+            w.writerow([r[c] for c in cols])
+    print(f"    wrote {path}  ({len(rows)} team-season rows)")
+
 
 # ---------------------------------------------------------------------------
 # Per-season / per-2-year writers (OZI / DZI / NZI only)

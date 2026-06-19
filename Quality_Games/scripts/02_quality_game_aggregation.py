@@ -121,6 +121,22 @@ log(f"  Per-season qualifying counts:")
 log(qual.groupby('season').size().to_string())
 log()
 
+# Team-game totals (for Rel-QG metrics).
+# At 5v5 ES regulation each shot is attributed to all 5 on-ice skaters per
+# side. So summing per-player counters across team T's player rows in game G
+# gives 5× the team's actual total. Divide by 5 to recover team totals.
+# Sum is over `df` (all on-ice records, not just qualifying ones) so that
+# sub-qualifying linemates' contributions aren't lost from the team rollup.
+team_game = df.groupby(['game_id', 'season', 'team_abbrev']).agg(
+    team_NFI_for=('NFI_for', lambda x: x.sum() / 5.0),
+    team_NFI_ag =('NFI_ag',  lambda x: x.sum() / 5.0),
+    team_xG_for =('xG_for',  lambda x: x.sum() / 5.0),
+    team_xG_ag  =('xG_ag',   lambda x: x.sum() / 5.0),
+    team_TOI_sec=('TOI_on_sec', lambda x: x.sum() / 5.0),
+).reset_index()
+log(f"  Team-game totals derived: {len(team_game):,} (team, game) rows")
+log()
+
 # Check blank-position rows surviving the qualifying floor
 blank_qual = qual[~qual.position.isin(['F', 'D'])]
 log(f"  Blank-position rows surviving the qualifying floor: {len(blank_qual):,}")
@@ -192,6 +208,44 @@ log(f"  Wrote: {pm_path}")
 log()
 
 # -----------------------------------------------------------------------------
+# STEP 3b — Per-game Rel shares (team-without-player baseline)
+# -----------------------------------------------------------------------------
+log("-" * 78)
+log("STEP 3b — Per-game Rel-NFI and Rel-xG shares (team-without-player)")
+log("-" * 78)
+
+# Merge team-game totals onto qual_known
+qual_known = qual_known.merge(
+    team_game, on=['game_id', 'season', 'team_abbrev'], how='left')
+
+# "Without me" team totals = team total minus player's own on-ice piece.
+# Same shot, when player is on ice, contributes to BOTH his on-ice counter
+# AND the team's total (via the 5x rollup). Subtracting gives the team's
+# total when this player was OFF the ice.
+qual_known['team_NFI_for_wo'] = qual_known['team_NFI_for'] - qual_known['NFI_for']
+qual_known['team_NFI_ag_wo']  = qual_known['team_NFI_ag']  - qual_known['NFI_ag']
+qual_known['team_xG_for_wo']  = qual_known['team_xG_for']  - qual_known['xG_for']
+qual_known['team_xG_ag_wo']   = qual_known['team_xG_ag']   - qual_known['xG_ag']
+
+# Team-without-player share (NaN if no off-ice activity that game)
+_denom_nfi_wo = qual_known.team_NFI_for_wo + qual_known.team_NFI_ag_wo
+qual_known['team_NFI_pct_wo'] = np.where(_denom_nfi_wo > 0,
+                                           qual_known.team_NFI_for_wo / _denom_nfi_wo,
+                                           np.nan)
+_denom_xg_wo = qual_known.team_xG_for_wo + qual_known.team_xG_ag_wo
+qual_known['team_xG_pct_wo'] = np.where(_denom_xg_wo > 0,
+                                          qual_known.team_xG_for_wo / _denom_xg_wo,
+                                          np.nan)
+
+# Per-game Rel shares (player on-ice share minus team-without-player share)
+qual_known['RelNFI_pct_game'] = qual_known.NFI_pct_game - qual_known.team_NFI_pct_wo
+qual_known['RelxG_pct_game']  = qual_known.xG_pct_game  - qual_known.team_xG_pct_wo
+
+log(f"  Qualifying games with valid Rel-NFI share: {qual_known.RelNFI_pct_game.notna().sum():,}")
+log(f"  Qualifying games with valid Rel-xG  share: {qual_known.RelxG_pct_game.notna().sum():,}")
+log()
+
+# -----------------------------------------------------------------------------
 # STEP 4 — Flag Quality Games per qualifying player-game
 # -----------------------------------------------------------------------------
 log("-" * 78)
@@ -201,6 +255,7 @@ log("-" * 78)
 xg_thr = qual_known.position.map({'F': medians[('F','xG')],  'D': medians[('D','xG')]})
 nfi_thr = qual_known.position.map({'F': medians[('F','NFI')], 'D': medians[('D','NFI')]})
 
+# Absolute QG flags (unchanged)
 qual_known['is_xG_QG'] = np.where(qual_known.xG_pct_game.isna(),
                                     np.nan,
                                     (qual_known.xG_pct_game >= xg_thr).astype(float))
@@ -210,12 +265,32 @@ qual_known['is_NFI_QG'] = np.where(
     np.where(qual_known.NFI_pct_game == nfi_thr,     0.5,
                                                      0.0)))
 
-log(f"  is_xG_QG  flagged: {int(qual_known.is_xG_QG.sum()):,} / "
+# Rel-NFI-QG (half-credit, mirrors absolute NFI rule).
+# Threshold is 0 (player share exceeds team-without-player share).
+qual_known['is_RelNFI_QG'] = np.where(
+    qual_known.RelNFI_pct_game.isna(),               np.nan,
+    np.where(qual_known.RelNFI_pct_game >  0,        1.0,
+    np.where(qual_known.RelNFI_pct_game == 0,        0.5,
+                                                     0.0)))
+
+# Rel-xG-QG (strict >, mirrors absolute xG rule — continuous distribution,
+# exact-zero ties essentially never occur).
+qual_known['is_RelxG_QG'] = np.where(qual_known.RelxG_pct_game.isna(),
+                                       np.nan,
+                                       (qual_known.RelxG_pct_game > 0).astype(float))
+
+log(f"  is_xG_QG     flagged: {int(qual_known.is_xG_QG.sum()):,} / "
     f"{int(qual_known.is_xG_QG.notna().sum()):,} valid "
     f"({qual_known.is_xG_QG.mean():.3f})")
-log(f"  is_NFI_QG flagged: {int(qual_known.is_NFI_QG.sum()):,} / "
+log(f"  is_NFI_QG    flagged: {int(qual_known.is_NFI_QG.sum()):,} / "
     f"{int(qual_known.is_NFI_QG.notna().sum()):,} valid "
     f"({qual_known.is_NFI_QG.mean():.3f})")
+log(f"  is_RelxG_QG  flagged: {int(qual_known.is_RelxG_QG.sum()):,} / "
+    f"{int(qual_known.is_RelxG_QG.notna().sum()):,} valid "
+    f"({qual_known.is_RelxG_QG.mean():.3f})")
+log(f"  is_RelNFI_QG flagged: {qual_known.is_RelNFI_QG.sum():.1f} / "
+    f"{int(qual_known.is_RelNFI_QG.notna().sum()):,} valid "
+    f"({qual_known.is_RelNFI_QG.mean():.3f})")
 log()
 
 # -----------------------------------------------------------------------------
@@ -239,6 +314,10 @@ pst_qual = qual_known.groupby(['player_id', 'season', 'team_abbrev']).agg(
     xG_qual_GP=('is_xG_QG', lambda x: x.notna().sum()),
     NFI_QG_count=('is_NFI_QG', 'sum'),
     NFI_qual_GP=('is_NFI_QG', lambda x: x.notna().sum()),
+    RelxG_QG_count=('is_RelxG_QG', 'sum'),
+    RelxG_qual_GP=('is_RelxG_QG', lambda x: x.notna().sum()),
+    RelNFI_QG_count=('is_RelNFI_QG', 'sum'),
+    RelNFI_qual_GP=('is_RelNFI_QG', lambda x: x.notna().sum()),
 ).reset_index()
 
 pst = pst_gp.merge(pst_qual,
@@ -246,17 +325,89 @@ pst = pst_gp.merge(pst_qual,
                     how='left').fillna({
     'qualifying_GP': 0, 'xG_QG_count': 0, 'xG_qual_GP': 0,
     'NFI_QG_count': 0, 'NFI_qual_GP': 0,
+    'RelxG_QG_count': 0, 'RelxG_qual_GP': 0,
+    'RelNFI_QG_count': 0, 'RelNFI_qual_GP': 0,
 })
-# Cast integer-valued count columns; keep NFI_QG_count as float because the
-# half-credit-tie rule produces 0.5 fractional contributions per tie game.
-# Truncating to int would silently lose 0.5 of QG credit per odd-tie season,
-# producing ~0.003-0.008 systematic underestimate of NFI_QG_pct.
-for c in ['qualifying_GP','xG_QG_count','xG_qual_GP','NFI_qual_GP']:
+# Cast integer-valued count columns; keep NFI_QG_count and RelNFI_QG_count as
+# float because the half-credit-tie rule produces 0.5 fractional contributions
+# per tie game. Truncating to int would silently lose 0.5 of QG credit per
+# odd-tie season, producing a systematic underestimate of the *_QG_pct rates.
+# RelxG_QG_count is binary 0/1 so int is safe.
+for c in ['qualifying_GP','xG_QG_count','xG_qual_GP','NFI_qual_GP',
+           'RelxG_QG_count','RelxG_qual_GP','RelNFI_qual_GP']:
     pst[c] = pst[c].astype(int)
-pst['NFI_QG_count'] = pst['NFI_QG_count'].astype(float)
+pst['NFI_QG_count']    = pst['NFI_QG_count'].astype(float)
+pst['RelNFI_QG_count'] = pst['RelNFI_QG_count'].astype(float)
+
+# -----------------------------------------------------------------------------
+# STEP 5b — Stint-level RelxG per-60 rate differentials
+# -----------------------------------------------------------------------------
+# Methodology mirror of NFI/scripts/build_playoff_data.py _rel():
+#   on60_F  = player xG_for / player TOI * 3600
+#   off60_F = (team xG_for - player xG_for) / (team TOI - player TOI) * 3600
+#   RelxG_F_pct = on60_F - off60_F
+#   RelxG_A_pct = off60_A - on60_A   (sign flipped: positive = suppression lift)
+#   RelxG_pct   = RelxG_F_pct + RelxG_A_pct
+# Per-stint: player counters and team baseline both scoped to the stint's
+# (team_abbrev, season) — team baseline is that team's full season (all games).
+# Emits NaN when off_TOI <= 0 or player TOI <= 0 (no minute floor).
+log("-" * 78)
+log("STEP 5b — Stint-level RelxG per-60 rate differentials")
+log("-" * 78)
+
+# Per-stint player xG counters (across all games the player played with that team)
+pst_xg = df.groupby(['player_id', 'season', 'team_abbrev']).agg(
+    xG_for_sum=('xG_for', 'sum'),
+    xG_ag_sum =('xG_ag',  'sum'),
+).reset_index()
+
+# Team-season counters: sum team_game across all games of that team in that season
+team_season = team_game.groupby(['team_abbrev', 'season']).agg(
+    team_xG_for_season=('team_xG_for',  'sum'),
+    team_xG_ag_season =('team_xG_ag',   'sum'),
+    team_TOI_sec_season=('team_TOI_sec', 'sum'),
+).reset_index()
+
+pst = pst.merge(pst_xg,      on=['player_id','season','team_abbrev'], how='left')
+pst = pst.merge(team_season, on=['team_abbrev','season'],             how='left')
+
+pst['RelxG_F_pct'] = np.nan
+pst['RelxG_A_pct'] = np.nan
+pst['RelxG_pct']   = np.nan
+
+_p_toi   = pst['TOI_total_sec'].astype(float).values
+_t_toi   = pst['team_TOI_sec_season'].astype(float).values
+_off_toi = _t_toi - _p_toi
+_mask    = (_p_toi > 0) & (_off_toi > 0)
+if _mask.any():
+    _p_xF = pst['xG_for_sum'].astype(float).values[_mask]
+    _p_xA = pst['xG_ag_sum'].astype(float).values[_mask]
+    _t_xF = pst['team_xG_for_season'].astype(float).values[_mask]
+    _t_xA = pst['team_xG_ag_season'].astype(float).values[_mask]
+    _pt   = _p_toi[_mask]
+    _ot   = _off_toi[_mask]
+    _on60_F  = _p_xF / _pt * 3600.0
+    _on60_A  = _p_xA / _pt * 3600.0
+    _off60_F = (_t_xF - _p_xF) / _ot * 3600.0
+    _off60_A = (_t_xA - _p_xA) / _ot * 3600.0
+    pst.loc[_mask, 'RelxG_F_pct'] = _on60_F  - _off60_F
+    pst.loc[_mask, 'RelxG_A_pct'] = _off60_A - _on60_A
+    pst.loc[_mask, 'RelxG_pct']   = (_on60_F - _off60_F) + (_off60_A - _on60_A)
+
+log(f"  Stints with valid RelxG: {int(pst['RelxG_pct'].notna().sum()):,} / {len(pst):,}")
+log(f"  RelxG_pct distribution: min={pst['RelxG_pct'].min():.3f} "
+    f"median={pst['RelxG_pct'].median():.3f} max={pst['RelxG_pct'].max():.3f}")
+log()
 
 pst_path = f"{OUT_DIR}/per_player_season_team{_SUF}.csv"
-pst.to_csv(pst_path, index=False)
+pst_out_cols = ['player_id','season','team_abbrev','GP','TOI_total_sec','position',
+                'qualifying_GP',
+                'xG_QG_count','xG_qual_GP',
+                'NFI_QG_count','NFI_qual_GP',
+                'RelxG_QG_count','RelxG_qual_GP',
+                'RelNFI_QG_count','RelNFI_qual_GP',
+                'RelxG_F_pct','RelxG_A_pct','RelxG_pct']
+pst[pst_out_cols].to_csv(pst_path, index=False)
 log(f"  Wrote: {pst_path}  ({len(pst):,} rows)")
 log(f"  Distinct (player_id, season) reached via these rows: "
     f"{pst.groupby(['player_id','season']).ngroups:,}")
@@ -279,6 +430,23 @@ def _player_agg(keys, season_label=None):
         xG_qual_GP=('xG_qual_GP', 'sum'),
         NFI_QG_count=('NFI_QG_count', 'sum'),
         NFI_qual_GP=('NFI_qual_GP', 'sum'),
+        RelxG_QG_count=('RelxG_QG_count', 'sum'),
+        RelxG_qual_GP=('RelxG_qual_GP', 'sum'),
+        RelNFI_QG_count=('RelNFI_QG_count', 'sum'),
+        RelNFI_qual_GP=('RelNFI_qual_GP', 'sum'),
+        # Pooled counters for season-level RelxG per-60 differential.
+        # xG_for_pool / xG_ag_pool sum across all stints → player's full
+        # (season or career) on-ice xG totals. team_xG_*_pool sum across
+        # the same stints → each stint contributes ONE team's full-season
+        # totals; for a player with N team stints in a season we get the
+        # combined N-team baseline (single team for non-traded players,
+        # A+B for traded ones). TOI_pool mirrors player TOI; team_TOI_pool
+        # mirrors team baseline TOI.
+        xG_for_pool=('xG_for_sum', 'sum'),
+        xG_ag_pool =('xG_ag_sum',  'sum'),
+        team_xG_for_pool =('team_xG_for_season',  'sum'),
+        team_xG_ag_pool  =('team_xG_ag_season',   'sum'),
+        team_TOI_sec_pool=('team_TOI_sec_season', 'sum'),
         teams_in_season=('team_abbrev', lambda x: ','.join(sorted(set(x)))),
     ).reset_index()
     if season_label is not None:
@@ -291,8 +459,37 @@ if _IS_PLAYOFF:
     # Pooled all_playoffs row per player: sum counts across playoff seasons.
     ps = pd.concat([ps, _player_agg(['player_id'], 'all_playoffs')], ignore_index=True)
 
-ps['xG_QG_pct']  = np.where(ps.xG_qual_GP  > 0, ps.xG_QG_count  / ps.xG_qual_GP,  np.nan)
-ps['NFI_QG_pct'] = np.where(ps.NFI_qual_GP > 0, ps.NFI_QG_count / ps.NFI_qual_GP, np.nan)
+ps['xG_QG_pct']     = np.where(ps.xG_qual_GP     > 0, ps.xG_QG_count     / ps.xG_qual_GP,     np.nan)
+ps['NFI_QG_pct']    = np.where(ps.NFI_qual_GP    > 0, ps.NFI_QG_count    / ps.NFI_qual_GP,    np.nan)
+ps['RelxG_QG_pct']  = np.where(ps.RelxG_qual_GP  > 0, ps.RelxG_QG_count  / ps.RelxG_qual_GP,  np.nan)
+ps['RelNFI_QG_pct'] = np.where(ps.RelNFI_qual_GP > 0, ps.RelNFI_QG_count / ps.RelNFI_qual_GP, np.nan)
+
+# Season-level RelxG per-60 differential from pooled counters.
+ps['RelxG_F_pct'] = np.nan
+ps['RelxG_A_pct'] = np.nan
+ps['RelxG_pct']   = np.nan
+_p_toi   = ps['TOI_total_sec'].astype(float).values
+_t_toi   = ps['team_TOI_sec_pool'].astype(float).values
+_off_toi = _t_toi - _p_toi
+_mask    = (_p_toi > 0) & (_off_toi > 0)
+if _mask.any():
+    _p_xF = ps['xG_for_pool'].astype(float).values[_mask]
+    _p_xA = ps['xG_ag_pool'].astype(float).values[_mask]
+    _t_xF = ps['team_xG_for_pool'].astype(float).values[_mask]
+    _t_xA = ps['team_xG_ag_pool'].astype(float).values[_mask]
+    _pt   = _p_toi[_mask]
+    _ot   = _off_toi[_mask]
+    _on60_F  = _p_xF / _pt * 3600.0
+    _on60_A  = _p_xA / _pt * 3600.0
+    _off60_F = (_t_xF - _p_xF) / _ot * 3600.0
+    _off60_A = (_t_xA - _p_xA) / _ot * 3600.0
+    ps.loc[_mask, 'RelxG_F_pct'] = _on60_F  - _off60_F
+    ps.loc[_mask, 'RelxG_A_pct'] = _off60_A - _on60_A
+    ps.loc[_mask, 'RelxG_pct']   = (_on60_F - _off60_F) + (_off60_A - _on60_A)
+
+log(f"  Season rows with valid RelxG: {int(ps['RelxG_pct'].notna().sum()):,} / {len(ps):,}")
+log(f"  RelxG_pct distribution: min={ps['RelxG_pct'].min():.3f} "
+    f"median={ps['RelxG_pct'].median():.3f} max={ps['RelxG_pct'].max():.3f}")
 
 # Verify: blank-position rows surviving into player-season output
 ps_blank = ps[~ps.position.isin(['F', 'D'])]
@@ -307,7 +504,10 @@ ps_path = f"{OUT_DIR}/per_player_season{_SUF}.csv"
 ps_out = ps[['player_id','season','position','teams_in_season',
               'GP','qualifying_GP','TOI_total_sec',
               'xG_QG_count','xG_qual_GP','xG_QG_pct',
-              'NFI_QG_count','NFI_qual_GP','NFI_QG_pct']]
+              'NFI_QG_count','NFI_qual_GP','NFI_QG_pct',
+              'RelxG_QG_count','RelxG_qual_GP','RelxG_QG_pct',
+              'RelNFI_QG_count','RelNFI_qual_GP','RelNFI_QG_pct',
+              'RelxG_F_pct','RelxG_A_pct','RelxG_pct']]
 ps_out.to_csv(ps_path, index=False)
 log(f"  Wrote: {ps_path}  ({len(ps_out):,} rows)")
 log()
@@ -458,7 +658,7 @@ log("-" * 78)
 log("  4-season team trajectories — all 128 rows, sorted by team_abbrev ASC, season ASC")
 log("-" * 78)
 traj = team_df.sort_values(['team_abbrev', 'season']).reset_index(drop=True)
-traj_path = f"{OUT_DIR}/team_trajectories_4season.csv"
+traj_path = f"{OUT_DIR}/team_trajectories_4season{_SUF}.csv"
 traj.to_csv(traj_path, index=False)
 log(f"  Saved: {traj_path}")
 log()
@@ -498,6 +698,63 @@ report_player(8479318, 20252026, "Auston Matthews 2025-26 (TOR, F)")
 report_player(8479542, 20252026, "Brandon Hagel 2025-26 (TBL, F, full-season-no-trade)")
 report_player(8475218, 20252026, "Mattias Ekholm 2025-26 (EDM, D, top-D anchor)")
 log()
+
+# -----------------------------------------------------------------------------
+# Rel-QG locked spot-checks (June 2026 sensitivity-test values, regular-season
+# only — playoff scope produces different career means by design and shouldn't
+# be validated against these regular-season anchors).
+# -----------------------------------------------------------------------------
+_SKIP_SPOTCHECKS = _IS_PLAYOFF
+if _SKIP_SPOTCHECKS:
+    log("-" * 78)
+    log("Rel-QG locked spot-checks — skipped under playoff scope")
+    log("-" * 78)
+else:
+    log("-" * 78)
+    log("Rel-QG locked spot-checks — 4-season career averages (TOI>=400 each season)")
+    log("-" * 78)
+
+# Expected values from the sensitivity test (June 2026). ±0.01 is the pass band.
+RELQG_EXPECTED = [
+    # (player_id, name, cNFI_QG, cRelNFI_QG, cxG_QG, cRelxG_QG)
+    (8478402, "Connor McDavid",  0.6861, 0.625, 0.6793, 0.651),
+    (8475786, "Zach Hyman",      0.6890, 0.626, 0.6552, 0.605),
+    (8476958, "Jaccob Slavin",   0.6515, 0.537, 0.7005, 0.521),
+    (8480803, "Evan Bouchard",   0.6860, 0.616, 0.6987, 0.643),
+    (8479542, "Brandon Hagel",   0.6839, 0.674, 0.6025, 0.649),
+    (8480069, "Cale Makar",      0.6165, 0.540, 0.5963, 0.538),
+    (8476453, "Nikita Kucherov", 0.6331, 0.575, 0.5938, 0.579),
+    (8470613, "Brent Burns",     0.6235, 0.485, 0.6656, 0.494),
+    (8477956, "David Pastrnak",  0.5036, 0.511, 0.5039, 0.543),
+]
+
+if not _SKIP_SPOTCHECKS:
+    log(f"  {'Player':<20}  {'cNFI_QG':>8} {'cRelNFI':>9}  {'cxG_QG':>8} {'cRelxG':>8}  pass?")
+    log("  " + "-" * 74)
+    ps_qual = ps[ps.position.isin(['F', 'D'])].copy()
+    ps_qual['TOI_total_min'] = ps_qual.TOI_total_sec / 60
+    n_pass = 0; n_fail = 0
+    for pid, name, exp_nfi, exp_rel_nfi, exp_xg, exp_rel_xg in RELQG_EXPECTED:
+        rows = ps_qual[ps_qual.player_id == pid]
+        qual_rows = rows[rows.TOI_total_min >= 400]
+        if len(qual_rows) == 0:
+            log(f"  {name:<20}  no qualifying seasons"); n_fail += 1; continue
+        cnfi    = qual_rows.NFI_QG_pct.mean()
+        cnfirel = qual_rows.RelNFI_QG_pct.mean()
+        cxg     = qual_rows.xG_QG_pct.mean()
+        cxgrel  = qual_rows.RelxG_QG_pct.mean()
+        # ±0.01 tolerance per spec
+        pass_nfi    = abs(cnfi - exp_nfi)       <= 0.01
+        pass_relnfi = abs(cnfirel - exp_rel_nfi) <= 0.01
+        pass_xg     = abs(cxg - exp_xg)         <= 0.01
+        pass_relxg  = abs(cxgrel - exp_rel_xg)  <= 0.01
+        all_pass = pass_nfi and pass_relnfi and pass_xg and pass_relxg
+        flag = "✓" if all_pass else "✗"
+        if all_pass: n_pass += 1
+        else: n_fail += 1
+        log(f"  {name:<20}  {cnfi:>8.4f} {cnfirel:>9.4f}  {cxg:>8.4f} {cxgrel:>8.4f}  {flag}")
+    log(f"\n  Spot-check totals: {n_pass}/{len(RELQG_EXPECTED)} pass, {n_fail} fail (±0.01 tolerance)")
+    log()
 
 log("Done.")
 _log_fh.close()

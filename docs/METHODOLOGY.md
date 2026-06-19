@@ -2,7 +2,7 @@
 
 This document describes the analytical decisions underlying the HockeyROI frameworks, the reasoning behind each choice, and the verification work that supports them. It is the canonical reference for the project's methodology and is updated when methodology changes; data files reflect the methodology version stamped below.
 
-**Methodology version:** June 12, 2026 — added Goalie Metrics section (NFI-GSAx, QNFS%, QS-GSAx) with Vollman Quality Starts disambiguation; the previous June 7 update covered the NFI-QG half-credit tie handling and documented TZI2 as exploratory single-game tooling (not part of the public framework), building on the May 20, 2026 audit + bug fix, the May 2026 audit, and the May 3, 2026 zone-adjustment factor swap.
+**Methodology version:** June 19, 2026 — added season-level RelxG per-60 rate differential columns (`RelxG_F_pct`, `RelxG_A_pct`, `RelxG_pct`) to `per_player_season.csv` and `per_player_season_team.csv`, mirroring the NFI pipeline's existing `RelNFI_F_pct`/`_A`/`_pct` methodology; same date added Playoff Quality Game build (parallel `_playoffs`-suffixed outputs covering 22-23 through 24-25 with same methodology as regular-season QG, including RelNFI-QG and RelxG-QG); builds on the June 18 addition of Relative Quality Game metrics as parallel team-relative columns; June 12 Goalie Metrics (NFI-GSAx, QNFS%, QS-GSAx) with Vollman Quality Starts disambiguation; the June 7 update covered the NFI-QG half-credit tie handling and documented TZI2 as exploratory single-game tooling (not part of the public framework), building on the May 20, 2026 audit + bug fix, the May 2026 audit, and the May 3, 2026 zone-adjustment factor swap.
 **Data snapshot reflected in this document:** values current as of the version stamp date. Counts and player-level values shift as games are added to the dataset.
 
 ---
@@ -135,6 +135,161 @@ If your pipeline output for the same data snapshot differs from these values by 
 ### Pipeline implementation note
 
 NFI-QG is computed by `Quality_Games/scripts/02_quality_game_aggregation.py`. The half-credit rule produces fractional contributions per tied game; the per-(player, season, team) `NFI_QG_count` column is stored as a float (not truncated to int) so that 0.5 fractional contributions propagate correctly into the season-level aggregation. Truncating to int silently drops 0.5 of QG credit per tied game and produces a 0.003-0.008 systematic underestimate of season NFI_QG_pct — this was caught and fixed in the June 2026 revision.
+
+### Relative Quality Game Metrics (RelNFI-QG, RelxG-QG)
+
+Added June 2026 as parallel sensitivity-tested extensions. The absolute NFI-QG and xG-QG metrics above remain the **headline framework**. RelNFI-QG and RelxG-QG measure the same per-game consistency concept but net out team context: instead of comparing the player's on-ice share to a league-wide position median, they compare it to the player's own team's share during the same game *without the player on the ice*.
+
+#### Per-game definition
+
+For each qualifying player-game, derive the team's "without me" baseline:
+
+```
+team_NFI_for_wo = team_NFI_for_game − player.NFI_for
+team_NFI_ag_wo  = team_NFI_ag_game  − player.NFI_ag
+team_NFI_pct_wo = team_NFI_for_wo / (team_NFI_for_wo + team_NFI_ag_wo)
+
+RelNFI_pct_game = NFI_pct_game − team_NFI_pct_wo
+```
+
+(`team_NFI_for_game` and `team_NFI_ag_game` are derived from per_player_game.csv via the 5× rollup: each shot at 5v5 ES is attributed to 5 on-ice skaters per side, so summing per-player NFI counters across a team's player rows in a game and dividing by 5 recovers the team's total. Same construction for xG, substituting `xGoal` sums.)
+
+#### Per-game flag
+
+```
+RelNFI-QG (half-credit, mirrors absolute NFI rule):
+  is_RelNFI_QG = 1.0  if RelNFI_pct_game >  0
+               = 0.5  if RelNFI_pct_game == 0
+               = 0.0  if RelNFI_pct_game <  0
+
+RelxG-QG (strict >, mirrors absolute xG rule — continuous distribution, ties vanishingly rare):
+  is_RelxG_QG = 1.0  if RelxG_pct_game > 0
+              = 0.0  if RelxG_pct_game <= 0
+```
+
+Threshold is 0 (not 0.5) because the comparison is now "player share vs. team-without-player share" — break-even on Rel means the player played at the level of his linemates, not at league median.
+
+#### Per-season aggregation
+
+```
+RelNFI_QG_pct = sum(is_RelNFI_QG) / count(qualifying games with valid RelNFI_pct_game)
+RelxG_QG_pct  = sum(is_RelxG_QG)  / count(qualifying games with valid RelxG_pct_game)
+```
+
+Same qualifying-game floor as absolute QG (8+ min on-ice AND 5+ on-ice attempts). The `RelNFI_QG_count` column is stored as float (preserving half-credit fractions, same as `NFI_QG_count`); `RelxG_QG_count` can be int since strict-greater produces 0/1 only.
+
+#### How to read Rel-QG values
+
+A player's `RelxG_QG_pct = 0.55` means "in 55% of his qualifying games, his on-ice xG share was higher than his teammates produced during the same game when he was off the ice." Above 0.50 = drives possession beyond what his linemates do; below 0.50 = his teammates outperform him when he's off. By construction the league mean Rel-QG rate centers near 0.50.
+
+#### Headline vs. complementary framing
+
+Absolute QG (NFI-QG, xG-QG) remains the **headline metric** for player evaluation and the public framework. Rel-QG is a **complementary lens** for net-of-team analysis. The two are NOT interchangeable:
+- **Absolute QG rewards being in a strong environment.** A median-skill player on COL benefits from Burns/Toews/Makar driving the share even when his individual contribution is small.
+- **Rel-QG rewards driving share above teammates' baseline.** A median-skill player on COL looks neutral because his teammates already drive share; a strong player on a weak team (e.g., DET's Larkin, BOS's Pastrnak in 25-26) can look above-average on Rel even when their absolute QG_pct is moderate.
+
+Where they diverge most: dominant-team stars (Burns, Slavin, Makar) lose 8-18pp on Rel because their elite linemates carry comparable share when they're off; weak-team stars (Horvat, DeBrincat) gain 4-6pp because their teammates can't sustain share without them.
+
+Cross-framework convergence: across a 15-player sensitivity test, the Pearson correlation between (cRelNFI_QG − cNFI_QG) and (cRelxG_QG − cxG_QG) is **+0.87** — the two frameworks tell substantially the same team-context story, with material magnitude differences only on specific players (Hagel, M. Tkachuk) whose net-front and territory profiles diverge from their teammates'.
+
+#### Locked spot-check values (Rel-QG, June 2026 sensitivity-test anchors, 4-yr career means)
+
+| Player | cNFI_QG | cRelNFI_QG | cxG_QG | cRelxG_QG |
+|---|---|---|---|---|
+| Connor McDavid | 0.6861 | 0.625 | 0.6793 | 0.651 |
+| Zach Hyman | 0.6890 | 0.626 | 0.6552 | 0.605 |
+| Jaccob Slavin | 0.6515 | 0.537 | 0.7005 | 0.521 |
+| Evan Bouchard | 0.6860 | 0.616 | 0.6987 | 0.643 |
+| Brandon Hagel | 0.6839 | 0.674 | 0.6025 | 0.649 |
+| Cale Makar | 0.6165 | 0.540 | 0.5963 | 0.538 |
+| Nikita Kucherov | 0.6331 | 0.575 | 0.5938 | 0.579 |
+| Brent Burns | 0.6235 | 0.485 | 0.6656 | 0.494 |
+| David Pastrnak | 0.5036 | 0.511 | 0.5039 | 0.543 |
+
+±0.01 tolerance for reproduction. Anything more than ±0.01 off indicates the team-totals derivation, the per-game wo computation, or the count-column type cast (RelNFI_QG_count must be float to preserve half-credit ties) didn't propagate correctly.
+
+#### Output columns
+
+Added to `Quality_Games/output/per_player_season.csv` and `per_player_season_team.csv`:
+- `RelxG_QG_count` (int), `RelxG_qual_GP` (int), `RelxG_QG_pct` (float)
+- `RelNFI_QG_count` (**float** — preserves half-credit), `RelNFI_qual_GP` (int), `RelNFI_QG_pct` (float)
+
+No public-facing post (consistency post, Carolina post) uses Rel-QG metrics. They support future Streamlit work and ad-hoc net-of-team analysis only.
+
+### Season-level RelxG per-60 rate differentials (`RelxG_F_pct`, `RelxG_A_pct`, `RelxG_pct`)
+
+Added June 19, 2026 to `per_player_season.csv` and `per_player_season_team.csv` as parallel columns that mirror the NFI pipeline's existing `RelNFI_F_pct` / `RelNFI_A_pct` / `RelNFI_pct` methodology (`NFI/scripts/build_playoff_data.py:_rel()`): `on60_xG = player xG / player TOI × 3600`, `off60_xG = (team xG − player xG) / (team TOI − player TOI) × 3600`, `RelxG_F_pct = on60_F − off60_F`, `RelxG_A_pct = off60_A − on60_A` (sign flipped so suppression is positive), `RelxG_pct = RelxG_F_pct + RelxG_A_pct`; positive on all three = better. For `per_player_season_team.csv` the team baseline is that team's full-season totals across all games (5× rollup of per-player counters, then `/5`); for `per_player_season.csv` the player's pooled counters and the team baseline are summed across all team stints in the season — a 1-team player gets a single-team baseline, a traded player gets the combined A+B baseline (strict parity with how the existing RelNFI build pools at the season level). No minute floor beyond the existing `qualifying_GP` filter; emits NaN when `off_TOI <= 0` or `player_TOI <= 0`. Verified against an independent recompute from `per_player_game.csv` for McDavid (24-25: +0.80), Hyman (23-24: +0.98), Burns (23-24: −0.04), Makar (24-25: +0.33), Hagel (24-25: +1.07) — exact match to four decimals.
+
+### Playoff Quality Game Metrics
+
+Added June 2026 as a parallel build alongside regular-season QG. Playoff QG values are written to `_playoffs`-suffixed files in `Quality_Games/output/`; regular-season files are unaffected.
+
+#### Methodology
+
+Playoff QG uses the **same methodology** as regular-season QG with no rule changes:
+- Same per-game qualifying floor (TOI ≥ 480 sec AND on-ice attempts ≥ 5)
+- Same NFI-QG half-credit tie rule (`>` = 1.0, `==` = 0.5, `<` = 0.0)
+- Same xG-QG strict-greater rule (`>=` = 1.0)
+- Same RelNFI-QG (half-credit) and RelxG-QG (strict-greater) team-relative flags
+- Same 5× rollup to derive team-game totals from per-player on-ice counters
+
+#### Position medians
+
+Playoff position medians are **computed fresh from playoff data** in each run by script 02's `qual_known.NFI_pct_game.median()` and `xG_pct_game.median()` calls. Playoff medians are not inherited from the regular-season `position_medians.csv` — they're written to `position_medians_playoffs.csv` and used for that scope only. This is necessary because playoff samples have smaller denominators (median ~5-7 NFI events per game) and slightly different positional distributions.
+
+#### Scope
+
+The playoff build covers seasons **2022-23, 2023-24, 2024-25** (3 seasons, 262 unique games). 2025-26 playoff data is intentionally excluded from script 01's playoff scope because the canonical HR zone source (`shots_tagged.csv`) does not yet contain 2025-26 playoff records; MoneyPuck `shots_2025.csv` carries them but the MP↔HR join would fail the >= 99% match gate. When the HR pipeline ingests 25-26 playoffs, that season can be added by removing the `MP_SEASONS = [2022, 2023, 2024]` restriction in script 01's `_IS_PLAYOFF` branch.
+
+#### Sample sizes are smaller
+
+Playoff per-player-season GP counts are much smaller than regular season (8-25 GP per player vs. 80+):
+
+| Season | Games | Player-game rows | Unique players |
+|---|---|---|---|
+| 22-23 | 88 | 3,168 | 334 |
+| 23-24 | 88 | 3,168 | 339 |
+| 24-25 | 86 | 3,097 | 333 |
+
+A pooled `all_playoffs` row per player is generated in `per_player_season_playoffs.csv` (sum of counts across playoff seasons), giving a 3-season pooled view. Analogous `all_playoffs` rows are created for `per_team_season_playoffs.csv` (TOI-weighted across each team's playoff seasons).
+
+**Minimum-game filters should be applied at the analysis layer, not the data layer.** Playoff GP is naturally short and the qualifying floor is intentionally non-stringent (no 20-GP team-eligibility floor in playoff scope; script 02 drops it via `TEAM_GP_FLOOR = 1` under `_IS_PLAYOFF`). Streamlit and ad-hoc consumers should apply their own GP minimums (e.g., 10 GP for deep-run players, all_playoffs row for cross-season pooling).
+
+#### File locations
+
+```
+per_player_game_playoffs.csv
+per_player_season_playoffs.csv
+per_player_season_team_playoffs.csv
+per_team_season_playoffs.csv
+team_trajectories_4season_playoffs.csv
+position_medians_playoffs.csv
+```
+
+All under `Quality_Games/output/`. The regular-season `_playoffs`-unsuffixed files are not affected by playoff runs.
+
+#### Sample playoff values (sanity reference)
+
+These five spot-checks anchor the playoff build to known deep-run cases. Replication should land within rounding (±0.005):
+
+| Player | Season | GP | qGP | NFI_QG_pct | RelNFI_QG_pct | xG_QG_pct | RelxG_QG_pct |
+|---|---|---|---|---|---|---|---|
+| Connor McDavid | 22-23 | 12 | 12 | 0.7500 | 0.4583 | 0.5833 | 0.6667 |
+| Sebastian Aho | 22-23 | 15 | 15 | 0.5000 | 0.3667 | 0.6667 | 0.5333 |
+| Jaccob Slavin | 22-23 | 15 | 14 | 0.7143 | 0.5714 | 0.7143 | 0.5000 |
+| Sam Reinhart | 23-24 | 24 | 24 | 0.6250 | 0.5000 | 0.6667 | 0.5417 |
+| Connor McDavid | 24-25 | 22 | 22 | 0.5909 | 0.7500 | 0.6818 | 0.7727 |
+
+McDavid's 24-25 playoff RelxG=0.7727 is the framework working as intended: he drove on-ice xG share 7-8pp above his teammates' baseline in 77% of games during EDM's run, even though his absolute xG_QG of 0.6818 sits well below his regular-season pace.
+
+#### Running playoff scope
+
+```
+QG_SCOPE=playoff python3 Quality_Games/scripts/01_build_per_player_game.py
+QG_SCOPE=playoff python3 Quality_Games/scripts/02_quality_game_aggregation.py
+```
+
+Both scripts default to regular-season scope when `QG_SCOPE` is unset; playoff scope is opt-in and writes only to suffixed files.
 
 ---
 
