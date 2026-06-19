@@ -1193,7 +1193,7 @@ def render_players(season_label: str, game_type: str) -> None:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
     with c2:
         if playoffs:
-            min_toi = st.slider("Min ES TOI (min)", 0, 1500, 100, 25,
+            min_toi = st.slider("Min ES TOI (min)", 0, 1500, 300, 25,
                                 key="players_toi_playoffs")
         else:
             toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
