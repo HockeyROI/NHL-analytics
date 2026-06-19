@@ -1214,11 +1214,11 @@ def render_players(season_label: str, game_type: str) -> None:
     c1, c2, c3 = st.columns([1.0, 1.6, 1.3])
     with c1:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
-        fam_sel = st.multiselect(
-            "Metric families", list(PLAYER_FAMILY_COLS),
-            default=list(PLAYER_FAMILY_COLS), key="players_families",
-            help="Collapse a group to hide its columns (Net Front Impact, "
-                 "Zone Impact, Quality Games).")
+        collapse_fam = st.radio(
+            "Collapse a Metric Family", ["None"] + list(PLAYER_FAMILY_COLS),
+            horizontal=True, key="players_collapse",
+            help="Hide a metric group's columns (Net Front Impact, Zone Impact, "
+                 "Quality Games).")
     with c2:
         if playoffs:
             min_toi = st.slider("Min ES TOI (min)", 0, 1500, 300, 25,
@@ -1271,10 +1271,10 @@ def render_players(season_label: str, game_type: str) -> None:
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
-    # Metric-family collapse: keep identity columns; drop a family's columns when
-    # it's deselected in the filter.
+    # Metric-family collapse: hide the selected family's columns (identity columns
+    # and the other families stay).
     _fam_of = {col: fam for fam, fcols in PLAYER_FAMILY_COLS.items() for col in fcols}
-    cols = [c for c in cols if _fam_of.get(c) is None or _fam_of.get(c) in set(fam_sel)]
+    cols = [c for c in cols if _fam_of.get(c) != collapse_fam]
     disp = df[cols].copy()
 
     fmt = {}
