@@ -740,8 +740,11 @@ def load_as_counts() -> pd.DataFrame:
         return pd.DataFrame()
     df["season"] = df["season"].astype(str)
     g = df.groupby(["player_id", "season"]).agg(
-        for_att=("onice_for_att", "sum"),
-        ag_att=("onice_ag_att", "sum"),
+        # Fenwick (blocks excluded) — the raw NFI-A/60 / NFI-S/60 source. The
+        # _att (Corsi) columns are still present but the NFI definition is
+        # Fenwick; see the matching fix in script 03's per-season writer.
+        for_att=("onice_for_fen", "sum"),
+        ag_att=("onice_ag_fen", "sum"),
         es_toi_min=("toi_min", "first"),   # ES TOI constant across CNFI/MNFI rows
     ).reset_index()
     return g
