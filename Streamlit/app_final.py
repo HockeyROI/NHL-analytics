@@ -573,7 +573,10 @@ def render_methodology() -> None:
             "median test on the player's <i>team-relative</i> danger share (on-ice vs off-ice), so "
             "it credits beating the bar after isolating individual contribution from team strength "
             "— the QG analog of RelNFI%. <b>RelxG%</b> is the underlying season-level relative xG "
-            "rate itself (relative xG per 60, on-ice − off-ice), the xG counterpart to RelNFI%.",
+            "rate itself (relative xG per 60, on-ice − off-ice), the xG counterpart to RelNFI%. "
+            "RelxG is built from MoneyPuck's raw shot data with HockeyROI's own qualifying filter, "
+            "so it can differ from MoneyPuck's published relative-xG columns — different "
+            "filters/aggregation, not a question of accuracy.",
         )
         + _meth_framework(
             "Teams",
