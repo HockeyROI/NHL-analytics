@@ -220,6 +220,22 @@ No public-facing post (consistency post, Carolina post) uses Rel-QG metrics. The
 
 Added June 19, 2026 to `per_player_season.csv` and `per_player_season_team.csv` as parallel columns that mirror the NFI pipeline's existing `RelNFI_F_pct` / `RelNFI_A_pct` / `RelNFI_pct` methodology (`NFI/scripts/build_playoff_data.py:_rel()`): `on60_xG = player xG / player TOI × 3600`, `off60_xG = (team xG − player xG) / (team TOI − player TOI) × 3600`, `RelxG_F_pct = on60_F − off60_F`, `RelxG_A_pct = off60_A − on60_A` (sign flipped so suppression is positive), `RelxG_pct = RelxG_F_pct + RelxG_A_pct`; positive on all three = better. For `per_player_season_team.csv` the team baseline is that team's full-season totals across all games (5× rollup of per-player counters, then `/5`); for `per_player_season.csv` the player's pooled counters and the team baseline are summed across all team stints in the season — a 1-team player gets a single-team baseline, a traded player gets the combined A+B baseline (strict parity with how the existing RelNFI build pools at the season level). No minute floor beyond the existing `qualifying_GP` filter; emits NaN when `off_TOI <= 0` or `player_TOI <= 0`. Verified against an independent recompute from `per_player_game.csv` for McDavid (24-25: +0.80), Hyman (23-24: +0.98), Burns (23-24: −0.04), Makar (24-25: +0.33), Hagel (24-25: +1.07) — exact match to four decimals.
 
+**Distinction from MoneyPuck's published relative-xG metrics.**
+
+MoneyPuck publishes player-level relative xG metrics (`xGoalsForPercentageRel` and similar columns) computed using their own methodology. HockeyROI's RelxG_pct, RelxG_F_pct, and RelxG_A_pct use the same input data (MoneyPuck's per-shot xGoal values) but apply the HockeyROI methodology stack downstream:
+
+- Same qualifying-game filter as the absolute QG framework: 8+ minutes on-ice AND 5+ on-ice shot attempts per game
+- Same situation code as flagship metrics: 5v5 even-strength regulation only
+- Same per-60 rate differential methodology as RelNFI: on60 minus off60 for attack, off60 minus on60 for suppression (positive on all three = better)
+- Same pooled-across-stints aggregation for traded players, matching the RelNFI methodology in build_playoff_data.py
+- Same season scope as all other QG metrics (22-23, 23-24, 24-25, 25-26 regular season; 22-23 through 24-25 playoffs)
+
+MoneyPuck's published relative-xG columns use their own qualifying filters, their own aggregation methodology, and their own season scope. For these reasons, HockeyROI's RelxG values may differ from MoneyPuck's published relative-xG numbers for the same player-season. Neither is more accurate — they are calibrated to different purposes. The HockeyROI methodology is locked to ensure consistency with all other framework outputs, so cross-column comparisons within HockeyROI are methodologically valid.
+
+**RelNFI is HockeyROI-original.**
+
+No third-party publisher provides equivalent net-front impact relative metrics. RelNFI_pct, RelNFI_F_pct, and RelNFI_A_pct are computed in-pipeline using NHL play-by-play shot events filtered to the CNFI and MNFI zones (Fenwick-based, excluding blocked shots per the May 2026 audit decision). The same qualifying filter and per-60 rate-differential methodology apply as for RelxG.
+
 ### Playoff Quality Game Metrics
 
 Added June 2026 as a parallel build alongside regular-season QG. Playoff QG values are written to `_playoffs`-suffixed files in `Quality_Games/output/`; regular-season files are unaffected.
