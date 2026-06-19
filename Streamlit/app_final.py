@@ -1159,8 +1159,10 @@ def load_as_counts_playoffs() -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
     g = df.groupby("player_id").agg(
-        for_att=("onice_for_att", "sum"),
-        ag_att=("onice_ag_att", "sum"),
+        # Fenwick (blocks excluded) — the raw NFI-A/60 / NFI-S/60 source, matching
+        # the regular path. Playoff counts file now carries the _fen columns.
+        for_att=("onice_for_fen", "sum"),
+        ag_att=("onice_ag_fen", "sum"),
         es_toi_min=("toi_min", "first"),   # ES TOI constant across CNFI/MNFI rows
     ).reset_index()
     ok = g["es_toi_min"] > 0

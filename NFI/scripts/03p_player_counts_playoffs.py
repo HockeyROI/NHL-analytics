@@ -62,6 +62,11 @@ for_att = defaultdict(lambda: defaultdict(int))
 for_gl = defaultdict(lambda: defaultdict(int))
 ag_att = defaultdict(lambda: defaultdict(int))
 ag_gl = defaultdict(lambda: defaultdict(int))
+# Fenwick (unblocked) on-ice for/against — same keying as the Corsi _att dicts
+# but excluding blocked-shot events. Add-only: feed two new trailing columns in
+# player_counts_by_state_zone_playoffs.csv and nothing else.
+for_fen = defaultdict(lambda: defaultdict(int))
+ag_fen = defaultdict(lambda: defaultdict(int))
 toi = defaultdict(lambda: defaultdict(float))   # (pid, season) -> {state: sec}
 
 print("Per-game shift-shot join (playoffs) ...")
@@ -103,6 +108,7 @@ for gid, gs in shots_by_game.items():
     for _, x in gs.iterrows():
         t = int(x["abs_time"]); state = x["state"]; zone = x["zone"]
         is_goal = int(x["is_goal_i"]); shoot_ab = x["shooting_team_abbrev"]
+        is_fen = x["event_type"] != "blocked-shot"   # Fenwick = unblocked attempts
         def_ab = away_ab if shoot_ab == home_ab else home_ab
         shooter = x["shooter_player_id"]
         os_ = shifts_by_team.get(shoot_ab); od_ = shifts_by_team.get(def_ab)
@@ -117,10 +123,14 @@ for gid, gs in shots_by_game.items():
                 ind_gl[(int(shooter), season)][(state, zone)] += 1
         for p in onice_shoot:
             for_att[(p, season)][(state, zone)] += 1
+            if is_fen:
+                for_fen[(p, season)][(state, zone)] += 1
             if is_goal:
                 for_gl[(p, season)][(state, zone)] += 1
         for p in onice_def:
             ag_att[(p, season)][(state, zone)] += 1
+            if is_fen:
+                ag_fen[(p, season)][(state, zone)] += 1
             if is_goal:
                 ag_gl[(p, season)][(state, zone)] += 1
 
@@ -136,11 +146,12 @@ seasons_present = sorted({s for (_p, s) in toi.keys()})
 all_keys = set(toi) | set(for_att) | set(ag_att) | set(ind_att)
 all_keys |= set(pool(toi)) | set(pool(for_att)) | set(pool(ag_att)) | set(pool(ind_att))
 pooled = {"ind_att": pool(ind_att), "ind_gl": pool(ind_gl), "for_att": pool(for_att),
-          "for_gl": pool(for_gl), "ag_att": pool(ag_att), "ag_gl": pool(ag_gl), "toi": pool(toi)}
+          "for_gl": pool(for_gl), "ag_att": pool(ag_att), "ag_gl": pool(ag_gl),
+          "for_fen": pool(for_fen), "ag_fen": pool(ag_fen), "toi": pool(toi)}
 
 def get(name, key, sz):
     src = {"ind_att": ind_att, "ind_gl": ind_gl, "for_att": for_att, "for_gl": for_gl,
-           "ag_att": ag_att, "ag_gl": ag_gl, "toi": toi}
+           "ag_att": ag_att, "ag_gl": ag_gl, "for_fen": for_fen, "ag_fen": ag_fen, "toi": toi}
     if sz == "all_playoffs":
         return pooled[name].get(key, {})
     return src[name].get(key, {})
@@ -162,6 +173,10 @@ for (pid, sz) in sorted(keyset, key=lambda k: (str(k[1]), k[0])):
                 "onice_for_gl": get("for_gl", (pid, sz), sz).get((state, zone), 0),
                 "onice_ag_att": get("ag_att", (pid, sz), sz).get((state, zone), 0),
                 "onice_ag_gl": get("ag_gl", (pid, sz), sz).get((state, zone), 0),
+                # Fenwick (no-blocks) siblings — appended last so existing columns
+                # stay byte-identical; the file just gains these two trailing cols.
+                "onice_for_fen": get("for_fen", (pid, sz), sz).get((state, zone), 0),
+                "onice_ag_fen": get("ag_fen", (pid, sz), sz).get((state, zone), 0),
             })
 out = pd.DataFrame(rows)
 out.to_csv(OUT_FP, index=False)
