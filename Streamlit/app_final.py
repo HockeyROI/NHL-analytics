@@ -972,7 +972,7 @@ def _player_profile_table(pid: int) -> tuple[pd.DataFrame, pd.DataFrame, list[st
     trend = _player_trend(pid)
     if trend.empty:
         return pd.DataFrame(), trend, []
-    share_cols = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%"]
+    share_cols = ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%"]
     rate_cols = ["NFI-A/60", "NFI-S/60"]
     zone_cols = ["NZI", "DZI", "OZI"]
     qg_cols = ["NFI_QG%", "xG_QG%"]
@@ -1249,8 +1249,8 @@ def render_players(season_label: str, game_type: str) -> None:
     # Always show the full column set (Compact view removed; Qual GP dropped).
     # NFI-A/60 / NFI-S/60 are RAW per-60 rates; RelNFI-A% / RelNFI-S% are the
     # relative (vs own-team) versions — both coexist, placed side by side.
-    cols = ["Player", "Pos", "Team", "GP", "TOI", "NFI%", "RelNFI%", "RelNFI-A%",
-            "RelNFI-S%", "NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI",
+    cols = ["Player", "Pos", "Team", "GP", "TOI", "RelNFI%", "RelNFI-A%",
+            "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI",
             "xG_QG%", "NFI_QG%"]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
@@ -1327,10 +1327,10 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
         return "—" if pd.isna(v) else f"{v:+.2f}"
 
     items = [
-        ("NFI%", _f("NFI_pct", "pct")),
         ("RelNFI%", _rel("RelNFI_pct")),
         ("RelNFI-A%", _rel("RelNFI_F_pct")),
         ("RelNFI-S%", _rel("RelNFI_A_pct")),
+        ("NFI%", _f("NFI_pct", "pct")),
         ("NFI-A/60", _f("NFI_A_rate", "rate")),
         ("NFI-S/60", _f("NFI_S_rate", "rate")),
         ("NZI", _f("NZI", "rate")),
