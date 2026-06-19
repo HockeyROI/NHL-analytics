@@ -512,7 +512,7 @@ GITHUB_METHODOLOGY_URL = (
     "https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md"
 )
 TAB_LABELS = ["Player List", "Player Detail", "Goalie List", "Goalie Detail",
-              "Teams", "Referees", "Methodology"]
+              "Trade Analyzer", "Teams", "Referees", "Methodology"]
 
 
 def _meth_framework(name: str, body: str) -> str:
@@ -876,6 +876,11 @@ def _player_trend(pid: int) -> pd.DataFrame:
         trend = trend.merge(q, on="season", how="outer")
 
     trend = trend[trend["season"].isin(PROFILE_SEASONS)].copy()
+    # Always show every season 2022-23 → 2025-26 as a row, even ones before the
+    # player debuted (blank cells), so the trend table has a consistent shape.
+    missing = [s for s in PROFILE_SEASONS if s not in set(trend["season"])]
+    if missing:
+        trend = pd.concat([trend, pd.DataFrame({"season": missing})], ignore_index=True)
     trend["Season"] = trend["season"].map(SEASON_DISPLAY).fillna(trend["season"])
     return trend.sort_values("season").reset_index(drop=True)
 
@@ -960,12 +965,13 @@ def _player_season_ranks(pid: int) -> dict:
     return out
 
 
-def _render_player_profile(pid: int) -> None:
-    """Per-season trend table + auto-showing line charts for one player."""
+def _player_profile_table(pid: int) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+    """Rank-annotated per-season trend table for a player. Returns
+    (display_df, trend, metric_cols): display_df has string cells (value + league
+    rank); trend is the numeric frame (for charts). Empty display_df if no data."""
     trend = _player_trend(pid)
     if trend.empty:
-        st.info("No per-season data available for this player.")
-        return
+        return pd.DataFrame(), trend, []
     share_cols = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%"]
     rate_cols = ["NFI-A/60", "NFI-S/60"]
     zone_cols = ["NZI", "DZI", "OZI"]
@@ -974,8 +980,6 @@ def _render_player_profile(pid: int) -> None:
                    if c in trend.columns]
 
     # Per-season LEAGUE rank (all skaters that season) appended to each cell.
-    # The 4-row trend isn't sorted, so string cells are fine; charts below use
-    # the numeric `trend` frame, unaffected.
     ranks = _player_season_ranks(pid)
     _b = {}
     for c in ("NFI%", "NFI_QG%", "xG_QG%"):
@@ -997,10 +1001,18 @@ def _render_player_profile(pid: int) -> None:
                 rk = ranks.get(c, {}).get(ssn)
                 row[c] = f"{txt} ({rk})" if rk is not None else txt
         rows.append(row)
+    return pd.DataFrame(rows, columns=["Season"] + metric_cols), trend, metric_cols
+
+
+def _render_player_profile(pid: int) -> None:
+    """Per-season trend table + auto-showing line charts for one player."""
+    disp, trend, metric_cols = _player_profile_table(pid)
+    if disp.empty:
+        st.info("No per-season data available for this player.")
+        return
     st.caption("Each value shows its **(rank)** — league rank among all skaters "
                "that season. NFI-S/60 (shots against): lowest = #1.")
-    st.dataframe(pd.DataFrame(rows, columns=["Season"] + metric_cols),
-                 width="stretch", hide_index=True)
+    st.dataframe(disp, width="stretch", hide_index=True)
 
     def _chart(title: str, cols: list[str]) -> None:
         ys = [c for c in cols if c in trend.columns and trend[c].notna().any()]
@@ -1015,9 +1027,9 @@ def _render_player_profile(pid: int) -> None:
     _chart("NFI% (share)", ["NFI%"])
     _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
            ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
-    _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", rate_cols)
-    _chart("Zone Impact 0–10 (NZI, DZI, OZI)", zone_cols)
-    _chart("Quality Games % (NFI_QG%, xG_QG%)", qg_cols)
+    _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
+    _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
+    _chart("Quality Games % (NFI_QG%, xG_QG%)", ["NFI_QG%", "xG_QG%"])
 
 
 # ===========================================================================
@@ -2085,6 +2097,67 @@ def render_goalie_detail(season_label: str, game_type: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Trade Analyzer tab — side-by-side player detail data (no charts), up to 5
+# ---------------------------------------------------------------------------
+TRADE_MAX_PLAYERS = 5
+
+
+def render_trade_analyzer(season_label: str, game_type: str) -> None:
+    st.markdown(
+        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Trade Analyzer</h2>",
+        unsafe_allow_html=True,
+    )
+    playoffs = game_type == "Playoffs"
+
+    if playoffs:
+        frame, _ = _build_players_frame(season_label, playoffs=True)
+        src = (frame[["player_id", "player_name", "position"]]
+               if not frame.empty else pd.DataFrame())
+    else:
+        nfi = load_nfi_player()
+        # Most-recent name/position per player, spanning every season (so retired
+        # or traded players are still selectable — useful for trade comparisons).
+        src = (nfi.sort_values("season").drop_duplicates("player_id", keep="last")
+               [["player_id", "player_name", "position"]]
+               if not nfi.empty else pd.DataFrame())
+    if src.empty:
+        st.error("Player data not found.")
+        return
+
+    popts = (src.dropna(subset=["player_id"]).drop_duplicates("player_id")
+             .sort_values("player_name"))
+    pid_list = [int(x) for x in popts["player_id"].tolist()]
+    plabel = {int(r.player_id): f"{r.player_name} ({r.position})"
+              for r in popts.itertuples()}
+
+    st.caption(f"Compare up to {TRADE_MAX_PLAYERS} players' detail data side by side "
+               "(the same numbers as Player Detail — no charts)."
+               + (" Pooled playoff view." if playoffs else ""))
+    sel = st.multiselect(
+        f"Players (max {TRADE_MAX_PLAYERS})", pid_list,
+        format_func=lambda i: plabel.get(i, str(i)),
+        max_selections=TRADE_MAX_PLAYERS, key="trade_players")
+    if not sel:
+        st.caption(f"Pick up to {TRADE_MAX_PLAYERS} players to compare.")
+        return
+
+    if playoffs:
+        for pid in sel:
+            _render_player_playoff_summary(frame, int(pid))
+        return
+
+    st.caption("Each value shows its **(rank)** — league rank among all skaters "
+               "that season. NFI-S/60 (shots against): lowest = #1.")
+    for pid in sel:
+        st.markdown(f"**{plabel.get(int(pid), str(pid))}**")
+        disp, _, _ = _player_profile_table(int(pid))
+        if disp.empty:
+            st.info("No per-season data available for this player.")
+        else:
+            st.dataframe(disp, width="stretch", hide_index=True)
+
+
+# ---------------------------------------------------------------------------
 # Referees tab — penalty-call tendencies (league-wide, 2023-24 → 2025-26)
 # ---------------------------------------------------------------------------
 REF_SEASON_INT = {"2025-26": 20252026, "2024-25": 20242025, "2023-24": 20232024}
@@ -2401,7 +2474,7 @@ def main() -> None:
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
 
     (player_list_tab, player_detail_tab, goalie_list_tab, goalie_detail_tab,
-     teams_tab, refs_tab, meth_tab) = st.tabs(TAB_LABELS)
+     trade_tab, teams_tab, refs_tab, meth_tab) = st.tabs(TAB_LABELS)
     with player_list_tab:
         render_players(season_label, game_type)
     with player_detail_tab:
@@ -2410,6 +2483,8 @@ def main() -> None:
         render_goalies(season_label, game_type)
     with goalie_detail_tab:
         render_goalie_detail(season_label, game_type)
+    with trade_tab:
+        render_trade_analyzer(season_label, game_type)
     with teams_tab:
         render_teams(season_label, game_type)
     with refs_tab:
