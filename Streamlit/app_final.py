@@ -1025,9 +1025,9 @@ def _render_player_profile(pid: int) -> None:
 # `all_playoffs` pooled row. The app shows only the pooled view (per the spec);
 # the Min-TOI / Min-Shots sliders do the thresholding. Each loader returns the
 # all_playoffs rows in the same schema its regular counterpart yields.
-# NOTE: the playoff player NFI build never derived the team-relative RelNFI
-# family (RelNFI%/-A%/-S% are NaN for every playoff row), so the playoff Players
-# view omits those columns and sorts by NFI% instead.
+# The playoff player NFI build now derives the team-relative RelNFI family
+# (same on-ice − off-ice per-60 definition as the regular build), so the
+# playoff Players view shows RelNFI%/-A%/-S% and sorts by RelNFI% like regular.
 # ===========================================================================
 PLAYOFF_SCOPE = "all_playoffs"
 
@@ -1220,8 +1220,7 @@ def render_players(season_label: str, game_type: str) -> None:
         )
         return
 
-    _sort_col = "NFI_pct" if playoffs else "RelNFI_pct"
-    df = df.sort_values(_sort_col, ascending=False, na_position="last").reset_index(drop=True)
+    df = df.sort_values("RelNFI_pct", ascending=False, na_position="last").reset_index(drop=True)
     # Storage → display: RelNFI_F (attack / for) shows as "RelNFI-A%",
     # RelNFI_A (suppress / against) shows as "RelNFI-S%". Do NOT sign-flip — the
     # underlying _F/_A columns are unchanged; only the display labels swap A/S.
@@ -1241,10 +1240,6 @@ def render_players(season_label: str, game_type: str) -> None:
     cols = ["Player", "Pos", "Team", "GP", "TOI", "NFI%", "RelNFI%", "RelNFI-A%",
             "RelNFI-S%", "NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI",
             "xG_QG%", "NFI_QG%"]
-    # The playoff NFI build has no team-relative RelNFI family — drop those empty
-    # columns in playoff mode (sort is by NFI% there).
-    if playoffs:
-        cols = [c for c in cols if c not in ("RelNFI%", "RelNFI-A%", "RelNFI-S%")]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
@@ -1281,16 +1276,15 @@ def render_players(season_label: str, game_type: str) -> None:
     st.dataframe(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
     if playoffs:
-        zone_note = " · NZI/DZI/OZI pooled across playoffs · RelNFI not available for playoffs"
+        zone_note = " · NZI/DZI/OZI pooled across playoffs"
     elif SEASON_KEY.get(season_label) == "pooled_2yr":
         zone_note = " · NZI/DZI/OZI pooled 2024-25 + 2025-26"
     elif is_pooled:
         zone_note = " · NZI/DZI/OZI pooled across all seasons"
     else:
         zone_note = " · NZI/DZI/OZI for this season"
-    _sort_desc = "NFI%" if playoffs else "RelNFI%"
     st.caption(
-        f"{len(disp):,} players · {scope_label} · sorted by {_sort_desc} descending · "
+        f"{len(disp):,} players · {scope_label} · sorted by RelNFI% descending · "
         f"min {min_toi:,} ES min{zone_note}"
     )
 
@@ -1316,8 +1310,15 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
             return f"{v:,.0f}"
         return f"{v}"
 
+    def _rel(col):
+        v = r.get(col)
+        return "—" if pd.isna(v) else f"{v:+.2f}"
+
     items = [
         ("NFI%", _f("NFI_pct", "pct")),
+        ("RelNFI%", _rel("RelNFI_pct")),
+        ("RelNFI-A%", _rel("RelNFI_F_pct")),
+        ("RelNFI-S%", _rel("RelNFI_A_pct")),
         ("NFI-A/60", _f("NFI_A_rate", "rate")),
         ("NFI-S/60", _f("NFI_S_rate", "rate")),
         ("NZI", _f("NZI", "rate")),
@@ -1328,7 +1329,7 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
         ("ES TOI (min)", _f("toi_min", "toi")),
     ]
     st.caption(f"**{r['player_name']} ({r['position']})** · pooled playoffs "
-               "(2022-23 → 2024-25). RelNFI is not available for playoffs.")
+               "(2022-23 → 2024-25).")
     st.dataframe(pd.DataFrame(items, columns=["Metric", "Value"]),
                  width="stretch", hide_index=True)
 

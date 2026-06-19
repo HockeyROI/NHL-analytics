@@ -400,11 +400,81 @@ for s_lbl, sub in tnzi_df.groupby("season"):
 # ------------------------------------------------------------------
 # 6. Build NFI playoff player_fully_adjusted_playoffs.csv (raw + ZA)
 # ------------------------------------------------------------------
-print("[6/6] computing NFI playoff (per-season + pooled, raw + ZA) ...")
+print("[6/6] computing NFI playoff (per-season + pooled, raw + ZA + RelNFI) ...")
 
-# Build per-season records from the per-(pid, season) accumulator,
-# AND build pooled records by aggregating across seasons.
-def _make_row(pid, r, season_label, team_override=None):
+
+def per60(num, denom_sec):
+    if denom_sec is None or denom_sec <= 0:
+        return None
+    return num / denom_sec * 3600.0
+
+
+# Per-(team, scope) ES totals for the off-ice / Rel calc. An ES event counts
+# ~5 on-ice skaters per side and each ES second contributes 5 skater-seconds,
+# so the true team total = sum(player on-ice counts) / 5. Mirrors the canonical
+# regular pipeline (update_current_season.py / tnfi_relatives_pp_pk.py) exactly.
+def _build_team_tot(records):
+    """records: iterable of (team, player_record). Returns {team: totals/5}."""
+    tt = defaultdict(lambda: {"toi_sec": 0.0, "cf_cm": 0.0, "ca_cm": 0.0,
+                              "cf_fen": 0.0, "ca_fen": 0.0})
+    for team, rec in records:
+        if not team:
+            continue
+        t = tt[team]
+        t["toi_sec"] += rec["toi_sec"]
+        t["cf_cm"]   += rec["cf_cm"]
+        t["ca_cm"]   += rec["ca_cm"]
+        t["cf_fen"]  += rec["cf_fen"]
+        t["ca_fen"]  += rec["ca_fen"]
+    for t in tt.values():
+        for k in t:
+            t[k] /= 5.0
+    return tt
+
+
+def _rel(r, tt_team):
+    """RelNFI = on-ice rate − off-ice rate (per-60 ES, CNFI+MNFI). tt_team is
+    the player's team totals (already /5). RelNFI_F = relative attack/for,
+    RelNFI_A = relative suppress/against (off-ice − on-ice so lower-against is
+    positive), RelNFI = their sum. Same convention as the regular build."""
+    if tt_team is None or r["toi_sec"] <= 0:
+        return None, None, None
+    off_toi_sec = tt_team["toi_sec"] - r["toi_sec"]
+    if off_toi_sec <= 0:
+        return None, None, None
+    on60_cf  = per60(r["cf_cm"], r["toi_sec"])
+    on60_ca  = per60(r["ca_cm"], r["toi_sec"])
+    off60_cf = per60(tt_team["cf_cm"] - r["cf_cm"], off_toi_sec)
+    off60_ca = per60(tt_team["ca_cm"] - r["ca_cm"], off_toi_sec)
+    if None in (on60_cf, on60_ca, off60_cf, off60_ca):
+        return None, None, None
+    rel_f = on60_cf - off60_cf
+    rel_a = off60_ca - on60_ca
+    return rel_f, rel_a, rel_f + rel_a
+
+
+# Pooled per-player records (sum counters across seasons, most-recent team).
+pooled_nfi = defaultdict(lambda: {"toi_sec":0.0, "cf_fen":0, "ca_fen":0,
+                                    "cf_cm":0, "ca_cm":0, "fo_oz":0, "fo_dz":0,
+                                    "team":""})
+for (pid, season), r in nfi.items():
+    p = pooled_nfi[pid]
+    p["toi_sec"] += r["toi_sec"]
+    for k in ("cf_fen","ca_fen","cf_cm","ca_cm","fo_oz","fo_dz"):
+        p[k] += r[k]
+    if r["team"]: p["team"] = r["team"]
+
+# Team totals: one set per playoff season, plus a pooled set (built over the
+# full player population — NOT after the 30-min display floor, mirroring the
+# regular build).
+_season_recs = defaultdict(list)
+for (pid, season), r in nfi.items():
+    _season_recs[season].append((r["team"], r))
+team_tot_by_season = {s: _build_team_tot(recs) for s, recs in _season_recs.items()}
+team_tot_pooled = _build_team_tot((r["team"], r) for r in pooled_nfi.values())
+
+
+def _make_row(pid, r, season_label, team_tot):
     pos = pos_map.get(int(pid))
     if pos not in ("F","D"): return None
     if r["toi_sec"] < 60*30:  # ≥ 30 min ES TOI
@@ -415,7 +485,8 @@ def _make_row(pid, r, season_label, team_override=None):
     ff_pct  = (r["cf_fen"] / (r["cf_fen"] + r["ca_fen"])) if (r["cf_fen"] + r["ca_fen"]) > 0 else None
     if nfi_pct is None: return None
     nfi_za = nfi_pct - NFI_ZA_FACTOR * (oz_ratio - 0.5)
-    team = team_override if team_override else r.get("team", "")
+    team = r.get("team", "")
+    rel_f, rel_a, rel_combined = _rel(r, (team_tot or {}).get(team))
     return {
         "player_id": int(pid),
         "player_name": name_map.get(int(pid), ""),
@@ -425,7 +496,7 @@ def _make_row(pid, r, season_label, team_override=None):
         "oz_ratio": oz_ratio,
         "NFI_pct": nfi_pct, "NFI_pct_ZA": nfi_za, "NFI_pct_3A": np.nan,
         "NFQOC": np.nan, "NFQOL": np.nan,
-        "RelNFI_F_pct": np.nan, "RelNFI_A_pct": np.nan, "RelNFI_pct": np.nan,
+        "RelNFI_F_pct": rel_f, "RelNFI_A_pct": rel_a, "RelNFI_pct": rel_combined,
         "NFI_pct_3A_MOM": np.nan,
         "FF_pct": ff_pct, "FF_pct_ZA": np.nan, "FF_pct_3A": np.nan,
         "CF_pct": None, "CF_pct_ZA": np.nan, "CF_pct_3A": np.nan,
@@ -434,22 +505,13 @@ def _make_row(pid, r, season_label, team_override=None):
 # Per-season rows
 nfi_rows = []
 for (pid, season), r in nfi.items():
-    row = _make_row(pid, r, int(season))
+    row = _make_row(pid, r, int(season), team_tot_by_season.get(season))
     if row is not None:
         nfi_rows.append(row)
 
-# Pooled rows: sum counters across seasons per player, use most-recent team
-pooled_nfi = defaultdict(lambda: {"toi_sec":0.0, "cf_fen":0, "ca_fen":0,
-                                    "cf_cm":0, "ca_cm":0, "fo_oz":0, "fo_dz":0,
-                                    "team":""})
-for (pid, season), r in nfi.items():
-    p = pooled_nfi[pid]
-    p["toi_sec"] += r["toi_sec"]
-    for k in ("cf_fen","ca_fen","cf_cm","ca_cm","fo_oz","fo_dz"):
-        p[k] += r[k]
-    if r["team"]: p["team"] = r["team"]
+# Pooled all_playoffs rows
 for pid, r in pooled_nfi.items():
-    row = _make_row(pid, r, "all_playoffs")
+    row = _make_row(pid, r, "all_playoffs", team_tot_pooled)
     if row is not None:
         nfi_rows.append(row)
 
@@ -457,6 +519,8 @@ nfi_df = pd.DataFrame(nfi_rows).sort_values(["season","NFI_pct_ZA"],
                                              ascending=[True, False]).reset_index(drop=True)
 nfi_df.to_csv(OUT_NFI / "player_fully_adjusted_playoffs.csv", index=False)
 print(f"    NFI playoff: {len(nfi_df)} player-rows (≥30 min ES TOI, ≥1 row per season + pooled)")
+_reln = int(nfi_df["RelNFI_pct"].notna().sum())
+print(f"      RelNFI populated: {_reln}/{len(nfi_df)} rows")
 for s_lbl, sub in nfi_df.groupby("season"):
     print(f"      season={s_lbl}: {len(sub)} rows")
 
