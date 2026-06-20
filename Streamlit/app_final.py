@@ -155,8 +155,8 @@ _CHART_COLORS = {
     "RelNFI%": _CHART_PRIMARY, "RelNFI-A%": _CHART_SECOND, "RelNFI-S%": _CHART_THIRD,
     "NFI-A/60": _CHART_PRIMARY, "NFI-S/60": _CHART_SECOND,
     "NZI": _CHART_PRIMARY, "DZI": _CHART_SECOND, "OZI": _CHART_THIRD,
-    "NFI_QG%": _CHART_PRIMARY, "xG_QG%": _CHART_SECOND,
-    "RelNFI_QG%": _CHART_PRIMARY, "RelxG_QG%": _CHART_SECOND, "RelxG%": _CHART_PRIMARY,
+    "NFI-QG%": _CHART_PRIMARY, "xG-QG%": _CHART_SECOND,
+    "RelNFI-QG%": _CHART_PRIMARY, "RelxG-QG%": _CHART_SECOND, "RelxG%": _CHART_PRIMARY,
     "NFI-GSAx/60": _CHART_PRIMARY, "QNFS%": _CHART_PRIMARY, "QS-GSAx%": _CHART_SECOND,
 }
 
@@ -652,7 +652,7 @@ POOLED_2YR_SEASONS = ["20242025", "20252026"]
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_qg_player_season() -> pd.DataFrame:
-    """Quality Games per (player, season) — xG_QG% / NFI_QG% / GP / qual GP."""
+    """Quality Games per (player, season) — xG-QG% / NFI-QG% / GP / qual GP."""
     fp = REPO_ROOT / "Quality_Games" / "output" / "per_player_season.csv"
     if not fp.exists():
         return pd.DataFrame()
@@ -925,8 +925,8 @@ def _player_trend(pid: int) -> pd.DataFrame:
         q = q[q["season"].isin(PROFILE_SEASONS)]
         keep = ["season"] + [c for c in ("GP", "NFI_QG_pct", "xG_QG_pct",
                 "RelNFI_QG_pct", "RelxG_QG_pct", "RelxG_pct") if c in q.columns]
-        q = q[keep].rename(columns={"NFI_QG_pct": "NFI_QG%", "xG_QG_pct": "xG_QG%",
-                "RelNFI_QG_pct": "RelNFI_QG%", "RelxG_QG_pct": "RelxG_QG%",
+        q = q[keep].rename(columns={"NFI_QG_pct": "NFI-QG%", "xG_QG_pct": "xG-QG%",
+                "RelNFI_QG_pct": "RelNFI-QG%", "RelxG_QG_pct": "RelxG-QG%",
                 "RelxG_pct": "RelxG%"})
         trend = trend.merge(q, on="season", how="outer")
 
@@ -1023,8 +1023,8 @@ def _player_season_ranks(pid: int, same_pos: bool = False) -> dict:
     if not qg.empty:
         qg = qg.copy()
         qg["season"] = qg["season"].astype(str)
-        for disp_c, src in (("NFI_QG%", "NFI_QG_pct"), ("xG_QG%", "xG_QG_pct"),
-                            ("RelNFI_QG%", "RelNFI_QG_pct"), ("RelxG_QG%", "RelxG_QG_pct"),
+        for disp_c, src in (("NFI-QG%", "NFI_QG_pct"), ("xG-QG%", "xG_QG_pct"),
+                            ("RelNFI-QG%", "RelNFI_QG_pct"), ("RelxG-QG%", "RelxG_QG_pct"),
                             ("RelxG%", "RelxG_pct")):
             if src not in qg.columns:
                 continue
@@ -1050,14 +1050,14 @@ def _player_profile_table(pid: int, same_pos: bool = False
     share_cols = ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%"]
     rate_cols = ["NFI-A/60", "NFI-S/60"]
     zone_cols = ["NZI", "DZI", "OZI"]
-    qg_cols = ["RelNFI_QG%", "NFI_QG%", "RelxG%", "RelxG_QG%", "xG_QG%"]
+    qg_cols = ["RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"]
     metric_cols = [c for c in share_cols + rate_cols + zone_cols + qg_cols
                    if c in trend.columns]
 
     # Per-season rank (cohort per same_pos) appended to each cell.
     ranks = _player_season_ranks(pid, same_pos=same_pos)
     _b = {}
-    for c in ("NFI%", "NFI_QG%", "xG_QG%", "RelNFI_QG%", "RelxG_QG%"):
+    for c in ("NFI%", "NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"):
         _b[c] = lambda v: f"{v * 100:.1f}%"
     for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%"):
         _b[c] = lambda v: f"{v:+.2f}"
@@ -1117,9 +1117,9 @@ def _render_player_profile(pid: int, same_pos: bool = False) -> None:
            ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
     _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
     _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
-    _chart("Quality Games % — raw (NFI_QG%, xG_QG%)", ["NFI_QG%", "xG_QG%"])
-    _chart("Quality Games % — relative (RelNFI_QG%, RelxG_QG%)",
-           ["RelNFI_QG%", "RelxG_QG%"])
+    _chart("Quality Games % — raw (NFI-QG%, xG-QG%)", ["NFI-QG%", "xG-QG%"])
+    _chart("Quality Games % — relative (RelNFI-QG%, RelxG-QG%)",
+           ["RelNFI-QG%", "RelxG-QG%"])
     _chart("Relative xG per 60 (RelxG%)", ["RelxG%"])
 
 
@@ -1285,7 +1285,7 @@ PLAYER_FAMILY_COLS = {
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
     "Zone Impact": ["NZI", "DZI", "OZI"],
-    "Quality Games": ["RelNFI_QG%", "NFI_QG%", "RelxG%", "RelxG_QG%", "xG_QG%"],
+    "Quality Games": ["RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"],
 }
 
 
@@ -1355,8 +1355,8 @@ def render_players(season_label: str, game_type: str) -> None:
         "NFI_pct": "NFI%", "RelNFI_pct": "RelNFI%",
         "RelNFI_F_pct": "RelNFI-A%", "RelNFI_A_pct": "RelNFI-S%",
         "NFI_A_rate": "NFI-A/60", "NFI_S_rate": "NFI-S/60",
-        "xG_QG_pct": "xG_QG%", "NFI_QG_pct": "NFI_QG%",
-        "RelNFI_QG_pct": "RelNFI_QG%", "RelxG_QG_pct": "RelxG_QG%",
+        "xG_QG_pct": "xG-QG%", "NFI_QG_pct": "NFI-QG%",
+        "RelNFI_QG_pct": "RelNFI-QG%", "RelxG_QG_pct": "RelxG-QG%",
         "RelxG_pct": "RelxG%",
     }
     df = df.rename(columns=_ren)
@@ -1367,7 +1367,7 @@ def render_players(season_label: str, game_type: str) -> None:
     # relative (vs own-team) versions — both coexist, placed side by side.
     cols = ["Player", "Pos", "Team", "GP", "TOI", "RelNFI%", "RelNFI-A%",
             "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI",
-            "RelNFI_QG%", "NFI_QG%", "RelxG%", "RelxG_QG%", "xG_QG%"]
+            "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
@@ -1379,7 +1379,7 @@ def render_players(season_label: str, game_type: str) -> None:
     disp = df[cols].copy()
 
     fmt = {}
-    for c in ("NFI%", "xG_QG%", "NFI_QG%", "RelNFI_QG%", "RelxG_QG%"):
+    for c in ("NFI%", "xG-QG%", "NFI-QG%", "RelNFI-QG%", "RelxG-QG%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
     for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%"):
@@ -1399,7 +1399,7 @@ def render_players(season_label: str, game_type: str) -> None:
 
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
                     "NFI-S/60", "NZI", "DZI", "OZI",
-                    "RelNFI_QG%", "NFI_QG%", "RelxG%", "RelxG_QG%", "xG_QG%"]
+                    "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"]
     _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better={"NFI-S/60"})
     _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
                      "D": "defense"}[pos]
@@ -1458,11 +1458,11 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
         ("NZI", _f("NZI", "rate")),
         ("DZI", _f("DZI", "rate")),
         ("OZI", _f("OZI", "rate")),
-        ("RelNFI_QG%", _f("RelNFI_QG_pct", "pct")),
-        ("NFI_QG%", _f("NFI_QG_pct", "pct")),
+        ("RelNFI-QG%", _f("RelNFI_QG_pct", "pct")),
+        ("NFI-QG%", _f("NFI_QG_pct", "pct")),
         ("RelxG%", _rel("RelxG_pct")),
-        ("RelxG_QG%", _f("RelxG_QG_pct", "pct")),
-        ("xG_QG%", _f("xG_QG_pct", "pct")),
+        ("RelxG-QG%", _f("RelxG_QG_pct", "pct")),
+        ("xG-QG%", _f("xG_QG_pct", "pct")),
         ("ES TOI (min)", _f("toi_min", "toi")),
     ]
     st.caption(f"**{r['player_name']} ({r['position']})** · pooled playoffs "
@@ -1665,7 +1665,7 @@ def _render_teams_playoffs(season_label: str) -> None:
     if not qg.empty:
         q = qg[["team", "total_team_TOI_min", "team_xG_QG_pct", "team_NFI_QG_pct"]].rename(
             columns={"total_team_TOI_min": "TOI",
-                     "team_xG_QG_pct": "xG_QG%", "team_NFI_QG_pct": "NFI_QG%"})
+                     "team_xG_QG_pct": "xG-QG%", "team_NFI_QG_pct": "NFI-QG%"})
         team = team.merge(q, on="team", how="left")
 
     zcols = ["NZI", "DZI", "OZI"]
@@ -1673,18 +1673,18 @@ def _render_teams_playoffs(season_label: str) -> None:
     if not tz.empty:
         team = team.merge(tz[["team", "NZI", "DZI", "OZI"]], on="team", how="left")
 
-    for c in ["TOI", "xG_QG%", "NFI_QG%"] + zcols:
+    for c in ["TOI", "xG-QG%", "NFI-QG%"] + zcols:
         if c not in team.columns:
             team[c] = np.nan
 
     team = team.rename(columns={"team": "Team"})
     team = team.sort_values("NFI%", ascending=False, na_position="last").reset_index(drop=True)
     cols = (["Team", "GP", "TOI", "NFI%", "Attack events", "Suppress events"]
-            + zcols + ["xG_QG%", "NFI_QG%"])
+            + zcols + ["xG-QG%", "NFI-QG%"])
     disp = team[[c for c in cols if c in team.columns]].copy()
 
     fmt = {}
-    for c in ("NFI%", "xG_QG%", "NFI_QG%"):
+    for c in ("NFI%", "xG-QG%", "NFI-QG%"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
     for c in ("Attack events", "Suppress events"):
@@ -1698,7 +1698,7 @@ def _render_teams_playoffs(season_label: str) -> None:
     if "GP" in disp:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
-    _team_rank = ["NFI%", "Attack events", "Suppress events"] + zcols + ["xG_QG%", "NFI_QG%"]
+    _team_rank = ["NFI%", "Attack events", "Suppress events"] + zcols + ["xG-QG%", "NFI-QG%"]
     _apply_ranks(disp, fmt, disp, _team_rank, lower_better={"Suppress events"})
     st.caption("Each metric shows its **(rank)** across playoff teams. "
                "Suppress events (shots against): lowest = #1.")
@@ -1748,8 +1748,8 @@ def render_teams(season_label: str, game_type: str) -> None:
         if not qg.empty:
             q = qg[qg["season"].isin(pooled_seasons)]
             qrows = [{"team": t, "TOI": g["total_team_TOI_min"].sum(),
-                      "xG_QG%": _wmean(g, "team_xG_QG_pct"),
-                      "NFI_QG%": _wmean(g, "team_NFI_QG_pct")}
+                      "xG-QG%": _wmean(g, "team_xG_QG_pct"),
+                      "NFI-QG%": _wmean(g, "team_NFI_QG_pct")}
                      for t, g in q.groupby("team")]
             team = team.merge(pd.DataFrame(qrows), on="team", how="left")
     else:
@@ -1761,7 +1761,7 @@ def render_teams(season_label: str, game_type: str) -> None:
             q = qg[qg["season"] == sk][
                 ["team", "total_team_TOI_min", "team_xG_QG_pct", "team_NFI_QG_pct"]
             ].rename(columns={"total_team_TOI_min": "TOI",
-                              "team_xG_QG_pct": "xG_QG%", "team_NFI_QG_pct": "NFI_QG%"})
+                              "team_xG_QG_pct": "xG-QG%", "team_NFI_QG_pct": "NFI-QG%"})
             team = team.merge(q, on="team", how="left")
 
     if team.empty:
@@ -1785,18 +1785,18 @@ def render_teams(season_label: str, game_type: str) -> None:
                .rename(columns={"NZI": zcols[0], "DZI": zcols[1], "OZI": zcols[2]}))
         team = team.merge(tzw, on="team", how="left")
 
-    for c in ["TOI", "xG_QG%", "NFI_QG%", "Attack events", "Suppress events"] + zcols:
+    for c in ["TOI", "xG-QG%", "NFI-QG%", "Attack events", "Suppress events"] + zcols:
         if c not in team.columns:
             team[c] = np.nan
 
     team = team.rename(columns={"team": "Team"})
     team = team.sort_values("NFI%", ascending=False, na_position="last").reset_index(drop=True)
     cols = (["Team", "GP", "TOI", "NFI%", "Attack events", "Suppress events"]
-            + zcols + ["xG_QG%", "NFI_QG%"])
+            + zcols + ["xG-QG%", "NFI-QG%"])
     disp = team[[c for c in cols if c in team.columns]].copy()
 
     fmt = {}
-    for c in ("NFI%", "xG_QG%", "NFI_QG%"):
+    for c in ("NFI%", "xG-QG%", "NFI-QG%"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
     for c in ("Attack events", "Suppress events"):
@@ -1811,7 +1811,7 @@ def render_teams(season_label: str, game_type: str) -> None:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
     _team_rank = (["NFI%", "Attack events", "Suppress events"] + zcols
-                  + ["xG_QG%", "NFI_QG%"])
+                  + ["xG-QG%", "NFI-QG%"])
     _apply_ranks(disp, fmt, disp, _team_rank, lower_better={"Suppress events"})
     st.caption("Each metric shows its **(rank)** across all 32 teams. "
                "Suppress events (shots against): lowest = #1.")
