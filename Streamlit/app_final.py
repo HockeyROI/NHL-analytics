@@ -456,14 +456,15 @@ def _show_df(obj, **kwargs) -> None:
     st.dataframe(obj, **kwargs)
 
 
-def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=()):
+def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=(), second_cohort=None):
     """Append ' (rank)' to each ranked column's DISPLAY string while leaving the
     underlying cell value numeric, so header-sort still orders by the real value.
 
     Ranks are computed over `cohort` (a frame sharing the display column names),
     #1 = best; columns in `lower_better` rank lowest-value-first. NaN cells get
     no rank. Works via a value→rank map per column (ties share a rank, so the
-    map is unambiguous)."""
+    map is unambiguous). If `second_cohort` is given (e.g. a single team), a
+    second rank within it is appended as ' (league / team)'."""
     lower = set(lower_better)
     for col in rank_cols:
         if col not in disp.columns or col not in cohort.columns or col not in fmt:
@@ -472,16 +473,26 @@ def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=()):
         ranks = s.rank(ascending=(col in lower), method="min")
         vmap = {v: int(r) for v, r in zip(s.values, ranks.values)
                 if pd.notna(v) and pd.notna(r)}
+        vmap2 = None
+        if second_cohort is not None and col in second_cohort.columns:
+            s2 = pd.to_numeric(second_cohort[col], errors="coerce")
+            r2 = s2.rank(ascending=(col in lower), method="min")
+            vmap2 = {v: int(r) for v, r in zip(s2.values, r2.values)
+                     if pd.notna(v) and pd.notna(r)}
 
-        def _mk(base_f, vm):
+        def _mk(base_f, vm, vm2):
             def f(x):
                 if pd.isna(x):
                     return base_f(x)
                 r = vm.get(x)
-                return f"{base_f(x)} ({r})" if r is not None else base_f(x)
+                if r is None:
+                    return base_f(x)
+                r2 = vm2.get(x) if vm2 is not None else None
+                return (f"{base_f(x)} ({r} / {r2})" if r2 is not None
+                        else f"{base_f(x)} ({r})")
             return f
 
-        fmt[col] = _mk(fmt[col], vmap)
+        fmt[col] = _mk(fmt[col], vmap, vmap2)
     return fmt
 
 
@@ -1403,13 +1414,23 @@ def render_players(season_label: str, game_type: str) -> None:
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
                     "NFI-S/60", "NZI", "DZI", "OZI",
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"]
-    _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better={"NFI-S/60"})
+    # When a team is selected, add a second rank within that team's cohort.
+    _team_cohort = (rank_cohort[rank_cohort["Team"] == team_sel]
+                    if team_sel != "All" else None)
+    _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better={"NFI-S/60"},
+                 second_cohort=_team_cohort)
     _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
                      "D": "defense"}[pos]
-    st.caption(f"Each metric shows its **(rank)** within "
-               f"**{_cohort_label}** (set by the Position filter — ranked across the "
-               f"whole season, not limited by Min-TOI). NFI-S/60 (shots against): "
-               f"lowest = #1.")
+    if team_sel != "All":
+        st.caption(f"Each metric shows **(league rank / {team_sel} rank)** — rank "
+                   f"within **{_cohort_label}** across the whole season, then rank "
+                   f"within {team_sel}'s {_cohort_label}. Not limited by Min-TOI. "
+                   f"NFI-S/60 (shots against): lowest = #1.")
+    else:
+        st.caption(f"Each metric shows its **(rank)** within "
+                   f"**{_cohort_label}** (set by the Position filter — ranked across the "
+                   f"whole season, not limited by Min-TOI). NFI-S/60 (shots against): "
+                   f"lowest = #1.")
     _sort_hint()
     _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
