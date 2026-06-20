@@ -1334,8 +1334,11 @@ def render_players(season_label: str, game_type: str) -> None:
         df = df[df["position"] == pos]
     else:
         df = df[df["position"].isin(["F", "D"])]
+    # Ranking denominator is the full position cohort (NO Min-TOI floor), so the
+    # ranks match the Player Detail tab. The Min-TOI / Team filters below only
+    # narrow which rows are displayed, not the rank.
+    rank_cohort = df.copy()
     df = df[df["toi_min"].fillna(0) >= min_toi]
-    rank_cohort = df.copy()   # position + Min-TOI cohort — the ranking denominator
     if team_sel != "All":
         df = df[df["team"] == team_sel]
     if df.empty:
@@ -1404,8 +1407,9 @@ def render_players(season_label: str, game_type: str) -> None:
     _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
                      "D": "defense"}[pos]
     st.caption(f"Each metric shows its **(rank)** within "
-               f"**{_cohort_label}** (set by the Position filter; players meeting "
-               f"Min-TOI). NFI-S/60 (shots against): lowest = #1.")
+               f"**{_cohort_label}** (set by the Position filter — ranked across the "
+               f"whole season, not limited by Min-TOI). NFI-S/60 (shots against): "
+               f"lowest = #1.")
     _sort_hint()
     _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
