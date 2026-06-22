@@ -1358,7 +1358,7 @@ def render_players(season_label: str, game_type: str) -> None:
     # Full-width row of toggle buttons (like the Position filter). Start with none
     # selected (only the identity columns show); click families to display them.
     display_fams = st.segmented_control(
-        "Display a Metric Family", list(PLAYER_FAMILY_COLS),
+        "**Display a Metric Family**", list(PLAYER_FAMILY_COLS),
         selection_mode="multi", key="players_display_seg",
         help="Click a metric group to show its columns (Net Front Impact, "
              "Zone Impact, Quality Games). Click again to hide it.") or []
