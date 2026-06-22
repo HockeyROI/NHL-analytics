@@ -445,14 +445,16 @@ def _sort_hint() -> None:
 
 
 def _show_df(obj, **kwargs) -> None:
-    """st.dataframe with the leading identity column pinned (frozen on the left),
-    so it stays visible when a wide table is scrolled horizontally. Works for
-    plain DataFrames and Stylers (Styler.data holds the underlying frame)."""
+    """st.dataframe with the leading identity column pinned (frozen on the left)
+    and columns sized to their content so numbers aren't clipped — the table
+    scrolls horizontally instead of squeezing every column. Works for plain
+    DataFrames and Stylers (Styler.data holds the underlying frame)."""
     cols = obj.data.columns if hasattr(obj, "data") else obj.columns
     if len(cols):
         cc = dict(kwargs.pop("column_config", {}) or {})
         cc.setdefault(cols[0], st.column_config.Column(pinned=True))
         kwargs["column_config"] = cc
+    kwargs["width"] = "content"   # size to content (no clipping) rather than stretch
     st.dataframe(obj, **kwargs)
 
 
@@ -1271,7 +1273,8 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         if not qg.empty:
             qcols = ["player_id", "season", "GP", "qualifying_GP",
                      "xG_QG_pct", "NFI_QG_pct",
-                     "RelNFI_QG_pct", "RelxG_QG_pct", "RelxG_pct"]
+                     "RelNFI_QG_pct", "RelxG_QG_pct", "RelxG_pct",
+                     "teams_in_season"]  # for multi-team display + filter
             base = base.merge(qg[[c for c in qcols if c in qg.columns]],
                               on=["player_id", "season"], how="left")
         # Per-season Zone Impact (uncapped per-season files), name-keyed on
@@ -1317,6 +1320,26 @@ def render_players(season_label: str, game_type: str) -> None:
                  f"{'_playoffs' if playoffs else ''}.csv`).")
         return
 
+    # Multi-team (traded) players: build each player's team list from QG's
+    # teams_in_season (single-season only). The displayed Team becomes "A / B"
+    # and the player matches the Team filter for either team.
+    _has_teams = "teams_in_season" in frame.columns
+    if _has_teams:
+        frame = frame.copy()
+
+        def _team_list(r):
+            ts = r.get("teams_in_season")
+            if isinstance(ts, str) and ts.strip():
+                return [t.strip() for t in ts.split(",") if t.strip()]
+            t = r.get("team")
+            return [t] if isinstance(t, str) and t else []
+
+        frame["_teams"] = frame.apply(_team_list, axis=1)
+        frame["team"] = frame["_teams"].apply(lambda ts: " / ".join(ts) if ts else None)
+        _all_teams = sorted({t for ts in frame["_teams"] for t in ts})
+    else:
+        _all_teams = sorted(frame["team"].dropna().unique().tolist())
+
     c1, c2, c3 = st.columns([1.0, 1.6, 1.3])
     with c1:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
@@ -1329,16 +1352,16 @@ def render_players(season_label: str, game_type: str) -> None:
             default_toi = 2000 if is_pooled else 500
             min_toi = st.slider("Min ES TOI (min)", 0, 7500, default_toi, 50, key=toi_key)
     with c3:
-        team_opts = ["All"] + sorted(frame["team"].dropna().unique().tolist())
+        team_opts = ["All"] + _all_teams
         team_sel = st.selectbox("Team", team_opts, key="players_team")
 
-    # Full-width row of toggle buttons (like the Position filter) — click any
-    # number of families to collapse them; click again to bring them back.
-    collapse_fams = st.segmented_control(
-        "Collapse Metric Families", list(PLAYER_FAMILY_COLS),
-        selection_mode="multi", key="players_collapse_seg",
-        help="Click a metric group to hide its columns (Net Front Impact, "
-             "Zone Impact, Quality Games). Click again to show it.") or []
+    # Full-width row of toggle buttons (like the Position filter). Start with none
+    # selected (only the identity columns show); click families to display them.
+    display_fams = st.segmented_control(
+        "Display a Metric Family", list(PLAYER_FAMILY_COLS),
+        selection_mode="multi", key="players_display_seg",
+        help="Click a metric group to show its columns (Net Front Impact, "
+             "Zone Impact, Quality Games). Click again to hide it.") or []
 
     df = frame.copy()
     if pos in ("F", "D"):
@@ -1351,7 +1374,10 @@ def render_players(season_label: str, game_type: str) -> None:
     rank_cohort = df.copy()
     df = df[df["toi_min"].fillna(0) >= min_toi]
     if team_sel != "All":
-        df = df[df["team"] == team_sel]
+        if _has_teams:
+            df = df[df["_teams"].apply(lambda ts: team_sel in ts)]
+        else:
+            df = df[df["team"] == team_sel]
     if df.empty:
         st.markdown(
             f"<p style='color:{PALETTE['text']};'>No players match the current filters. "
@@ -1385,11 +1411,12 @@ def render_players(season_label: str, game_type: str) -> None:
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
-    # Metric-family collapse: hide the selected family's columns (identity columns
-    # and the other families stay).
+    # Metric-family display: identity columns (no family) always show; a family's
+    # columns show only when that family is selected. Nothing selected = identity
+    # columns only.
     _fam_of = {col: fam for fam, fcols in PLAYER_FAMILY_COLS.items() for col in fcols}
-    _collapsed = set(collapse_fams)
-    cols = [c for c in cols if _fam_of.get(c) not in _collapsed]
+    _shown = set(display_fams)
+    cols = [c for c in cols if _fam_of.get(c) is None or _fam_of.get(c) in _shown]
     disp = df[cols].copy()
 
     fmt = {}
@@ -1414,9 +1441,14 @@ def render_players(season_label: str, game_type: str) -> None:
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
                     "NFI-S/60", "NZI", "DZI", "OZI",
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"]
-    # When a team is selected, add a second rank within that team's cohort.
-    _team_cohort = (rank_cohort[rank_cohort["Team"] == team_sel]
-                    if team_sel != "All" else None)
+    # When a team is selected, add a second rank within that team's cohort
+    # (traded players count for each of their teams).
+    if team_sel == "All":
+        _team_cohort = None
+    elif _has_teams:
+        _team_cohort = rank_cohort[rank_cohort["_teams"].apply(lambda ts: team_sel in ts)]
+    else:
+        _team_cohort = rank_cohort[rank_cohort["Team"] == team_sel]
     _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better={"NFI-S/60"},
                  second_cohort=_team_cohort)
     _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
@@ -2115,11 +2147,15 @@ def render_goalies(season_label: str, game_type: str) -> None:
                    "rates. Defaults match the methodology's qualifying floors and the "
                    "previous app's discipline.")
     with c2:
-        name_q = st.text_input("Goalie name contains", key="goalies_name").strip().lower()
+        _elig = base[base["total_faced"].fillna(0) >= min_shots]
+        _gnames = sorted(_elig["Goalie"].dropna().unique().tolist())
+        goalie_pick = st.selectbox(
+            "Find a goalie", ["All goalies"] + _gnames, key="goalies_name_pick",
+            help="Type to search by name (autocompletes); pick one to filter the list.")
     base = base[base["total_faced"].fillna(0) >= min_shots]
     rank_cohort = base.copy()   # Min-Shots cohort (pre name-filter) — rank denom
-    if name_q:
-        base = base[base["Goalie"].str.lower().str.contains(name_q, na=False)]
+    if goalie_pick != "All goalies":
+        base = base[base["Goalie"] == goalie_pick]
     if base.empty:
         st.info("No goalies match the current filters.")
         return
