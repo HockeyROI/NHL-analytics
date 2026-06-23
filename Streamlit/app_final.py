@@ -623,13 +623,13 @@ def render_methodology() -> None:
         <div style="border:2px solid {PALETTE['orange']}; background:{PALETTE['panel']};
              border-radius:6px; padding:1rem 1.25rem; margin:1.25rem 0; max-width:62rem;">
           <div style="color:{PALETTE['orange']}; font-weight:700; margin-bottom:0.3rem;">
-            A note on &ldquo;Quality Starts&rdquo;</div>
+            A note on GQG vs. &ldquo;Quality Starts&rdquo;</div>
           <div style="color:{PALETTE['text']}; font-size:0.94rem; line-height:1.5;">
-            HockeyROI's goalie quality-start metrics are <b>not</b> Robert Vollman's Quality Starts
-            (~2009, defined on save% vs league average). Here a quality game is
-            <b>per-game GSAx &ge; 0</b> — the goalie beat expected on a danger / xG-weighted basis —
-            and there are <b>two</b> parallel definitions (QNFS% on net-front shots, GQG on all
-            shots). Don't map these to Vollman's metric, or to each other.
+            <b>GQG</b> (Goalie Quality Games, formerly QS-GSAx) is <b>not</b> Robert Vollman's
+            Quality Starts (~2009, defined on save% vs league average). In GQG a quality game is
+            <b>per-game GSAx &ge; 0</b> — the goalie beat expected on a danger / xG-weighted basis,
+            not on raw save%. <b>QNFS%</b> is the same idea on net-front shots only. Don't map
+            GQG to Vollman's metric, or QNFS% and GQG to each other.
           </div>
         </div>
         """,
@@ -2254,7 +2254,9 @@ def render_goalies(season_label: str, game_type: str) -> None:
                "**GSAx**, not raw save% — the share of a goalie's games where their "
                "all-shot GSAx ≥ 0 (beat expected on a danger/xG-weighted basis).")
     _sort_hint()
-    _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    st.caption("Click a row to open that goalie's detail below (same as Find a goalie).")
+    _gevent = _show_df(disp.style.format(fmt, na_rep="—"), hide_index=True,
+                       on_select="rerun", selection_mode="single-row")
     _goalie_scope = "all playoffs (2022-2025 pooled)" if playoffs else season_label
     st.caption(
         f"{len(disp)} goalies · {_goalie_scope} · sorted by NFI-GSAx/60 descending · "
@@ -2279,6 +2281,18 @@ def render_goalies(season_label: str, game_type: str) -> None:
             "with ≥3 net-front shots/game; GQG ≥10 shots/game, ≥25 GP/season).</p>",
             unsafe_allow_html=True,
         )
+
+    # Row click → drill into that goalie's detail (mirrors "Find a goalie").
+    _grows = getattr(getattr(_gevent, "selection", None), "rows", None)
+    if _grows:
+        _cgid = base.iloc[_grows[0]]["goalie_id"]
+        if pd.notna(_cgid):
+            st.divider()
+            st.markdown(f"### {base.iloc[_grows[0]]['Goalie']}")
+            if playoffs:
+                _render_goalie_playoff_summary(int(_cgid))
+            else:
+                _render_goalie_profile(int(_cgid))
 
 
 def _render_goalie_playoff_summary(gid: int) -> None:

@@ -436,15 +436,15 @@ Player-level TZI2 will not be published until a public methodology introduction 
 
 ## Goalie Metrics: NFI-GSAx, QNFS%, GQG
 
-### Disambiguation from conventional Quality Starts
+### Disambiguation: GQG vs. conventional Quality Starts
 
-Read this before mapping any of these metrics to a conventional goalie-consistency measure. Robert Vollman's Quality Starts metric (~2009) is binary on **save percentage**: a quality start is a game where the goalie's save% exceeds league-average save% (with a small adjustment for high-shot-volume games). Anyone in hockey analytics who hears "Quality Starts" will map to that definition. The HockeyROI quality-start metrics are constructed differently on three dimensions:
+Read this before mapping any of these metrics to a conventional goalie-consistency measure. Robert Vollman's Quality Starts metric (~2009) is binary on **save percentage**: a quality start is a game where the goalie's save% exceeds league-average save% (with a small adjustment for high-shot-volume games). Anyone in hockey analytics who hears "Quality Starts" will map to that definition. HockeyROI's goalie consistency metrics — **GQG** (Goalie Quality Games; formerly QS-GSAx) and **QNFS%** — are constructed differently on three dimensions:
 
 1. **Threshold.** Per-game GSAx ≥ 0 — the goalie beat their expected on a danger- or xG-weighted basis — **not** save% > league average.
 2. **Two parallel definitions** (QNFS% and GQG), not one.
 3. **Different shot scopes.** QNFS% uses net-front (CNFI ∪ MNFI) shots only; GQG uses all shots faced.
 
-These are not Vollman Quality Starts under a different name. Do not conflate them.
+GQG and QNFS% are not Vollman Quality Starts under a different name — the GQG rename (from QS-GSAx) deliberately drops the "Quality Start" label to avoid exactly this confusion. Do not conflate them.
 
 ### NFI-GSAx
 
