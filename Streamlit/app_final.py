@@ -537,7 +537,7 @@ def _aggregate_nfi_pooled(df: pd.DataFrame) -> pd.DataFrame:
 GITHUB_METHODOLOGY_URL = (
     "https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md"
 )
-TAB_LABELS = ["Player List", "Player Detail", "Goalie List", "Goalie Detail",
+TAB_LABELS = ["Player List", "Goalie List",
               "Trade Analyzer", "Teams", "Referees", "Methodology"]
 
 
@@ -1388,7 +1388,15 @@ def render_players(season_label: str, game_type: str) -> None:
     else:
         _all_teams = sorted(frame["team"].dropna().unique().tolist())
 
-    c1, c2 = st.columns([1.0, 1.6])
+    # Player search options (drill into one player's detail on this same page).
+    _popts = (frame[["player_id", "player_name", "position"]]
+              .dropna(subset=["player_id"]).drop_duplicates("player_id")
+              .sort_values("player_name"))
+    _pid_list = [int(x) for x in _popts["player_id"].tolist()]
+    _plabel = {int(r.player_id): f"{r.player_name} ({r.position})"
+               for r in _popts.itertuples()}
+
+    c1, c2, c3 = st.columns([1.0, 1.3, 1.5])
     with c1:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
     with c2:
@@ -1399,6 +1407,12 @@ def render_players(season_label: str, game_type: str) -> None:
             toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
             default_toi = 2000 if is_pooled else 500
             min_toi = st.slider("Min ES TOI (min)", 0, 7500, default_toi, 50, key=toi_key)
+    with c3:
+        player_sel = st.selectbox(
+            "Search a player", _pid_list, index=None,
+            placeholder="— full leaderboard —",
+            format_func=lambda i: _plabel.get(i, str(i)), key="players_search",
+            help="Pick a player to see their season-by-season detail on this page.")
 
     # Team filter sits next to the metric-family toggles. Families start with none
     # selected (only the identity columns show); click a family to display it.
@@ -1412,6 +1426,22 @@ def render_players(season_label: str, game_type: str) -> None:
             selection_mode="multi", key="players_display_seg",
             help="Click a metric group to show its columns (Net Front Impact, "
                  "Zone Impact, Quality Games). Click again to hide it.") or []
+
+    # Drill-in: a selected player shows their detail (trend + charts) here, in
+    # place of the leaderboard. Clear the search to return to the leaderboard.
+    if player_sel is not None:
+        st.markdown(f"### {_plabel.get(int(player_sel), str(player_sel))}")
+        if playoffs:
+            _render_player_playoff_summary(frame, int(player_sel))
+        else:
+            _prow = _popts[_popts["player_id"] == int(player_sel)]
+            _is_d = len(_prow) and str(_prow["position"].iloc[0]) == "D"
+            _pos_label = "Defense only" if _is_d else "Forwards only"
+            _rc = st.radio("Rank against", ["All skaters", _pos_label],
+                           horizontal=True, key="players_rank_cohort")
+            _render_player_profile(int(player_sel), same_pos=(_rc != "All skaters"),
+                                   families=display_fams)
+        return
 
     df = frame.copy()
     if pos in ("F", "D"):
@@ -1576,54 +1606,6 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
                "(2022-23 → 2024-25).")
     _show_df(pd.DataFrame(items, columns=["Metric", "Value"]),
                  width="stretch", hide_index=True)
-
-
-def render_player_detail(season_label: str, game_type: str) -> None:
-    """Player Detail tab — searchable selector → per-season trend table + charts.
-    Reuses _player_trend / _render_player_profile; selector options come from the
-    full (unfiltered) player frame."""
-    st.markdown(
-        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Player Detail</h2>",
-        unsafe_allow_html=True,
-    )
-    playoffs = game_type == "Playoffs"
-    frame, _ = _build_players_frame(season_label, playoffs=playoffs)
-    if frame.empty:
-        st.error("Player data not found "
-                 "(`NFI/output/fully_adjusted/player_fully_adjusted"
-                 f"{'_playoffs' if playoffs else ''}.csv`).")
-        return
-    popts = (frame[["player_id", "player_name", "position"]]
-             .dropna(subset=["player_id"]).drop_duplicates("player_id")
-             .sort_values("player_name"))
-    pid_list = [int(x) for x in popts["player_id"].tolist()]
-    plabel = {int(r.player_id): f"{r.player_name} ({r.position})"
-              for r in popts.itertuples()}
-    _prompt = ("Select a player for their pooled playoff profile"
-               if playoffs else
-               "Select a player for a per-season trend (2022-23 → 2025-26)")
-    sel = st.selectbox(
-        _prompt, pid_list, index=None, placeholder="— select a player —",
-        format_func=lambda i: plabel.get(i, str(i)), key="players_profile")
-    if sel is None:
-        st.caption("Pick a player to see their "
-                   + ("pooled playoff metrics." if playoffs
-                      else "season-by-season trend and charts."))
-    elif playoffs:
-        _render_player_playoff_summary(frame, int(sel))
-    else:
-        prow = popts[popts["player_id"] == int(sel)]
-        is_d = len(prow) and str(prow["position"].iloc[0]) == "D"
-        pos_label = "Defense only" if is_d else "Forwards only"
-        cohort = st.radio("Rank against", ["All skaters", pos_label],
-                          horizontal=True, key="players_rank_cohort")
-        det_fams = st.segmented_control(
-            "**Display a Metric Family**", list(PLAYER_FAMILY_COLS),
-            selection_mode="multi", key="detail_display_seg",
-            help="Show only the selected metric groups' columns and charts; "
-                 "none selected shows all.") or []
-        _render_player_profile(int(sel), same_pos=(cohort != "All skaters"),
-                               families=det_fams)
 
 
 # ---------------------------------------------------------------------------
@@ -2189,6 +2171,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
     gp_cols = [c for c in ("GP_nfi", "GP_qn", "GP_qs") if c in base.columns]
     base["GP"] = base[gp_cols].bfill(axis=1).iloc[:, 0] if gp_cols else np.nan
     base["Team"] = base["team"] if "team" in base.columns else np.nan
+    _gid_of = dict(zip(base["Goalie"], base["goalie_id"]))   # name → id for drill-in
 
     c1, c2 = st.columns([2, 1])
     with c1:
@@ -2207,11 +2190,22 @@ def render_goalies(season_label: str, game_type: str) -> None:
         _gnames = sorted(_elig["Goalie"].dropna().unique().tolist())
         goalie_pick = st.selectbox(
             "Find a goalie", ["All goalies"] + _gnames, key="goalies_name_pick",
-            help="Type to search by name (autocompletes); pick one to filter the list.")
-    base = base[base["total_faced"].fillna(0) >= min_shots]
-    rank_cohort = base.copy()   # Min-Shots cohort (pre name-filter) — rank denom
+            help="Type to search by name; pick one to see their detail (trend + charts).")
+
+    # Drill-in: a selected goalie shows their detail (trend + charts) here, in
+    # place of the leaderboard. Choose "All goalies" to return to the leaderboard.
     if goalie_pick != "All goalies":
-        base = base[base["Goalie"] == goalie_pick]
+        gid = _gid_of.get(goalie_pick)
+        if gid is not None and pd.notna(gid):
+            st.markdown(f"### {goalie_pick}")
+            if playoffs:
+                _render_goalie_playoff_summary(int(gid))
+            else:
+                _render_goalie_profile(int(gid))
+            return
+
+    base = base[base["total_faced"].fillna(0) >= min_shots]
+    rank_cohort = base.copy()   # Min-Shots cohort — rank denom
     if base.empty:
         st.info("No goalies match the current filters.")
         return
@@ -2305,42 +2299,6 @@ def _render_goalie_playoff_summary(gid: int) -> None:
     st.caption(f"**{name}** · pooled playoffs (2022-23 → 2024-25).")
     _show_df(pd.DataFrame(items, columns=["Metric", "Value"]),
                  width="stretch", hide_index=True)
-
-
-def render_goalie_detail(season_label: str, game_type: str) -> None:
-    """Goalie Detail tab — searchable selector → per-season trend table + charts.
-    Reuses _goalie_trend / _render_goalie_profile; options span the full goalie
-    universe (by-season GSAx file), independent of the leaderboard filters."""
-    st.markdown(
-        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Goalie Detail</h2>",
-        unsafe_allow_html=True,
-    )
-    playoffs = game_type == "Playoffs"
-    n = load_goalie_nfi_playoffs() if playoffs else load_goalie_nfi_by_season()
-    if n.empty:
-        st.info("No goalie data available.")
-        return
-    nn = n[["goalie_id", "goalie_name"]].dropna().drop_duplicates("goalie_id")
-    glabel = {int(r.goalie_id): r.goalie_name for r in nn.itertuples()}
-    gid_list = sorted(glabel, key=lambda i: glabel[i])
-    if playoffs:
-        gsel = st.selectbox(
-            "Select a goalie for their pooled playoff profile",
-            gid_list, index=None, placeholder="— select a goalie —",
-            format_func=lambda i: glabel.get(i, str(i)), key="goalies_profile")
-        if gsel is not None:
-            _render_goalie_playoff_summary(int(gsel))
-        else:
-            st.caption("Pick a goalie to see their pooled playoff metrics.")
-        return
-    gsel = st.selectbox(
-        "Select a goalie for a per-season trend (2022-23 → 2025-26)",
-        gid_list, index=None, placeholder="— select a goalie —",
-        format_func=lambda i: glabel.get(i, str(i)), key="goalies_profile")
-    if gsel is not None:
-        _render_goalie_profile(int(gsel))
-    else:
-        st.caption("Pick a goalie to see their season-by-season trend and charts.")
 
 
 # ---------------------------------------------------------------------------
@@ -2725,16 +2683,12 @@ def main() -> None:
     season_label, game_type = render_global_filters()
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
 
-    (player_list_tab, player_detail_tab, goalie_list_tab, goalie_detail_tab,
+    (player_list_tab, goalie_list_tab,
      trade_tab, teams_tab, refs_tab, meth_tab) = st.tabs(TAB_LABELS)
     with player_list_tab:
         render_players(season_label, game_type)
-    with player_detail_tab:
-        render_player_detail(season_label, game_type)
     with goalie_list_tab:
         render_goalies(season_label, game_type)
-    with goalie_detail_tab:
-        render_goalie_detail(season_label, game_type)
     with trade_tab:
         render_trade_analyzer(season_label, game_type)
     with teams_tab:
