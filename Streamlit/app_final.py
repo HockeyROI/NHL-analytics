@@ -1443,8 +1443,18 @@ def render_players(season_label: str, game_type: str) -> None:
             _render_player_profile(int(pid), same_pos=(_rc != "All skaters"),
                                    families=display_fams)
 
+    # Drill via the search box OR a clicked leaderboard row — either one collapses
+    # the leaderboard to just that player's detail.
     if player_sel is not None:
+        st.session_state["_pl_drill"] = None     # an explicit search overrides a click
         _drill(player_sel)
+        return
+    _drill_pid = st.session_state.get("_pl_drill")
+    if _drill_pid is not None:
+        if st.button("← Back to leaderboard", key="pl_back"):
+            st.session_state["_pl_drill"] = None
+            st.rerun()
+        _drill(int(_drill_pid))
         return
 
     df = frame.copy()
@@ -1548,9 +1558,11 @@ def render_players(season_label: str, game_type: str) -> None:
                    f"whole season, not limited by Min-TOI). NFI-S/60 (shots against): "
                    f"lowest = #1.")
     _sort_hint()
-    st.caption("Click a row to open that player's detail below (same as the search).")
+    st.caption("Click a row to open that player's detail (collapses the list).")
+    _gen = st.session_state.get("_pl_tbl_gen", 0)
     _event = _show_df(disp.style.format(fmt, na_rep="—"), hide_index=True,
-                      on_select="rerun", selection_mode="single-row")
+                      on_select="rerun", selection_mode="single-row",
+                      key=f"players_tbl_{_gen}")
 
     if playoffs:
         zone_note = " · NZI/DZI/OZI pooled across playoffs"
@@ -1565,11 +1577,13 @@ def render_players(season_label: str, game_type: str) -> None:
         f"min {min_toi:,} ES min{zone_note}"
     )
 
-    # Row click → drill into that player's detail (mirrors the search box).
+    # Row click → drill into that player (collapse the list). Bump the table key
+    # so the leaderboard re-renders without a stale selection when we come back.
     _sel_rows = getattr(getattr(_event, "selection", None), "rows", None)
     if _sel_rows:
-        st.divider()
-        _drill(int(df.iloc[_sel_rows[0]]["player_id"]))
+        st.session_state["_pl_drill"] = int(df.iloc[_sel_rows[0]]["player_id"])
+        st.session_state["_pl_tbl_gen"] = _gen + 1
+        st.rerun()
 
 
 def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
@@ -2203,17 +2217,28 @@ def render_goalies(season_label: str, game_type: str) -> None:
             "Find a goalie", ["All goalies"] + _gnames, key="goalies_name_pick",
             help="Type to search by name; pick one to see their detail (trend + charts).")
 
-    # Drill-in: a selected goalie shows their detail (trend + charts) here, in
-    # place of the leaderboard. Choose "All goalies" to return to the leaderboard.
+    # Drill-in (via "Find a goalie" OR a clicked row) — either collapses the
+    # leaderboard to just that goalie's detail.
+    def _goalie_drill(gid, label):
+        st.markdown(f"### {label}")
+        if playoffs:
+            _render_goalie_playoff_summary(int(gid))
+        else:
+            _render_goalie_profile(int(gid))
+
     if goalie_pick != "All goalies":
+        st.session_state["_gl_drill"] = None     # an explicit search overrides a click
         gid = _gid_of.get(goalie_pick)
         if gid is not None and pd.notna(gid):
-            st.markdown(f"### {goalie_pick}")
-            if playoffs:
-                _render_goalie_playoff_summary(int(gid))
-            else:
-                _render_goalie_profile(int(gid))
-            return
+            _goalie_drill(int(gid), goalie_pick)
+        return
+    _gl_drill = st.session_state.get("_gl_drill")
+    if _gl_drill is not None:
+        if st.button("← Back to leaderboard", key="gl_back"):
+            st.session_state["_gl_drill"] = None
+            st.rerun()
+        _goalie_drill(int(_gl_drill), name_map.get(int(_gl_drill), str(_gl_drill)))
+        return
 
     base = base[base["total_faced"].fillna(0) >= min_shots]
     rank_cohort = base.copy()   # Min-Shots cohort — rank denom
@@ -2254,9 +2279,11 @@ def render_goalies(season_label: str, game_type: str) -> None:
                "**GSAx**, not raw save% — the share of a goalie's games where their "
                "all-shot GSAx ≥ 0 (beat expected on a danger/xG-weighted basis).")
     _sort_hint()
-    st.caption("Click a row to open that goalie's detail below (same as Find a goalie).")
+    st.caption("Click a row to open that goalie's detail (collapses the list).")
+    _ggen = st.session_state.get("_gl_tbl_gen", 0)
     _gevent = _show_df(disp.style.format(fmt, na_rep="—"), hide_index=True,
-                       on_select="rerun", selection_mode="single-row")
+                       on_select="rerun", selection_mode="single-row",
+                       key=f"goalies_tbl_{_ggen}")
     _goalie_scope = "all playoffs (2022-2025 pooled)" if playoffs else season_label
     st.caption(
         f"{len(disp)} goalies · {_goalie_scope} · sorted by NFI-GSAx/60 descending · "
@@ -2282,17 +2309,15 @@ def render_goalies(season_label: str, game_type: str) -> None:
             unsafe_allow_html=True,
         )
 
-    # Row click → drill into that goalie's detail (mirrors "Find a goalie").
+    # Row click → drill into that goalie (collapse the list); bump the table key
+    # so it re-renders without a stale selection when we come back.
     _grows = getattr(getattr(_gevent, "selection", None), "rows", None)
     if _grows:
         _cgid = base.iloc[_grows[0]]["goalie_id"]
         if pd.notna(_cgid):
-            st.divider()
-            st.markdown(f"### {base.iloc[_grows[0]]['Goalie']}")
-            if playoffs:
-                _render_goalie_playoff_summary(int(_cgid))
-            else:
-                _render_goalie_profile(int(_cgid))
+            st.session_state["_gl_drill"] = int(_cgid)
+            st.session_state["_gl_tbl_gen"] = _ggen + 1
+            st.rerun()
 
 
 def _render_goalie_playoff_summary(gid: int) -> None:
