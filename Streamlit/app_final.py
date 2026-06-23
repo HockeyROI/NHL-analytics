@@ -697,6 +697,18 @@ def load_player_season_team_order() -> dict:
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def load_team_rosters() -> dict:
+    """{(season:str, team): set(player_id)} — who suited up for each team each
+    season (any team they appeared for). Built from the chronological order map;
+    used for within-team ranks on the player-detail page."""
+    out = {}
+    for (pid, sn), teams in load_player_season_team_order().items():
+        for t in teams:
+            out.setdefault((sn, t), set()).add(int(pid))
+    return out
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_zone_pooled() -> pd.DataFrame:
     """Pooled NZI / DZI / OZI (0–10) from tnzi_adjusted_{forwards,defense}.csv.
     Name-keyed (the zone files carry no player_id); a `_pos_group` column is
@@ -994,11 +1006,12 @@ def _league_rank(series, value, lower=False):
     return better + 1
 
 
-def _player_season_ranks(pid: int, same_pos: bool = False) -> dict:
+def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
     """For one player, the per-season rank of each display metric (#1 = best;
     NFI-S/60 lowest = #1). Cohort is all skaters by default, or the player's own
-    position group (F or D) when same_pos=True. Returns {display_col:
-    {season_str: rank}}."""
+    position group (F or D) when same_pos=True. If `team` is given, the cohort is
+    further restricted to that team's roster each season (within-team rank).
+    Returns {display_col: {season_str: rank}}."""
     pid = int(pid)
     out = {}
     nfi = load_nfi_player()
@@ -1011,10 +1024,25 @@ def _player_season_ranks(pid: int, same_pos: bool = False) -> dict:
         pos_group = pos_map.get(pid)
     restrict = same_pos and pos_group is not None
 
-    def _byid(sub):  # restrict a player_id-keyed cohort to the player's position
-        if not restrict:
-            return sub
-        return sub[sub["player_id"].astype(int).map(pos_map) == pos_group]
+    # Per-season team roster (player_ids + names) when ranking within a team.
+    team_pids, team_names = {}, {}
+    if team and not nfi.empty:
+        _rosters = load_team_rosters()
+        _nm = nfi.dropna(subset=["player_id"]).copy()
+        _nm["season"] = _nm["season"].astype(str)
+        for ssn in PROFILE_SEASONS:
+            pids = _rosters.get((ssn, team), set())
+            team_pids[ssn] = pids
+            team_names[ssn] = set(
+                _nm[(_nm["season"] == ssn)
+                    & (_nm["player_id"].astype(int).isin(pids))]["player_name"])
+
+    def _byid(sub, ssn):  # restrict a player_id-keyed cohort to position / team
+        if restrict:
+            sub = sub[sub["player_id"].astype(int).map(pos_map) == pos_group]
+        if team:
+            sub = sub[sub["player_id"].astype(int).isin(team_pids.get(ssn, set()))]
+        return sub
 
     if not nfi.empty:
         nfi = nfi.copy()
@@ -1025,7 +1053,7 @@ def _player_season_ranks(pid: int, same_pos: bool = False) -> dict:
                 continue
             d = {}
             for ssn in PROFILE_SEASONS:
-                sub = _byid(nfi[nfi["season"] == ssn])
+                sub = _byid(nfi[nfi["season"] == ssn], ssn)
                 pv = sub.loc[sub["player_id"] == pid, src]
                 if len(pv):
                     d[ssn] = _league_rank(sub[src], pv.iloc[0])
@@ -1040,7 +1068,7 @@ def _player_season_ranks(pid: int, same_pos: bool = False) -> dict:
         for disp_c, low in (("NFI-A/60", False), ("NFI-S/60", True)):
             d = {}
             for ssn in PROFILE_SEASONS:
-                sub = _byid(g[g["season"] == ssn])
+                sub = _byid(g[g["season"] == ssn], ssn)
                 pv = sub.loc[sub["player_id"] == pid, disp_c]
                 if len(pv):
                     d[ssn] = _league_rank(sub[disp_c], pv.iloc[0], lower=low)
@@ -1058,6 +1086,8 @@ def _player_season_ranks(pid: int, same_pos: bool = False) -> dict:
                     sub = z[z["season"] == ssn]  # all skaters that season
                     if restrict:
                         sub = sub[sub["_pos_group"] == pos_group]
+                    if team:
+                        sub = sub[sub["player_name"].isin(team_names.get(ssn, set()))]
                     pv = sub.loc[(sub["player_name"] == name)
                                  & (sub["_pos_group"] == pos_group), m]
                     if len(pv) and pd.notna(pv.iloc[0]):
@@ -1074,7 +1104,7 @@ def _player_season_ranks(pid: int, same_pos: bool = False) -> dict:
                 continue
             d = {}
             for ssn in PROFILE_SEASONS:
-                sub = _byid(qg[qg["season"] == ssn])
+                sub = _byid(qg[qg["season"] == ssn], ssn)
                 pv = sub.loc[sub["player_id"] == pid, src]
                 if len(pv) and pd.notna(pv.iloc[0]):
                     d[ssn] = _league_rank(sub[src], pv.iloc[0])
@@ -1082,13 +1112,14 @@ def _player_season_ranks(pid: int, same_pos: bool = False) -> dict:
     return out
 
 
-def _player_profile_table(pid: int, same_pos: bool = False, families=None
-                          ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+def _player_profile_table(pid: int, same_pos: bool = False, families=None,
+                          team=None) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     """Rank-annotated per-season trend table for a player. Returns
     (display_df, trend, metric_cols): display_df has string cells (value + rank);
     trend is the numeric frame (for charts). Empty display_df if no data.
     same_pos ranks within the player's position group instead of all skaters.
-    families: optional list of metric families to show (None/empty = all)."""
+    families: optional list of metric families to show (None/empty = all).
+    team: when set, each cell also shows the within-team rank as (league / team)."""
     trend = _player_trend(pid)
     if trend.empty:
         return pd.DataFrame(), trend, []
@@ -1102,8 +1133,10 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None
         _fam_of = {col: fam for fam, fcols in PLAYER_FAMILY_COLS.items() for col in fcols}
         metric_cols = [c for c in metric_cols if _fam_of.get(c) in set(families)]
 
-    # Per-season rank (cohort per same_pos) appended to each cell.
+    # Per-season rank (cohort per same_pos) appended to each cell. When a team is
+    # given, also compute the within-team rank → cells read "(league / team)".
     ranks = _player_season_ranks(pid, same_pos=same_pos)
+    team_ranks = _player_season_ranks(pid, same_pos=same_pos, team=team) if team else {}
     _b = {}
     for c in ("NFI%", "NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"):
         _b[c] = lambda v: f"{v * 100:.1f}%"
@@ -1128,17 +1161,25 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None
             else:
                 txt = _b.get(c, lambda v: f"{v}")(v)
                 rk = ranks.get(c, {}).get(ssn)
-                row[c] = f"{txt} ({rk})" if rk is not None else txt
+                if rk is None:
+                    row[c] = txt
+                elif team:
+                    trk = team_ranks.get(c, {}).get(ssn)
+                    row[c] = f"{txt} ({rk} / {trk})" if trk is not None else f"{txt} ({rk})"
+                else:
+                    row[c] = f"{txt} ({rk})"
         rows.append(row)
     lead = ["Season"] + (["Team"] if has_team else []) + (["GP"] if has_gp else [])
     return pd.DataFrame(rows, columns=lead + metric_cols), trend, metric_cols
 
 
-def _render_player_profile(pid: int, same_pos: bool = False, families=None) -> None:
+def _render_player_profile(pid: int, same_pos: bool = False, families=None,
+                           team=None) -> None:
     """Per-season trend table + auto-showing line charts for one player.
-    families: optional list of metric families to show (None/empty = all)."""
+    families: optional list of metric families to show (None/empty = all).
+    team: when set, cells also show the within-team rank as (league / team)."""
     disp, trend, metric_cols = _player_profile_table(pid, same_pos=same_pos,
-                                                     families=families)
+                                                     families=families, team=team)
     if disp.empty:
         st.info("No per-season data available for this player.")
         return
@@ -1149,8 +1190,13 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None) -> N
         prow = nfi[nfi["player_id"] == int(pid)] if not nfi.empty else nfi
         if len(prow):
             cohort = "defense" if str(prow["position"].iloc[0]) == "D" else "forwards"
-    st.caption(f"Each value shows its **(rank)** — rank among **{cohort}** that "
-               "season. NFI-S/60 (shots against): lowest = #1.")
+    if team:
+        st.caption(f"Each value shows **(league / team)** rank — rank among "
+                   f"**{cohort}** league-wide, then among **{team}** skaters that "
+                   "season. NFI-S/60 (shots against): lowest = #1.")
+    else:
+        st.caption(f"Each value shows its **(rank)** — rank among **{cohort}** that "
+                   "season. NFI-S/60 (shots against): lowest = #1.")
     _show_df(disp, width="stretch", hide_index=True)
 
     def _chart(title: str, cols: list[str]) -> None:
@@ -1426,7 +1472,9 @@ def render_players(season_label: str, game_type: str) -> None:
                  "Zone Impact, Quality Games). Click again to hide it.") or []
     with tcol:
         team_opts = ["All"] + _all_teams
-        team_sel = st.selectbox("Team", team_opts, key="players_team")
+        # Changing the team exits any drill-in and returns to the leaderboard.
+        team_sel = st.selectbox("Team", team_opts, key="players_team",
+                                on_change=lambda: st.session_state.update(_pl_drill=None))
 
     # Drill-in (via the search box OR clicking a leaderboard row): show one
     # player's detail (trend + charts) here. Clear/deselect to return to the list.
@@ -1441,7 +1489,8 @@ def render_players(season_label: str, game_type: str) -> None:
             _rc = st.radio("Rank against", ["All skaters", _pos_label],
                            horizontal=True, key="players_rank_cohort")
             _render_player_profile(int(pid), same_pos=(_rc != "All skaters"),
-                                   families=display_fams)
+                                   families=display_fams,
+                                   team=(team_sel if team_sel != "All" else None))
 
     # Drill via the search box OR a clicked leaderboard row — either one collapses
     # the leaderboard to just that player's detail.
