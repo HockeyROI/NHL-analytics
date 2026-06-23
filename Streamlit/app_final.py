@@ -455,7 +455,7 @@ def _show_df(obj, **kwargs) -> None:
         cc.setdefault(cols[0], st.column_config.Column(pinned=True))
         kwargs["column_config"] = cc
     kwargs["width"] = "content"   # size to content (no clipping) rather than stretch
-    st.dataframe(obj, **kwargs)
+    return st.dataframe(obj, **kwargs)   # returns selection state when on_select set
 
 
 def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=(), second_cohort=None):
@@ -1428,20 +1428,23 @@ def render_players(season_label: str, game_type: str) -> None:
         team_opts = ["All"] + _all_teams
         team_sel = st.selectbox("Team", team_opts, key="players_team")
 
-    # Drill-in: a selected player shows their detail (trend + charts) here, in
-    # place of the leaderboard. Clear the search to return to the leaderboard.
-    if player_sel is not None:
-        st.markdown(f"### {_plabel.get(int(player_sel), str(player_sel))}")
+    # Drill-in (via the search box OR clicking a leaderboard row): show one
+    # player's detail (trend + charts) here. Clear/deselect to return to the list.
+    def _drill(pid):
+        st.markdown(f"### {_plabel.get(int(pid), str(pid))}")
         if playoffs:
-            _render_player_playoff_summary(frame, int(player_sel))
+            _render_player_playoff_summary(frame, int(pid))
         else:
-            _prow = _popts[_popts["player_id"] == int(player_sel)]
+            _prow = _popts[_popts["player_id"] == int(pid)]
             _is_d = len(_prow) and str(_prow["position"].iloc[0]) == "D"
             _pos_label = "Defense only" if _is_d else "Forwards only"
             _rc = st.radio("Rank against", ["All skaters", _pos_label],
                            horizontal=True, key="players_rank_cohort")
-            _render_player_profile(int(player_sel), same_pos=(_rc != "All skaters"),
+            _render_player_profile(int(pid), same_pos=(_rc != "All skaters"),
                                    families=display_fams)
+
+    if player_sel is not None:
+        _drill(player_sel)
         return
 
     df = frame.copy()
@@ -1545,7 +1548,9 @@ def render_players(season_label: str, game_type: str) -> None:
                    f"whole season, not limited by Min-TOI). NFI-S/60 (shots against): "
                    f"lowest = #1.")
     _sort_hint()
-    _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    st.caption("Click a row to open that player's detail below (same as the search).")
+    _event = _show_df(disp.style.format(fmt, na_rep="—"), hide_index=True,
+                      on_select="rerun", selection_mode="single-row")
 
     if playoffs:
         zone_note = " · NZI/DZI/OZI pooled across playoffs"
@@ -1559,6 +1564,12 @@ def render_players(season_label: str, game_type: str) -> None:
         f"{len(disp):,} players · {scope_label} · sorted by RelNFI% descending · "
         f"min {min_toi:,} ES min{zone_note}"
     )
+
+    # Row click → drill into that player's detail (mirrors the search box).
+    _sel_rows = getattr(getattr(_event, "selection", None), "rows", None)
+    if _sel_rows:
+        st.divider()
+        _drill(int(df.iloc[_sel_rows[0]]["player_id"]))
 
 
 def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
