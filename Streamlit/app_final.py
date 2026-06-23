@@ -677,6 +677,25 @@ def load_qg_player_season() -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def load_player_season_team_order() -> dict:
+    """{(player_id:int, season:str): [team, team, ...]} — the teams a player
+    suited up for that season in the order they first appeared (by game_id, which
+    is chronological within a season). Source: per_player_game.csv. Used to show
+    traded players as "EDM / COL" in play order rather than alphabetically."""
+    fp = REPO_ROOT / "Quality_Games" / "output" / "per_player_game.csv"
+    if not fp.exists():
+        return {}
+    df = pd.read_csv(fp, usecols=["player_id", "season", "game_id", "team_abbrev"])
+    df["season"] = df["season"].astype(str)
+    first = (df.groupby(["player_id", "season", "team_abbrev"])["game_id"].min()
+             .reset_index().sort_values(["player_id", "season", "game_id"]))
+    out = {}
+    for (pid, sn), g in first.groupby(["player_id", "season"], sort=False):
+        out[(int(pid), sn)] = g["team_abbrev"].tolist()
+    return out
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_zone_pooled() -> pd.DataFrame:
     """Pooled NZI / DZI / OZI (0–10) from tnzi_adjusted_{forwards,defense}.csv.
     Name-keyed (the zone files carry no player_id); a `_pos_group` column is
@@ -903,9 +922,20 @@ def _player_trend(pid: int) -> pd.DataFrame:
     if p.empty:
         return pd.DataFrame()
     p["season"] = p["season"].astype(str)
-    p = p[p["season"].isin(PROFILE_SEASONS)]
-    trend = p[["season", "team", "NFI_pct", "RelNFI_pct", "RelNFI_F_pct", "RelNFI_A_pct"]].rename(
-        columns={"team": "Team", "NFI_pct": "NFI%", "RelNFI_pct": "RelNFI%",
+    p = p[p["season"].isin(PROFILE_SEASONS)].copy()
+    # Team per season in chronological play order ("EDM / COL" for traded players),
+    # falling back to the single NFI team if the order map lacks that season.
+    _order = load_player_season_team_order()
+
+    def _team_disp(r):
+        teams = _order.get((pid, r["season"]))
+        if teams:
+            return " / ".join(teams)
+        return r["team"] if isinstance(r["team"], str) and r["team"] else None
+
+    p["Team"] = p.apply(_team_disp, axis=1)
+    trend = p[["season", "Team", "NFI_pct", "RelNFI_pct", "RelNFI_F_pct", "RelNFI_A_pct"]].rename(
+        columns={"NFI_pct": "NFI%", "RelNFI_pct": "RelNFI%",
                  "RelNFI_F_pct": "RelNFI-A%", "RelNFI_A_pct": "RelNFI-S%"})
 
     # Raw attack/suppress per-60 (ES CNFI+MNFI on-ice for/against) per season.
@@ -1051,12 +1081,13 @@ def _player_season_ranks(pid: int, same_pos: bool = False) -> dict:
     return out
 
 
-def _player_profile_table(pid: int, same_pos: bool = False
+def _player_profile_table(pid: int, same_pos: bool = False, families=None
                           ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     """Rank-annotated per-season trend table for a player. Returns
     (display_df, trend, metric_cols): display_df has string cells (value + rank);
     trend is the numeric frame (for charts). Empty display_df if no data.
-    same_pos ranks within the player's position group instead of all skaters."""
+    same_pos ranks within the player's position group instead of all skaters.
+    families: optional list of metric families to show (None/empty = all)."""
     trend = _player_trend(pid)
     if trend.empty:
         return pd.DataFrame(), trend, []
@@ -1066,6 +1097,9 @@ def _player_profile_table(pid: int, same_pos: bool = False
     qg_cols = ["RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"]
     metric_cols = [c for c in share_cols + rate_cols + zone_cols + qg_cols
                    if c in trend.columns]
+    if families:   # narrow to the selected metric families
+        _fam_of = {col: fam for fam, fcols in PLAYER_FAMILY_COLS.items() for col in fcols}
+        metric_cols = [c for c in metric_cols if _fam_of.get(c) in set(families)]
 
     # Per-season rank (cohort per same_pos) appended to each cell.
     ranks = _player_season_ranks(pid, same_pos=same_pos)
@@ -1099,12 +1133,15 @@ def _player_profile_table(pid: int, same_pos: bool = False
     return pd.DataFrame(rows, columns=lead + metric_cols), trend, metric_cols
 
 
-def _render_player_profile(pid: int, same_pos: bool = False) -> None:
-    """Per-season trend table + auto-showing line charts for one player."""
-    disp, trend, metric_cols = _player_profile_table(pid, same_pos=same_pos)
+def _render_player_profile(pid: int, same_pos: bool = False, families=None) -> None:
+    """Per-season trend table + auto-showing line charts for one player.
+    families: optional list of metric families to show (None/empty = all)."""
+    disp, trend, metric_cols = _player_profile_table(pid, same_pos=same_pos,
+                                                     families=families)
     if disp.empty:
         st.info("No per-season data available for this player.")
         return
+    _show_fams = set(families) if families else set(PLAYER_FAMILY_COLS)
     cohort = "all skaters"
     if same_pos:
         nfi = load_nfi_player()
@@ -1125,15 +1162,19 @@ def _render_player_profile(pid: int, same_pos: bool = False) -> None:
 
     # Scales differ across families — one chart per scale so none flattens.
     # NFI% (0–1 absolute share) is split from the RelNFI family (points, ~±5).
-    _chart("NFI% (share)", ["NFI%"])
-    _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
-           ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
-    _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
-    _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
-    _chart("Quality Games % — raw (NFI-QG%, xG-QG%)", ["NFI-QG%", "xG-QG%"])
-    _chart("Quality Games % — relative (RelNFI-QG%, RelxG-QG%)",
-           ["RelNFI-QG%", "RelxG-QG%"])
-    _chart("Relative xG per 60 (RelxG%)", ["RelxG%"])
+    # Charts follow the family filter (selected families only; none = all).
+    if "Net Front Impact" in _show_fams:
+        _chart("NFI% (share)", ["NFI%"])
+        _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
+               ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
+        _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
+    if "Zone Impact" in _show_fams:
+        _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
+    if "Quality Games" in _show_fams:
+        _chart("Quality Games % — raw (NFI-QG%, xG-QG%)", ["NFI-QG%", "xG-QG%"])
+        _chart("Quality Games % — relative (RelNFI-QG%, RelxG-QG%)",
+               ["RelNFI-QG%", "RelxG-QG%"])
+        _chart("Relative xG per 60 (RelxG%)", ["RelxG%"])
 
 
 # ===========================================================================
@@ -1320,15 +1361,22 @@ def render_players(season_label: str, game_type: str) -> None:
                  f"{'_playoffs' if playoffs else ''}.csv`).")
         return
 
-    # Multi-team (traded) players: build each player's team list from QG's
-    # teams_in_season (single-season only). The displayed Team becomes "A / B"
-    # and the player matches the Team filter for either team.
+    # Multi-team (traded) players: list each player's teams in the order they
+    # played them that season (chronological by game), shown as "EDM / COL".
+    # Single-season only (teams_in_season comes from the QG per-season build).
     _has_teams = "teams_in_season" in frame.columns
     if _has_teams:
         frame = frame.copy()
+        _order = load_player_season_team_order()
+        _ssn = SEASON_KEY.get(season_label)
 
         def _team_list(r):
-            ts = r.get("teams_in_season")
+            pid = r.get("player_id")
+            if pd.notna(pid) and _ssn:
+                teams = _order.get((int(pid), _ssn))
+                if teams:
+                    return teams
+            ts = r.get("teams_in_season")   # fallback: QG's alphabetical set
             if isinstance(ts, str) and ts.strip():
                 return [t.strip() for t in ts.split(",") if t.strip()]
             t = r.get("team")
@@ -1340,7 +1388,7 @@ def render_players(season_label: str, game_type: str) -> None:
     else:
         _all_teams = sorted(frame["team"].dropna().unique().tolist())
 
-    c1, c2, c3 = st.columns([1.0, 1.6, 1.3])
+    c1, c2 = st.columns([1.0, 1.6])
     with c1:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
     with c2:
@@ -1351,17 +1399,19 @@ def render_players(season_label: str, game_type: str) -> None:
             toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
             default_toi = 2000 if is_pooled else 500
             min_toi = st.slider("Min ES TOI (min)", 0, 7500, default_toi, 50, key=toi_key)
-    with c3:
+
+    # Team filter sits next to the metric-family toggles. Families start with none
+    # selected (only the identity columns show); click a family to display it.
+    tcol, fcol = st.columns([1.0, 2.8])
+    with tcol:
         team_opts = ["All"] + _all_teams
         team_sel = st.selectbox("Team", team_opts, key="players_team")
-
-    # Full-width row of toggle buttons (like the Position filter). Start with none
-    # selected (only the identity columns show); click families to display them.
-    display_fams = st.segmented_control(
-        "**Display a Metric Family**", list(PLAYER_FAMILY_COLS),
-        selection_mode="multi", key="players_display_seg",
-        help="Click a metric group to show its columns (Net Front Impact, "
-             "Zone Impact, Quality Games). Click again to hide it.") or []
+    with fcol:
+        display_fams = st.segmented_control(
+            "**Display a Metric Family**", list(PLAYER_FAMILY_COLS),
+            selection_mode="multi", key="players_display_seg",
+            help="Click a metric group to show its columns (Net Front Impact, "
+                 "Zone Impact, Quality Games). Click again to hide it.") or []
 
     df = frame.copy()
     if pos in ("F", "D"):
@@ -1567,7 +1617,13 @@ def render_player_detail(season_label: str, game_type: str) -> None:
         pos_label = "Defense only" if is_d else "Forwards only"
         cohort = st.radio("Rank against", ["All skaters", pos_label],
                           horizontal=True, key="players_rank_cohort")
-        _render_player_profile(int(sel), same_pos=(cohort != "All skaters"))
+        det_fams = st.segmented_control(
+            "**Display a Metric Family**", list(PLAYER_FAMILY_COLS),
+            selection_mode="multi", key="detail_display_seg",
+            help="Show only the selected metric groups' columns and charts; "
+                 "none selected shows all.") or []
+        _render_player_profile(int(sel), same_pos=(cohort != "All skaters"),
+                               families=det_fams)
 
 
 # ---------------------------------------------------------------------------
