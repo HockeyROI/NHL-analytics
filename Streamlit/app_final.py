@@ -699,10 +699,10 @@ SEASON_KEY = {
     "2023-24": "20232024",
     "2022-23": "20222023",
     "2yr (2024–2026)": "pooled_2yr",
-    "4yr (2022-2026)": "pooled",
     # Referee data only exists 2023-24+; this pool is its 3-season view. The
     # metric tabs show a "not available" notice for it (see REF_ONLY_LABEL).
     "3yr (2023-2026) — Referees only": "ref_pooled",
+    "4yr (2022-2026)": "pooled",
 }
 REF_ONLY_LABEL = "3yr (2023-2026) — Referees only"
 
@@ -2822,14 +2822,19 @@ def render_referees(season_label: str, game_type: str) -> None:
         st.info("Referee data covers regular-season games only — switch Game type "
                 "to Regular Season.")
         return
+    # Map the global selection to referee seasons. Coverage is 2023-24+; the 2yr
+    # pool (2024-25 + 2025-26) and the 3yr Referees pool are both inside coverage,
+    # while 2022-23 and the 4yr pool include years with no referee data.
     if season_label == REF_ONLY_LABEL:
-        scope = "pool"
+        _sel = set(REF_SEASON_INT.values())
+    elif SEASON_KEY.get(season_label) == "pooled_2yr":
+        _sel = {REF_SEASON_INT["2024-25"], REF_SEASON_INT["2025-26"]}
     elif season_label in REF_SEASON_INT:
-        scope = season_label
+        _sel = {REF_SEASON_INT[season_label]}
     else:
         st.info(f"Referee data isn't available for **{season_label}** "
                 "(coverage is 2023-24 onward). Pick a single season from 2023-24 on, "
-                f"or **{REF_ONLY_LABEL}** in the Season filter up top.")
+                f"the 2yr pool, or **{REF_ONLY_LABEL}** in the Season filter up top.")
         return
 
     df = load_ref_penalties()
@@ -2837,8 +2842,7 @@ def render_referees(season_label: str, game_type: str) -> None:
         st.error("Referee data not found "
                  "(`Referees/output/all_teams_penalties_3seasons.csv`).")
         return
-    if scope != "pool":
-        df = df[df["season"] == REF_SEASON_INT[scope]]
+    df = df[df["season"].isin(_sel)]
     if df.empty:
         st.info("No referee data for this selection.")
         return
@@ -2859,11 +2863,10 @@ def render_referees(season_label: str, game_type: str) -> None:
     with c2:
         name_q = st.text_input("Referee name contains", key="refs_name").strip().lower()
 
-    _scope_label = REF_ONLY_LABEL if scope == "pool" else scope
     if team_sel == "All teams":
-        _render_ref_league(df, _scope_label, name_q)
+        _render_ref_league(df, season_label, name_q)
     else:
-        _render_ref_team(df, _scope_label, team_sel, name_q)
+        _render_ref_team(df, season_label, team_sel, name_q)
 
 
 # ---------------------------------------------------------------------------
