@@ -1496,13 +1496,22 @@ def render_players(season_label: str, game_type: str) -> None:
     _plabel = {int(r.player_id): f"{r.player_name} ({r.position})"
                for r in _popts.itertuples()}
 
-    # Fixed ES-TOI floor for RANKING (not a list filter): every player is shown;
-    # only players clearing the floor are ranked, others render "(UR)".
+    # Fixed ES-TOI floor for RANKING: players below it are ranked "(UR)". The Min
+    # ES TOI slider (default = this floor) FILTERS the list — by default it hides
+    # the sub-floor players; slide it down to reveal them (shown as UR), up to
+    # trim further. The slider never changes the ranking denominator.
     rank_floor = 300 if playoffs else (2000 if is_pooled else 500)
-    c1, c2 = st.columns([1.0, 2.0])
+    c1, c2, c3 = st.columns([1.0, 1.3, 1.5])
     with c1:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
     with c2:
+        if playoffs:
+            min_toi = st.slider("Min ES TOI (min)", 0, 1500, rank_floor, 25,
+                                key="players_toi_playoffs")
+        else:
+            toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
+            min_toi = st.slider("Min ES TOI (min)", 0, 7500, rank_floor, 50, key=toi_key)
+    with c3:
         player_sel = st.selectbox(
             "Search a player", _pid_list, index=None,
             placeholder="",
@@ -1562,10 +1571,11 @@ def render_players(season_label: str, game_type: str) -> None:
         df = df[df["position"] == pos]
     else:
         df = df[df["position"].isin(["F", "D"])]
-    # Show EVERY player (no Min-TOI list filter). The ranking denominator is the
-    # qualified cohort — players in this position group clearing the fixed ES-TOI
-    # floor; sub-floor players still display every value but render "(UR)".
+    # Ranking denominator is the position cohort clearing the FIXED floor (set
+    # before the Min-TOI slider so the slider never changes ranks). The slider
+    # then filters which rows are shown; sub-floor rows that survive it render UR.
     rank_cohort = df[df["toi_min"].fillna(0) >= rank_floor].copy()
+    df = df[df["toi_min"].fillna(0) >= min_toi]
     if team_sel != "All":
         if _has_teams:
             df = df[df["_teams"].apply(lambda ts: team_sel in ts)]
@@ -1653,16 +1663,16 @@ def render_players(season_label: str, game_type: str) -> None:
                      "D": "defense"}[pos]
     if team_sel != "All":
         st.caption(f"Each metric shows **(league rank / {team_sel} rank)** within "
-                   f"**{_cohort_label}**, then within {team_sel}. Every player is "
-                   f"listed; only those with **≥ {rank_floor:,} ES minutes** are "
-                   f"ranked — fewer shows **(UR)** = unranked. NFI-S/60 (shots "
-                   f"against): lowest = #1.")
+                   f"**{_cohort_label}**, then within {team_sel}. Only players with "
+                   f"**≥ {rank_floor:,} ES minutes** are ranked; lower the Min ES "
+                   f"TOI slider to reveal the rest as **(UR)** = unranked. NFI-S/60 "
+                   f"(shots against): lowest = #1.")
     else:
         st.caption(f"Each metric shows its **(rank)** within **{_cohort_label}** "
-                   f"(set by the Position filter). Every player is listed; only "
-                   f"those with **≥ {rank_floor:,} ES minutes** that scope are ranked "
-                   f"— fewer shows **(UR)** = unranked. NFI-S/60 (shots against): "
-                   f"lowest = #1.")
+                   f"(set by the Position filter). Only players with **≥ "
+                   f"{rank_floor:,} ES minutes** are ranked; lower the Min ES TOI "
+                   f"slider to reveal the rest as **(UR)** = unranked. NFI-S/60 "
+                   f"(shots against): lowest = #1.")
     _sort_hint()
     st.caption("Click a row to open that player's detail (collapses the list).")
     _gen = st.session_state.get("_pl_tbl_gen", 0)
@@ -1679,8 +1689,8 @@ def render_players(season_label: str, game_type: str) -> None:
     else:
         zone_note = " · NZI/DZI/OZI for this season"
     st.caption(
-        f"{len(disp):,} players · {scope_label} · sorted by RelNFI% descending · "
-        f"ranked at ≥ {rank_floor:,} ES min (else UR){zone_note}"
+        f"{len(disp):,} players (≥ {min_toi:,} ES min) · {scope_label} · sorted by "
+        f"RelNFI% descending · ranked at ≥ {rank_floor:,} ES min (else UR){zone_note}"
     )
 
     # Row click → drill into that player (collapse the list). Bump the table key
@@ -2318,14 +2328,24 @@ def render_goalies(season_label: str, game_type: str) -> None:
             base[_qc] = base.get(_col, pd.Series(np.nan, index=base.index)).fillna(0) >= _flr
     _gid_of = dict(zip(base["Goalie"], base["goalie_id"]))   # name → id for drill-in
 
-    c1, c2 = st.columns([2.5, 1])
+    c1, c2, c3 = st.columns([1.3, 2.0, 1.0])
     with c1:
+        # Min Shots Faced FILTERS the list (hides small-sample goalies by default);
+        # ranking is gated separately by each metric's qualified flag.
+        if playoffs:
+            _shdef, _shkey, _shmax = 50, "goalies_minshots_playoffs", 1500
+        elif is_pooled:
+            _shdef, _shkey, _shmax = 500, "goalies_minshots_pooled", 3000
+        else:
+            _shdef, _shkey, _shmax = 150, "goalies_minshots_season", 3000
+        min_shots = st.slider("Min Shots Faced", 0, _shmax, _shdef, 50, key=_shkey)
+    with c2:
         _gnames = sorted(base["Goalie"].dropna().unique().tolist())
         goalie_pick = st.selectbox(
             "Find a goalie", ["All goalies"] + _gnames, key="goalies_name_pick",
             on_change=lambda: st.session_state.update(goalies_team="All"),
             help="Type to search by name; pick one to see their detail (trend + charts).")
-    with c2:
+    with c3:
         _gteam_opts = ["All"] + sorted(base["Team"].dropna().unique().tolist())
         # Picking a team exits any drill-in and clears the goalie search (mutually
         # exclusive views).
@@ -2356,10 +2376,12 @@ def render_goalies(season_label: str, game_type: str) -> None:
         _goalie_drill(int(_gl_drill), name_map.get(int(_gl_drill), str(_gl_drill)))
         return
 
-    # Show EVERY goalie (no shots filter). The ranking pool is all goalies; each
-    # metric is ranked only over goalies that clear ITS qualifying bar (per the
-    # `qual_*` flags) — others render "(UR)". Team filter narrows the rows shown.
+    # Ranking pool = ALL goalies (set before the Min-Shots filter so it never
+    # changes ranks); each metric is ranked only over goalies that clear ITS
+    # qualifying bar (per the `qual_*` flags) — others render "(UR)". The Min-Shots
+    # slider then filters which rows are shown, and the Team filter narrows further.
     rank_pool = base.copy()
+    base = base[base["total_faced"].fillna(0) >= min_shots]
     if goalie_team != "All":
         base = base[base["Team"] == goalie_team]
     if base.empty:
@@ -2425,8 +2447,8 @@ def render_goalies(season_label: str, game_type: str) -> None:
                        key=f"goalies_tbl_{_ggen}")
     _goalie_scope = "all playoffs (2022-2025 pooled)" if playoffs else season_label
     st.caption(
-        f"{len(disp)} goalies · {_goalie_scope} · sorted by NFI-GSAx/60 descending · "
-        "every goalie shown; (UR) = below that metric's ranking floor"
+        f"{len(disp)} goalies (≥ {min_shots:,} shots faced) · {_goalie_scope} · sorted "
+        "by NFI-GSAx/60 descending · (UR) = below that metric's ranking floor"
     )
     if playoffs:
         st.markdown(
@@ -2440,8 +2462,9 @@ def render_goalies(season_label: str, game_type: str) -> None:
     else:
         st.markdown(
             f"<p style='color:{PALETTE['text_secondary']}; font-size:0.82rem; max-width:62rem;'>"
-            "Every goalie is shown with a value for each metric. A metric is RANKED "
-            "only when the goalie clears its qualifying minimum — otherwise the cell "
+            "Goalies above the Min-Shots filter are shown with a value for each "
+            "metric (lower it toward 0 to see everyone). A metric is RANKED only "
+            "when the goalie clears its qualifying minimum — otherwise the cell "
             "reads (UR), unranked. Floors differ by metric: NFI-GSAx ≥300 net-front "
             "shots pooled / ≥100 per season; QNFS% ≥25 GP/season (≥3 net-front "
             "shots/game); GQG ≥25 GP/season (≥10 shots/game). The regenerated data "
