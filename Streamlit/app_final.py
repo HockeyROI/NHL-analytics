@@ -1496,7 +1496,7 @@ def render_players(season_label: str, game_type: str) -> None:
     with c2:
         player_sel = st.selectbox(
             "Search a player", _pid_list, index=None,
-            placeholder="— full leaderboard —",
+            placeholder="",
             format_func=lambda i: _plabel.get(i, str(i)), key="players_search",
             help="Pick a player to see their season-by-season detail on this page.")
 
