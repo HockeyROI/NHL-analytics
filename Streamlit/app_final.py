@@ -1498,6 +1498,7 @@ def render_players(season_label: str, game_type: str) -> None:
             "Search a player", _pid_list, index=None,
             placeholder="",
             format_func=lambda i: _plabel.get(i, str(i)), key="players_search",
+            on_change=lambda: st.session_state.update(players_team="All"),
             help="Pick a player to see their season-by-season detail on this page.")
 
     # Metric-family toggles first, then the Team filter. Families start with none
@@ -1511,9 +1512,11 @@ def render_players(season_label: str, game_type: str) -> None:
                  "Zone Impact, Quality Games). Click again to hide it.") or []
     with tcol:
         team_opts = ["All"] + _all_teams
-        # Changing the team exits any drill-in and returns to the leaderboard.
-        team_sel = st.selectbox("Team", team_opts, key="players_team",
-                                on_change=lambda: st.session_state.update(_pl_drill=None))
+        # Picking a team exits any drill-in and clears the player search (the two
+        # are mutually exclusive views).
+        team_sel = st.selectbox(
+            "Team", team_opts, key="players_team",
+            on_change=lambda: st.session_state.update(_pl_drill=None, players_search=None))
 
     # Drill-in (via the search box OR clicking a leaderboard row): show one
     # player's detail (trend + charts) here. Clear/deselect to return to the list.
@@ -2248,27 +2251,27 @@ def render_goalies(season_label: str, game_type: str) -> None:
               .rename(columns={"GP": "GP_qs"}) if not s.empty else pd.DataFrame())
     elif is_pooled:
         n = load_goalie_nfi()
-        nfi = (n[["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "qualified"]]
-               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60", "qualified": "qual_gsax"})
+        nfi = (n[["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60"]]
+               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60"})
                if not n.empty else pd.DataFrame())
-        q = load_qnfs_pooled()  # keep EVERY goalie; `qualified` gates ranking only
-        qn = (q[["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi", "qualified"]]
-              .rename(columns={"GP": "GP_qn", "qualified": "qual_qn"}) if not q.empty else pd.DataFrame())
+        q = load_qnfs_pooled()  # keep EVERY goalie; qualification gates ranking only
+        qn = (q[["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi"]]
+              .rename(columns={"GP": "GP_qn"}) if not q.empty else pd.DataFrame())
         s = load_qs_pooled()
-        qs = (s[["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo", "qualified"]]
-              .rename(columns={"GP": "GP_qs", "qualified": "qual_qs"}) if not s.empty else pd.DataFrame())
+        qs = (s[["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo"]]
+              .rename(columns={"GP": "GP_qs"}) if not s.empty else pd.DataFrame())
     else:
         sk = GOALIE_SEASON_INT.get(season_label)
         bs = load_goalie_nfi_by_season()
-        nfi = (bs[bs["season"] == sk][["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "qualified"]]
-               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60", "qualified": "qual_gsax"})
+        nfi = (bs[bs["season"] == sk][["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60"]]
+               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60"})
                if (not bs.empty and sk) else pd.DataFrame())
         q0 = load_qnfs_by_season()
-        qn = (q0[q0["season"] == sk][["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi", "qualified"]]
-              .rename(columns={"GP": "GP_qn", "qualified": "qual_qn"}) if (not q0.empty and sk) else pd.DataFrame())
+        qn = (q0[q0["season"] == sk][["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi"]]
+              .rename(columns={"GP": "GP_qn"}) if (not q0.empty and sk) else pd.DataFrame())
         s0 = load_qs_by_season()
-        qs = (s0[s0["season"] == sk][["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo", "qualified"]]
-              .rename(columns={"GP": "GP_qs", "qualified": "qual_qs"}) if (not s0.empty and sk) else pd.DataFrame())
+        qs = (s0[s0["season"] == sk][["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo"]]
+              .rename(columns={"GP": "GP_qs"}) if (not s0.empty and sk) else pd.DataFrame())
 
     frames = [f for f in (nfi, qn, qs) if not f.empty]
     if not frames:
@@ -2289,11 +2292,17 @@ def render_goalies(season_label: str, game_type: str) -> None:
     gp_cols = [c for c in ("GP_nfi", "GP_qn", "GP_qs") if c in base.columns]
     base["GP"] = base[gp_cols].bfill(axis=1).iloc[:, 0] if gp_cols else np.nan
     base["Team"] = base["team"] if "team" in base.columns else np.nan
-    # Per-metric qualification flags. Playoffs have no floor file → rank everyone;
-    # elsewhere a goalie absent from a source (NaN) is not qualified there (it has
-    # no value to rank anyway).
-    for _qc in ("qual_gsax", "qual_qn", "qual_qs"):
-        base[_qc] = True if _qc not in base.columns else base[_qc].fillna(False).astype(bool)
+    # Per-metric qualification, computed in-app from columns that always exist
+    # (so it works regardless of whether the data file carries a `qualified`
+    # column). Floors match the producers: NFI-GSAx ≥100 net-front shots/season
+    # (≥300 pooled); QNFS & GQG ≥25 GP. Playoffs have no floor → rank everyone.
+    _gsax_floor = 300 if is_pooled else 100
+    if playoffs:
+        base["qual_gsax"] = base["qual_qn"] = base["qual_qs"] = True
+    else:
+        base["qual_gsax"] = base.get("total_faced", pd.Series(np.nan, index=base.index)).fillna(0) >= _gsax_floor
+        base["qual_qn"] = base.get("GP_qn", pd.Series(np.nan, index=base.index)).fillna(0) >= 25
+        base["qual_qs"] = base.get("GP_qs", pd.Series(np.nan, index=base.index)).fillna(0) >= 25
     _gid_of = dict(zip(base["Goalie"], base["goalie_id"]))   # name → id for drill-in
 
     c1, c2 = st.columns([2.5, 1])
@@ -2301,12 +2310,15 @@ def render_goalies(season_label: str, game_type: str) -> None:
         _gnames = sorted(base["Goalie"].dropna().unique().tolist())
         goalie_pick = st.selectbox(
             "Find a goalie", ["All goalies"] + _gnames, key="goalies_name_pick",
+            on_change=lambda: st.session_state.update(goalies_team="All"),
             help="Type to search by name; pick one to see their detail (trend + charts).")
     with c2:
         _gteam_opts = ["All"] + sorted(base["Team"].dropna().unique().tolist())
-        # Changing the team exits any drill-in and returns to the leaderboard.
-        goalie_team = st.selectbox("Team", _gteam_opts, key="goalies_team",
-                                   on_change=lambda: st.session_state.update(_gl_drill=None))
+        # Picking a team exits any drill-in and clears the goalie search (mutually
+        # exclusive views).
+        goalie_team = st.selectbox(
+            "Team", _gteam_opts, key="goalies_team",
+            on_change=lambda: st.session_state.update(_gl_drill=None, goalies_name_pick="All goalies"))
 
     # Drill-in (via "Find a goalie" OR a clicked row) — either collapses the
     # leaderboard to just that goalie's detail.
