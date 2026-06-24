@@ -2565,6 +2565,7 @@ def render_trade_analyzer(season_label: str, game_type: str) -> None:
 # Referees tab — penalty-call tendencies (league-wide, 2023-24 → 2025-26)
 # ---------------------------------------------------------------------------
 REF_SEASON_INT = {"2025-26": 20252026, "2024-25": 20242025, "2023-24": 20232024}
+REF_POOLED_LABEL = "3 years pooled (2023-2026)"
 REF_TYPES = ["Tripping", "Roughing", "Hooking", "Holding", "Slashing", "Interference"]
 REF_MIN_GAMES = 40
 
@@ -2615,15 +2616,6 @@ def _delta_fmt(avg, dec=2, pct=False):
             return "—"
         return f"{x:.{dec}f}{suf} ({x - avg:+.{dec}f})"
     return f
-
-
-def _ref_season_scope(df: pd.DataFrame, season_label: str) -> pd.DataFrame:
-    key = SEASON_KEY.get(season_label, "pooled")
-    if key == "pooled_2yr":
-        return df[df["season"].isin([20242025, 20252026])]
-    if key != "pooled":
-        return df[df["season"] == REF_SEASON_INT.get(season_label)]
-    return df
 
 
 def _render_ref_league(df: pd.DataFrame, season_label: str, name_q: str) -> None:
@@ -2778,21 +2770,17 @@ def render_referees(season_label: str, game_type: str) -> None:
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Referees</h2>",
         unsafe_allow_html=True,
     )
+    # Referee data only exists for 2023-24 onward, so this tab uses its OWN season
+    # picker (defaulting to the 3-year pool) rather than the global Season filter,
+    # which the rest of the app keys to the 4-season metric data.
     if game_type == "Playoffs":
         st.info("Referee data covers regular-season games only.")
-        return
-    if season_label == "2022-23":
-        st.info("Referee data covers 2023-24 onward — no 2022-23 data.")
         return
 
     df = load_ref_penalties()
     if df.empty:
         st.error("Referee data not found "
                  "(`Referees/output/all_teams_penalties_3seasons.csv`).")
-        return
-    df = _ref_season_scope(df, season_label)
-    if df.empty:
-        st.info("No referee data for this season.")
         return
 
     st.markdown(
@@ -2805,16 +2793,27 @@ def render_referees(season_label: str, game_type: str) -> None:
 
     teams = sorted({t for t in set(df["home_team"]) | set(df["away_team"])
                     if isinstance(t, str) and len(t) == 3})
-    c1, c2 = st.columns([1.0, 1.6])
+    c1, c2, c3 = st.columns([1.1, 1.0, 1.6])
     with c1:
-        team_sel = st.selectbox("Team", ["All teams"] + teams, key="refs_team")
+        ref_season = st.selectbox(
+            "Seasons", [REF_POOLED_LABEL, "2025-26", "2024-25", "2023-24"],
+            key="refs_season",
+            help="Referee data covers 2023-24 onward; the pool combines all three.")
     with c2:
+        team_sel = st.selectbox("Team", ["All teams"] + teams, key="refs_team")
+    with c3:
         name_q = st.text_input("Referee name contains", key="refs_name").strip().lower()
 
+    if ref_season != REF_POOLED_LABEL:
+        df = df[df["season"] == REF_SEASON_INT[ref_season]]
+    if df.empty:
+        st.info("No referee data for this selection.")
+        return
+
     if team_sel == "All teams":
-        _render_ref_league(df, season_label, name_q)
+        _render_ref_league(df, ref_season, name_q)
     else:
-        _render_ref_team(df, season_label, team_sel, name_q)
+        _render_ref_team(df, ref_season, team_sel, name_q)
 
 
 # ---------------------------------------------------------------------------
@@ -2834,7 +2833,7 @@ def render_global_filters() -> tuple[str, str]:
     # Non-widget mirror of the regular-season pick. Streamlit drops a widget's
     # state when it isn't rendered (i.e. while the Season box is hidden in
     # playoff mode), so we stash the choice here to restore it on the way back.
-    st.session_state.setdefault("g_season_pick", POOLED_4YR_LABEL)
+    st.session_state.setdefault("g_season_pick", "2025-26")
     is_playoffs = st.session_state.get("g_game_type") == "Playoffs"
     season_opts = list(SEASON_KEY.keys())
     c1, c2 = st.columns([1.2, 2.4])
