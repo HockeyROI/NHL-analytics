@@ -1031,6 +1031,15 @@ def _player_trend(pid: int) -> pd.DataFrame:
         trend = trend.merge(q, on="season", how="outer")
 
     trend = trend[trend["season"].isin(PROFILE_SEASONS)].copy()
+    # The raw per-60s (NFI-A/60, NFI-S/60) come from an UNfloored count file, so a
+    # season below the NFI build's TOI floor would otherwise show them alone with
+    # everything else blank. Blank them too when the season has no NFI data, so a
+    # row is all-or-nothing rather than per-60-only.
+    if "NFI%" in trend.columns:
+        _no_nfi = trend["NFI%"].isna()
+        for _c in ("NFI-A/60", "NFI-S/60"):
+            if _c in trend.columns:
+                trend.loc[_no_nfi, _c] = np.nan
     # Always show every season 2022-23 → 2025-26 as a row, even ones before the
     # player debuted (blank cells), so the trend table has a consistent shape.
     missing = [s for s in PROFILE_SEASONS if s not in set(trend["season"])]
