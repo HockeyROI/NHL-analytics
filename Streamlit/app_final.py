@@ -2248,7 +2248,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
     base["Team"] = base["team"] if "team" in base.columns else np.nan
     _gid_of = dict(zip(base["Goalie"], base["goalie_id"]))   # name → id for drill-in
 
-    c1, c2 = st.columns([2, 1])
+    c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
         if playoffs:
             default_shots, shots_key, smax = 0, "goalies_minshots_playoffs", 1500
@@ -2265,6 +2265,11 @@ def render_goalies(season_label: str, game_type: str) -> None:
         goalie_pick = st.selectbox(
             "Find a goalie", ["All goalies"] + _gnames, key="goalies_name_pick",
             help="Type to search by name; pick one to see their detail (trend + charts).")
+    with c3:
+        _gteam_opts = ["All"] + sorted(base["Team"].dropna().unique().tolist())
+        # Changing the team exits any drill-in and returns to the leaderboard.
+        goalie_team = st.selectbox("Team", _gteam_opts, key="goalies_team",
+                                   on_change=lambda: st.session_state.update(_gl_drill=None))
 
     # Drill-in (via "Find a goalie" OR a clicked row) — either collapses the
     # leaderboard to just that goalie's detail.
@@ -2290,7 +2295,9 @@ def render_goalies(season_label: str, game_type: str) -> None:
         return
 
     base = base[base["total_faced"].fillna(0) >= min_shots]
-    rank_cohort = base.copy()   # Min-Shots cohort — rank denom
+    rank_cohort = base.copy()   # Min-Shots cohort — league rank denom (all teams)
+    if goalie_team != "All":    # filter the list to one team; ranks stay league-wide
+        base = base[base["Team"] == goalie_team]
     if base.empty:
         st.info("No goalies match the current filters.")
         return
@@ -2320,10 +2327,18 @@ def render_goalies(season_label: str, game_type: str) -> None:
     if "GP" in disp:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
-    _apply_ranks(disp, fmt, rank_cohort, ["NFI-GSAx/60", "QNFS%", "GQG%"])
-    st.caption("Each metric shows its **(rank)** across all goalies "
-               "meeting the Min-Shots filter. Blanks (below a metric's floor) are "
-               "unranked.")
+    _gteam_cohort = (rank_cohort[rank_cohort["Team"] == goalie_team]
+                     if goalie_team != "All" else None)
+    _apply_ranks(disp, fmt, rank_cohort, ["NFI-GSAx/60", "QNFS%", "GQG%"],
+                 second_cohort=_gteam_cohort)
+    if goalie_team != "All":
+        st.caption(f"Each metric shows **(league rank / {goalie_team} rank)** — rank "
+                   "across all goalies meeting the Min-Shots filter, then within "
+                   f"{goalie_team}. Blanks (below a metric's floor) are unranked.")
+    else:
+        st.caption("Each metric shows its **(rank)** across all goalies "
+                   "meeting the Min-Shots filter. Blanks (below a metric's floor) are "
+                   "unranked.")
     st.caption("**GQG (Goalie Quality Games)** = the Quality-Start idea computed on "
                "**GSAx**, not raw save% — the share of a goalie's games where their "
                "all-shot GSAx ≥ 0 (beat expected on a danger/xG-weighted basis).")
