@@ -2260,27 +2260,27 @@ def render_goalies(season_label: str, game_type: str) -> None:
               .rename(columns={"GP": "GP_qs"}) if not s.empty else pd.DataFrame())
     elif is_pooled:
         n = load_goalie_nfi()
-        nfi = (n[["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60"]]
-               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60"})
+        nfi = (n[[c for c in ["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "qualified"] if c in n.columns]]
+               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60", "qualified": "qual_gsax"})
                if not n.empty else pd.DataFrame())
         q = load_qnfs_pooled()  # keep EVERY goalie; qualification gates ranking only
-        qn = (q[["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi"]]
-              .rename(columns={"GP": "GP_qn"}) if not q.empty else pd.DataFrame())
+        qn = (q[[c for c in ["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi", "qualified"] if c in q.columns]]
+              .rename(columns={"GP": "GP_qn", "qualified": "qual_qn"}) if not q.empty else pd.DataFrame())
         s = load_qs_pooled()
-        qs = (s[["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo"]]
-              .rename(columns={"GP": "GP_qs"}) if not s.empty else pd.DataFrame())
+        qs = (s[[c for c in ["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo", "qualified"] if c in s.columns]]
+              .rename(columns={"GP": "GP_qs", "qualified": "qual_qs"}) if not s.empty else pd.DataFrame())
     else:
         sk = GOALIE_SEASON_INT.get(season_label)
         bs = load_goalie_nfi_by_season()
-        nfi = (bs[bs["season"] == sk][["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60"]]
-               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60"})
+        nfi = (bs[bs["season"] == sk][[c for c in ["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "qualified"] if c in bs.columns]]
+               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60", "qualified": "qual_gsax"})
                if (not bs.empty and sk) else pd.DataFrame())
         q0 = load_qnfs_by_season()
-        qn = (q0[q0["season"] == sk][["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi"]]
-              .rename(columns={"GP": "GP_qn"}) if (not q0.empty and sk) else pd.DataFrame())
+        qn = (q0[q0["season"] == sk][[c for c in ["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi", "qualified"] if c in q0.columns]]
+              .rename(columns={"GP": "GP_qn", "qualified": "qual_qn"}) if (not q0.empty and sk) else pd.DataFrame())
         s0 = load_qs_by_season()
-        qs = (s0[s0["season"] == sk][["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo"]]
-              .rename(columns={"GP": "GP_qs"}) if (not s0.empty and sk) else pd.DataFrame())
+        qs = (s0[s0["season"] == sk][[c for c in ["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo", "qualified"] if c in s0.columns]]
+              .rename(columns={"GP": "GP_qs", "qualified": "qual_qs"}) if (not s0.empty and sk) else pd.DataFrame())
 
     frames = [f for f in (nfi, qn, qs) if not f.empty]
     if not frames:
@@ -2301,17 +2301,21 @@ def render_goalies(season_label: str, game_type: str) -> None:
     gp_cols = [c for c in ("GP_nfi", "GP_qn", "GP_qs") if c in base.columns]
     base["GP"] = base[gp_cols].bfill(axis=1).iloc[:, 0] if gp_cols else np.nan
     base["Team"] = base["team"] if "team" in base.columns else np.nan
-    # Per-metric qualification, computed in-app from columns that always exist
-    # (so it works regardless of whether the data file carries a `qualified`
-    # column). Floors match the producers: NFI-GSAx ≥100 net-front shots/season
-    # (≥300 pooled); QNFS & GQG ≥25 GP. Playoffs have no floor → rank everyone.
+    # Per-metric qualification. PREFER the producer's `qualified` flag when the
+    # data file carries it (correct, e.g. pooled requires a season with ≥25 GP,
+    # not just accumulated games). Fall back to an in-app floor only when the
+    # column is absent (older data file), so the tab never crashes. Playoffs have
+    # no floor → rank everyone.
     _gsax_floor = 300 if is_pooled else 100
-    if playoffs:
-        base["qual_gsax"] = base["qual_qn"] = base["qual_qs"] = True
-    else:
-        base["qual_gsax"] = base.get("total_faced", pd.Series(np.nan, index=base.index)).fillna(0) >= _gsax_floor
-        base["qual_qn"] = base.get("GP_qn", pd.Series(np.nan, index=base.index)).fillna(0) >= 25
-        base["qual_qs"] = base.get("GP_qs", pd.Series(np.nan, index=base.index)).fillna(0) >= 25
+    _fallback = {"qual_gsax": ("total_faced", _gsax_floor),
+                 "qual_qn": ("GP_qn", 25), "qual_qs": ("GP_qs", 25)}
+    for _qc, (_col, _flr) in _fallback.items():
+        if playoffs:
+            base[_qc] = True
+        elif _qc in base.columns:
+            base[_qc] = base[_qc].fillna(False).astype(bool)
+        else:
+            base[_qc] = base.get(_col, pd.Series(np.nan, index=base.index)).fillna(0) >= _flr
     _gid_of = dict(zip(base["Goalie"], base["goalie_id"]))   # name → id for drill-in
 
     c1, c2 = st.columns([2.5, 1])
@@ -2830,7 +2834,7 @@ def render_global_filters() -> tuple[str, str]:
     # Non-widget mirror of the regular-season pick. Streamlit drops a widget's
     # state when it isn't rendered (i.e. while the Season box is hidden in
     # playoff mode), so we stash the choice here to restore it on the way back.
-    st.session_state.setdefault("g_season_pick", "2025-26")
+    st.session_state.setdefault("g_season_pick", POOLED_4YR_LABEL)
     is_playoffs = st.session_state.get("g_game_type") == "Playoffs"
     season_opts = list(SEASON_KEY.keys())
     c1, c2 = st.columns([1.2, 2.4])
