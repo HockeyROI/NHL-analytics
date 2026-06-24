@@ -2806,14 +2806,8 @@ def render_referees(season_label: str, game_type: str) -> None:
                  "(`Referees/output/all_teams_penalties_3seasons.csv`).")
         return
 
-    st.markdown(
-        f"<p style='color:{PALETTE['text_secondary']}; font-size:0.85rem; font-style:italic; "
-        f"max-width:62rem;'>Each game has two referees and the NHL doesn't publish which "
-        "official called a given penalty — so these are the penalty environment in games each "
-        "referee worked (with a partner), not penalties personally assigned.</p>",
-        unsafe_allow_html=True,
-    )
-
+    # Filters first (the global Season filter up top keys to the metric tabs; refs
+    # use these). Then the explainer, then the table.
     teams = sorted({t for t in set(df["home_team"]) | set(df["away_team"])
                     if isinstance(t, str) and len(t) == 3})
     c1, c2, c3 = st.columns([1.1, 1.0, 1.6])
@@ -2826,6 +2820,14 @@ def render_referees(season_label: str, game_type: str) -> None:
         team_sel = st.selectbox("Team", ["All teams"] + teams, key="refs_team")
     with c3:
         name_q = st.text_input("Referee name contains", key="refs_name").strip().lower()
+
+    st.markdown(
+        f"<p style='color:{PALETTE['text_secondary']}; font-size:0.85rem; font-style:italic; "
+        f"max-width:62rem;'>Each game has two referees and the NHL doesn't publish which "
+        "official called a given penalty — so these are the penalty environment in games each "
+        "referee worked (with a partner), not penalties personally assigned.</p>",
+        unsafe_allow_html=True,
+    )
 
     if ref_season != REF_POOLED_LABEL:
         df = df[df["season"] == REF_SEASON_INT[ref_season]]
