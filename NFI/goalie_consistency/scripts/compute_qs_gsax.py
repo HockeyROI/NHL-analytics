@@ -146,14 +146,20 @@ per_season["QS_GSAx_lo"] = per_season.apply(
     lambda r: wilson_lower(r["quality_games"], r["GP"]) * 100, axis=1
 )
 
-# Apply 25-GP qualification gate
-per_season_qual = per_season[per_season["GP"] >= MIN_GP_PER_SEASON].copy()
-print(f"\nPer-season: {len(per_season)} rows, {len(per_season_qual)} qualified (GP >= {MIN_GP_PER_SEASON})")
+# DO NOT drop sub-25-GP seasons. Emit every goalie-season and flag whether it
+# clears the 25-GP sample-size bar via a `qualified` column. The Streamlit app
+# shows every value but only ranks qualified goalie-seasons (others render "UR");
+# downstream analysis should filter on `qualified == True`.
+per_season_qual = per_season.copy()
+per_season_qual["qualified"] = per_season_qual["GP"] >= MIN_GP_PER_SEASON
+n_q = int(per_season_qual["qualified"].sum())
+print(f"\nPer-season: {len(per_season_qual)} rows emitted, {n_q} qualified (GP >= {MIN_GP_PER_SEASON})")
 
 # ---- COMPUTE POOLED 4-SEASON ----
-# A goalie qualifies for the pool if they had at least 1 qualified season
-qualified_goalies = per_season_qual["goalie_id"].unique()
-pool_data = per_game[per_game["goalie_id"].isin(qualified_goalies)]
+# Pool EVERY goalie (no gate); flag pooled `qualified` as having >=1 season that
+# cleared the 25-GP bar (matches the QNFS pooled qualified definition).
+qualified_goalies = set(per_season_qual.loc[per_season_qual["qualified"], "goalie_id"])
+pool_data = per_game
 
 pooled = (
     pool_data.groupby(["goalie_id"])
@@ -168,10 +174,11 @@ pooled["QS_GSAx_pct"] = pooled["quality_games"] / pooled["GP"] * 100
 pooled["QS_GSAx_lo"] = pooled.apply(
     lambda r: wilson_lower(r["quality_games"], r["GP"]) * 100, axis=1
 )
-pooled = pooled.sort_values("QS_GSAx_lo", ascending=False).reset_index(drop=True)
+pooled["qualified"] = pooled["goalie_id"].isin(qualified_goalies)
+pooled = pooled.sort_values(["qualified", "QS_GSAx_lo"], ascending=False).reset_index(drop=True)
 pooled["rank"] = pooled.index + 1
 
-print(f"\nPooled 4-season: {len(pooled)} qualified goalies")
+print(f"\nPooled 4-season: {len(pooled)} goalies, {int(pooled['qualified'].sum())} qualified")
 
 # ---- WRITE OUTPUTS ----
 out_per_season = OUT_DIR / "qs_gsax_per_season_2022-2026.csv"

@@ -102,10 +102,13 @@ def main() -> None:
         wide["total_faced"] = wide["faced_CNFI"] + wide["faced_MNFI"]
         wide["total_goals"] = wide["goals_CNFI"] + wide["goals_MNFI"]
 
-        # Apply per-season threshold
-        wide = wide[wide["total_faced"] >= MIN_SHOTS].copy()
+        # Do NOT drop sub-threshold goalies: emit every goalie-season and flag
+        # whether it clears the per-season net-front-shot bar via `qualified`.
+        # The app shows all values but only ranks qualified goalies (others "UR");
+        # downstream analysis should filter on `qualified == True`.
+        wide["qualified"] = wide["total_faced"] >= MIN_SHOTS
         if wide.empty:
-            print(f"  season {season}: no qualifying goalies (threshold {MIN_SHOTS})")
+            print(f"  season {season}: no goalies")
             continue
 
         # xG_calibrated using corrected per-faced rates (CNFI + MNFI only)
@@ -174,9 +177,10 @@ def main() -> None:
 
         keep = ["goalie_id", "goalie_name", "season",
                 "GSAx", "GSAx_per60",
-                "total_faced", "games", "team"]
+                "total_faced", "games", "team", "qualified"]
         season_frames.append(wide[keep].copy())
-        print(f"  season {season}: {len(wide)} qualifying goalies")
+        print(f"  season {season}: {len(wide)} goalies, "
+              f"{int(wide['qualified'].sum())} qualified (>= {MIN_SHOTS} shots)")
 
     out = pd.concat(season_frames, ignore_index=True)
     out = out.sort_values(["season", "GSAx"], ascending=[True, False]).reset_index(drop=True)

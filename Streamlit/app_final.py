@@ -458,16 +458,27 @@ def _show_df(obj, **kwargs) -> None:
     return st.dataframe(obj, **kwargs)   # returns selection state when on_select set
 
 
-def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=(), second_cohort=None):
+def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=(), second_cohort=None,
+                 mark_unranked=False, qualified=None):
     """Append ' (rank)' to each ranked column's DISPLAY string while leaving the
     underlying cell value numeric, so header-sort still orders by the real value.
 
     Ranks are computed over `cohort` (a frame sharing the display column names),
     #1 = best; columns in `lower_better` rank lowest-value-first. NaN cells get
-    no rank. Works via a value→rank map per column (ties share a rank, so the
-    map is unambiguous). If `second_cohort` is given (e.g. a single team), a
-    second rank within it is appended as ' (league / team)'."""
+    no rank. If `second_cohort` is given (e.g. a single team), a second rank
+    within it is appended as ' (league / team)'.
+
+    Two modes:
+    • qualified=None (default): value→rank map applied via the Styler formatter.
+      Used for self-ranked tables (e.g. Teams) where every row is rankable.
+    • qualified=<bool Series aligned to disp.index>: ROW-BASED. A row gets its
+      rank only when its mask is True; otherwise ' (UR)' (unranked) when
+      mark_unranked, else nothing. To keep the decision per-row (not per-value,
+      which would mis-rank a sub-floor row whose fraction equals a qualified
+      row's), cells are nudged by an index-scaled epsilon (≤1e-6, invisible to
+      the formatted value and to sort order) so each row maps to its own string."""
     lower = set(lower_better)
+    rowwise = qualified is not None
     for col in rank_cols:
         if col not in disp.columns or col not in cohort.columns or col not in fmt:
             continue
@@ -482,19 +493,52 @@ def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=(), second_cohort=No
             vmap2 = {v: int(r) for v, r in zip(s2.values, r2.values)
                      if pd.notna(v) and pd.notna(r)}
 
-        def _mk(base_f, vm, vm2):
+        if not rowwise:
+            def _mk(base_f, vm, vm2, mark):
+                def f(x):
+                    if pd.isna(x):
+                        return base_f(x)
+                    r = vm.get(x)
+                    if r is None:
+                        return f"{base_f(x)} (UR)" if mark else base_f(x)
+                    r2 = vm2.get(x) if vm2 is not None else None
+                    return (f"{base_f(x)} ({r} / {r2})" if r2 is not None
+                            else f"{base_f(x)} ({r})")
+                return f
+            fmt[col] = _mk(fmt[col], vmap, vmap2, mark_unranked)
+            continue
+
+        # Row-based: build each row's suffix from its OWN qualification, then make
+        # cell values unique (real + i·1e-9) so the formatter keys back to it.
+        real = pd.to_numeric(disp[col], errors="coerce")
+        qmask = qualified.reindex(disp.index).fillna(False).astype(bool)
+        suffix = {}
+        perturbed = real.copy()
+        for i, (idx, x) in enumerate(real.items()):
+            if pd.isna(x):
+                continue
+            px = x + i * 1e-9
+            perturbed.iloc[i] = px
+            if qmask.iloc[i]:
+                r = vmap.get(x)
+                r2 = vmap2.get(x) if vmap2 is not None else None
+                if r is None:
+                    suffix[px] = " (UR)" if mark_unranked else ""
+                elif r2 is not None:
+                    suffix[px] = f" ({r} / {r2})"
+                else:
+                    suffix[px] = f" ({r})"
+            else:
+                suffix[px] = " (UR)" if mark_unranked else ""
+        disp[col] = perturbed
+
+        def _mk_row(base_f, sfx):
             def f(x):
                 if pd.isna(x):
                     return base_f(x)
-                r = vm.get(x)
-                if r is None:
-                    return base_f(x)
-                r2 = vm2.get(x) if vm2 is not None else None
-                return (f"{base_f(x)} ({r} / {r2})" if r2 is not None
-                        else f"{base_f(x)} ({r})")
+                return f"{base_f(x)}{sfx.get(x, '')}"
             return f
-
-        fmt[col] = _mk(fmt[col], vmap, vmap2)
+        fmt[col] = _mk_row(fmt[col], suffix)
     return fmt
 
 
@@ -1443,18 +1487,13 @@ def render_players(season_label: str, game_type: str) -> None:
     _plabel = {int(r.player_id): f"{r.player_name} ({r.position})"
                for r in _popts.itertuples()}
 
-    c1, c2, c3 = st.columns([1.0, 1.3, 1.5])
+    # Fixed ES-TOI floor for RANKING (not a list filter): every player is shown;
+    # only players clearing the floor are ranked, others render "(UR)".
+    rank_floor = 300 if playoffs else (2000 if is_pooled else 500)
+    c1, c2 = st.columns([1.0, 2.0])
     with c1:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
     with c2:
-        if playoffs:
-            min_toi = st.slider("Min ES TOI (min)", 0, 1500, 300, 25,
-                                key="players_toi_playoffs")
-        else:
-            toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
-            default_toi = 2000 if is_pooled else 500
-            min_toi = st.slider("Min ES TOI (min)", 0, 7500, default_toi, 50, key=toi_key)
-    with c3:
         player_sel = st.selectbox(
             "Search a player", _pid_list, index=None,
             placeholder="— full leaderboard —",
@@ -1511,11 +1550,10 @@ def render_players(season_label: str, game_type: str) -> None:
         df = df[df["position"] == pos]
     else:
         df = df[df["position"].isin(["F", "D"])]
-    # Ranking denominator is the full position cohort (NO Min-TOI floor), so the
-    # ranks match the Player Detail tab. The Min-TOI / Team filters below only
-    # narrow which rows are displayed, not the rank.
-    rank_cohort = df.copy()
-    df = df[df["toi_min"].fillna(0) >= min_toi]
+    # Show EVERY player (no Min-TOI list filter). The ranking denominator is the
+    # qualified cohort — players in this position group clearing the fixed ES-TOI
+    # floor; sub-floor players still display every value but render "(UR)".
+    rank_cohort = df[df["toi_min"].fillna(0) >= rank_floor].copy()
     if team_sel != "All":
         if _has_teams:
             df = df[df["_teams"].apply(lambda ts: team_sel in ts)]
@@ -1524,12 +1562,16 @@ def render_players(season_label: str, game_type: str) -> None:
     if df.empty:
         st.markdown(
             f"<p style='color:{PALETTE['text']};'>No players match the current filters. "
-            "Widen Position or Min TOI, or change the Season in the sidebar.</p>",
+            "Widen Position or Team, or change the Season in the sidebar.</p>",
             unsafe_allow_html=True,
         )
         return
 
-    df = df.sort_values("RelNFI_pct", ascending=False, na_position="last").reset_index(drop=True)
+    # Qualified players (≥ floor) lead, sorted by RelNFI%; sub-floor (UR) players
+    # follow — so low-TOI noise can't dominate the top of the leaderboard.
+    df["_qual"] = df["toi_min"].fillna(0) >= rank_floor
+    df = df.sort_values(["_qual", "RelNFI_pct"], ascending=[False, False],
+                        na_position="last").reset_index(drop=True)
     # Storage → display: RelNFI_F (attack / for) shows as "RelNFI-A%",
     # RelNFI_A (suppress / against) shows as "RelNFI-S%". Do NOT sign-flip — the
     # underlying _F/_A columns are unchanged; only the display labels swap A/S.
@@ -1592,19 +1634,22 @@ def render_players(season_label: str, game_type: str) -> None:
         _team_cohort = rank_cohort[rank_cohort["_teams"].apply(lambda ts: team_sel in ts)]
     else:
         _team_cohort = rank_cohort[rank_cohort["Team"] == team_sel]
+    _pl_qual = pd.to_numeric(disp["TOI"], errors="coerce").fillna(0) >= rank_floor
     _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better={"NFI-S/60"},
-                 second_cohort=_team_cohort)
+                 second_cohort=_team_cohort, mark_unranked=True, qualified=_pl_qual)
     _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
                      "D": "defense"}[pos]
     if team_sel != "All":
-        st.caption(f"Each metric shows **(league rank / {team_sel} rank)** — rank "
-                   f"within **{_cohort_label}** across the whole season, then rank "
-                   f"within {team_sel}'s {_cohort_label}. Not limited by Min-TOI. "
-                   f"NFI-S/60 (shots against): lowest = #1.")
+        st.caption(f"Each metric shows **(league rank / {team_sel} rank)** within "
+                   f"**{_cohort_label}**, then within {team_sel}. Every player is "
+                   f"listed; only those with **≥ {rank_floor:,} ES minutes** are "
+                   f"ranked — fewer shows **(UR)** = unranked. NFI-S/60 (shots "
+                   f"against): lowest = #1.")
     else:
-        st.caption(f"Each metric shows its **(rank)** within "
-                   f"**{_cohort_label}** (set by the Position filter — ranked across the "
-                   f"whole season, not limited by Min-TOI). NFI-S/60 (shots against): "
+        st.caption(f"Each metric shows its **(rank)** within **{_cohort_label}** "
+                   f"(set by the Position filter). Every player is listed; only "
+                   f"those with **≥ {rank_floor:,} ES minutes** that scope are ranked "
+                   f"— fewer shows **(UR)** = unranked. NFI-S/60 (shots against): "
                    f"lowest = #1.")
     _sort_hint()
     st.caption("Click a row to open that player's detail (collapses the list).")
@@ -1623,7 +1668,7 @@ def render_players(season_label: str, game_type: str) -> None:
         zone_note = " · NZI/DZI/OZI for this season"
     st.caption(
         f"{len(disp):,} players · {scope_label} · sorted by RelNFI% descending · "
-        f"min {min_toi:,} ES min{zone_note}"
+        f"ranked at ≥ {rank_floor:,} ES min (else UR){zone_note}"
     )
 
     # Row click → drill into that player (collapse the list). Bump the table key
@@ -2179,7 +2224,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
     playoffs = game_type == "Playoffs"
     if playoffs:
         st.caption("Playoff view — all playoff games (2022-23 → 2024-25) pooled. "
-                   "Use Min Shots Faced to threshold small samples.")
+                   "Small playoff samples: all goalies are ranked (no qualifying floor).")
 
     # FOLLOW-UP: no 2-year pooled goalie build exists. Goalie GSAx is published
     # as full-pooled (2022–2026) or per single season; a faithful 2yr pool needs
@@ -2203,29 +2248,27 @@ def render_goalies(season_label: str, game_type: str) -> None:
               .rename(columns={"GP": "GP_qs"}) if not s.empty else pd.DataFrame())
     elif is_pooled:
         n = load_goalie_nfi()
-        nfi = (n[["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60"]]
-               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60"})
+        nfi = (n[["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "qualified"]]
+               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60", "qualified": "qual_gsax"})
                if not n.empty else pd.DataFrame())
-        q = load_qnfs_pooled()
-        if not q.empty and "qualified" in q.columns:
-            q = q[q["qualified"] == True]  # noqa: E712  union of QUALIFIED cohorts
-        qn = (q[["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi"]]
-              .rename(columns={"GP": "GP_qn"}) if not q.empty else pd.DataFrame())
+        q = load_qnfs_pooled()  # keep EVERY goalie; `qualified` gates ranking only
+        qn = (q[["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi", "qualified"]]
+              .rename(columns={"GP": "GP_qn", "qualified": "qual_qn"}) if not q.empty else pd.DataFrame())
         s = load_qs_pooled()
-        qs = (s[["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo"]]
-              .rename(columns={"GP": "GP_qs"}) if not s.empty else pd.DataFrame())
+        qs = (s[["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo", "qualified"]]
+              .rename(columns={"GP": "GP_qs", "qualified": "qual_qs"}) if not s.empty else pd.DataFrame())
     else:
         sk = GOALIE_SEASON_INT.get(season_label)
         bs = load_goalie_nfi_by_season()
-        nfi = (bs[bs["season"] == sk][["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60"]]
-               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60"})
+        nfi = (bs[bs["season"] == sk][["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "qualified"]]
+               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60", "qualified": "qual_gsax"})
                if (not bs.empty and sk) else pd.DataFrame())
         q0 = load_qnfs_by_season()
-        qn = (q0[q0["season"] == sk][["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi"]]
-              .rename(columns={"GP": "GP_qn"}) if (not q0.empty and sk) else pd.DataFrame())
+        qn = (q0[q0["season"] == sk][["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi", "qualified"]]
+              .rename(columns={"GP": "GP_qn", "qualified": "qual_qn"}) if (not q0.empty and sk) else pd.DataFrame())
         s0 = load_qs_by_season()
-        qs = (s0[s0["season"] == sk][["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo"]]
-              .rename(columns={"GP": "GP_qs"}) if (not s0.empty and sk) else pd.DataFrame())
+        qs = (s0[s0["season"] == sk][["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo", "qualified"]]
+              .rename(columns={"GP": "GP_qs", "qualified": "qual_qs"}) if (not s0.empty and sk) else pd.DataFrame())
 
     frames = [f for f in (nfi, qn, qs) if not f.empty]
     if not frames:
@@ -2246,26 +2289,20 @@ def render_goalies(season_label: str, game_type: str) -> None:
     gp_cols = [c for c in ("GP_nfi", "GP_qn", "GP_qs") if c in base.columns]
     base["GP"] = base[gp_cols].bfill(axis=1).iloc[:, 0] if gp_cols else np.nan
     base["Team"] = base["team"] if "team" in base.columns else np.nan
+    # Per-metric qualification flags. Playoffs have no floor file → rank everyone;
+    # elsewhere a goalie absent from a source (NaN) is not qualified there (it has
+    # no value to rank anyway).
+    for _qc in ("qual_gsax", "qual_qn", "qual_qs"):
+        base[_qc] = True if _qc not in base.columns else base[_qc].fillna(False).astype(bool)
     _gid_of = dict(zip(base["Goalie"], base["goalie_id"]))   # name → id for drill-in
 
-    c1, c2, c3 = st.columns([2, 1, 1])
+    c1, c2 = st.columns([2.5, 1])
     with c1:
-        if playoffs:
-            default_shots, shots_key, smax = 0, "goalies_minshots_playoffs", 1500
-        elif is_pooled:
-            default_shots, shots_key, smax = 0, "goalies_minshots_pooled", 3000
-        else:
-            default_shots, shots_key, smax = 0, "goalies_minshots_season", 3000
-        min_shots = st.slider("Min Shots Faced", 0, smax, default_shots, 50, key=shots_key)
-        st.caption("Filters goalies by shots faced — no default cutoff; slide up to "
-                   "drop small-sample goalies yourself.")
-    with c2:
-        _elig = base[base["total_faced"].fillna(0) >= min_shots]
-        _gnames = sorted(_elig["Goalie"].dropna().unique().tolist())
+        _gnames = sorted(base["Goalie"].dropna().unique().tolist())
         goalie_pick = st.selectbox(
             "Find a goalie", ["All goalies"] + _gnames, key="goalies_name_pick",
             help="Type to search by name; pick one to see their detail (trend + charts).")
-    with c3:
+    with c2:
         _gteam_opts = ["All"] + sorted(base["Team"].dropna().unique().tolist())
         # Changing the team exits any drill-in and returns to the leaderboard.
         goalie_team = st.selectbox("Team", _gteam_opts, key="goalies_team",
@@ -2294,9 +2331,11 @@ def render_goalies(season_label: str, game_type: str) -> None:
         _goalie_drill(int(_gl_drill), name_map.get(int(_gl_drill), str(_gl_drill)))
         return
 
-    base = base[base["total_faced"].fillna(0) >= min_shots]
-    rank_cohort = base.copy()   # Min-Shots cohort — league rank denom (all teams)
-    if goalie_team != "All":    # filter the list to one team; ranks stay league-wide
+    # Show EVERY goalie (no shots filter). The ranking pool is all goalies; each
+    # metric is ranked only over goalies that clear ITS qualifying bar (per the
+    # `qual_*` flags) — others render "(UR)". Team filter narrows the rows shown.
+    rank_pool = base.copy()
+    if goalie_team != "All":
         base = base[base["Team"] == goalie_team]
     if base.empty:
         st.info("No goalies match the current filters.")
@@ -2312,8 +2351,12 @@ def render_goalies(season_label: str, game_type: str) -> None:
         "QS_GSAx_pct": "GQG%", "QS_GSAx_lo": "GQG (95% lower)",
     }
     base = base.rename(columns=_gren)
-    rank_cohort = rank_cohort.rename(columns=_gren)
-    base = base.sort_values("NFI-GSAx/60", ascending=False, na_position="last").reset_index(drop=True)
+    rank_pool = rank_pool.rename(columns=_gren)
+    # Goalies qualified for any metric lead (sorted by NFI-GSAx/60); pure-noise
+    # small samples sink to the bottom rather than topping the leaderboard.
+    base["_qual_any"] = base[["qual_gsax", "qual_qn", "qual_qs"]].any(axis=1)
+    base = base.sort_values(["_qual_any", "NFI-GSAx/60"], ascending=[False, False],
+                            na_position="last").reset_index(drop=True)
 
     cols = ["Goalie", "Team", "GP", "NFI-GSAx/60", "QNFS%", "GQG%"]
     disp = base[[c for c in cols if c in base.columns]].copy()
@@ -2327,18 +2370,25 @@ def render_goalies(season_label: str, game_type: str) -> None:
     if "GP" in disp:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
-    _gteam_cohort = (rank_cohort[rank_cohort["Team"] == goalie_team]
-                     if goalie_team != "All" else None)
-    _apply_ranks(disp, fmt, rank_cohort, ["NFI-GSAx/60", "QNFS%", "GQG%"],
-                 second_cohort=_gteam_cohort)
+    # Each metric ranked only over goalies qualified for THAT metric (others UR).
+    _metric_qual = {"NFI-GSAx/60": "qual_gsax", "QNFS%": "qual_qn", "GQG%": "qual_qs"}
+    for _m, _qc in _metric_qual.items():
+        if _m not in disp.columns or _qc not in base.columns:
+            continue
+        _coh = rank_pool[rank_pool[_qc]]
+        _tc = (_coh[_coh["Team"] == goalie_team] if goalie_team != "All" else None)
+        _apply_ranks(disp, fmt, _coh, [_m], second_cohort=_tc, mark_unranked=True,
+                     qualified=base[_qc])
+    _shot_floor = "300 net-front shots" if is_pooled else "100 net-front shots"
     if goalie_team != "All":
-        st.caption(f"Each metric shows **(league rank / {goalie_team} rank)** — rank "
-                   "across all goalies meeting the Min-Shots filter, then within "
-                   f"{goalie_team}. Blanks (below a metric's floor) are unranked.")
+        st.caption(f"Each metric shows **(league rank / {goalie_team} rank)**. Every "
+                   f"goalie is listed; a metric is ranked only if the goalie clears its "
+                   f"bar — **NFI-GSAx** ≥ {_shot_floor}, **QNFS / GQG** ≥ 25 GP — else "
+                   f"**(UR)** = unranked.")
     else:
-        st.caption("Each metric shows its **(rank)** across all goalies "
-                   "meeting the Min-Shots filter. Blanks (below a metric's floor) are "
-                   "unranked.")
+        st.caption(f"Each metric shows its **(rank)**. Every goalie is listed; a metric "
+                   f"is ranked only if the goalie clears its bar — **NFI-GSAx** "
+                   f"≥ {_shot_floor}, **QNFS / GQG** ≥ 25 GP — else **(UR)** = unranked.")
     st.caption("**GQG (Goalie Quality Games)** = the Quality-Start idea computed on "
                "**GSAx**, not raw save% — the share of a goalie's games where their "
                "all-shot GSAx ≥ 0 (beat expected on a danger/xG-weighted basis).")
@@ -2351,25 +2401,27 @@ def render_goalies(season_label: str, game_type: str) -> None:
     _goalie_scope = "all playoffs (2022-2025 pooled)" if playoffs else season_label
     st.caption(
         f"{len(disp)} goalies · {_goalie_scope} · sorted by NFI-GSAx/60 descending · "
-        "blanks = below that metric's qualifying floor (not zero)"
+        "every goalie shown; (UR) = below that metric's ranking floor"
     )
     if playoffs:
         st.markdown(
             f"<p style='color:{PALETTE['text_secondary']}; font-size:0.82rem; max-width:62rem;'>"
-            "Pooled across all playoff games (2022-23 → 2024-25). No qualifying "
-            "floor is applied — every goalie with playoff data appears; use Min "
-            "Shots Faced to threshold. Per-game metric definitions (QNFS ≥3 "
-            "net-front shots/game; GQG ≥10 shots/game) are retained.</p>",
+            "Pooled across all playoff games (2022-23 → 2024-25). Every goalie with "
+            "playoff data is shown and ranked — no qualifying floor is applied to the "
+            "small playoff samples. Per-game metric definitions (QNFS ≥3 net-front "
+            "shots/game; GQG ≥10 shots/game) are retained.</p>",
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
             f"<p style='color:{PALETTE['text_secondary']}; font-size:0.82rem; max-width:62rem;'>"
-            "Goalies shown are the union of qualified cohorts across the three metrics. "
-            "Backup goalies appearing only in unqualified QNFS rows are excluded — see "
-            "Methodology for full qualifying floors. Qualifying floors differ by metric "
-            "(NFI-GSAx ≥300 net-front shots pooled / ≥100 per season; QNFS% ≥25 GP/season "
-            "with ≥3 net-front shots/game; GQG ≥10 shots/game, ≥25 GP/season).</p>",
+            "Every goalie is shown with a value for each metric. A metric is RANKED "
+            "only when the goalie clears its qualifying minimum — otherwise the cell "
+            "reads (UR), unranked. Floors differ by metric: NFI-GSAx ≥300 net-front "
+            "shots pooled / ≥100 per season; QNFS% ≥25 GP/season (≥3 net-front "
+            "shots/game); GQG ≥25 GP/season (≥10 shots/game). The regenerated data "
+            "files carry a <code>qualified</code> flag per metric for downstream "
+            "analysis.</p>",
             unsafe_allow_html=True,
         )
 

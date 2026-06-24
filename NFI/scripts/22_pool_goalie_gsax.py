@@ -114,15 +114,18 @@ def main() -> None:
         })
 
     pooled = pd.DataFrame(rows)
-    print(f"\nPre-threshold pooled goalies: {len(pooled)}")
-    pooled = pooled[pooled["total_faced"] >= MIN_TOTAL_FACED].copy()
-    pooled = pooled.sort_values("GSAx", ascending=False).reset_index(drop=True)
-    print(f"Post-threshold (faced >= {MIN_TOTAL_FACED}): {len(pooled)}")
+    print(f"\nPooled goalies: {len(pooled)}")
+    # Do NOT drop sub-threshold goalies: flag whether each clears the pooled
+    # net-front-shot bar via `qualified`. App ranks qualified only (others "UR");
+    # downstream analysis should filter on `qualified == True`.
+    pooled["qualified"] = pooled["total_faced"] >= MIN_TOTAL_FACED
+    pooled = pooled.sort_values(["qualified", "GSAx"], ascending=False).reset_index(drop=True)
+    print(f"Qualified (faced >= {MIN_TOTAL_FACED}): {int(pooled['qualified'].sum())} of {len(pooled)}")
 
     # ---------------- Save ----------------
     keep_cols = ["goalie_id", "goalie_name", "team", "n_seasons",
                  "games", "total_faced", "es_toi_min",
-                 "GSAx", "GSAx_per60"]
+                 "GSAx", "GSAx_per60", "qualified"]
     pooled[keep_cols].to_csv(OUT_FP, index=False)
     print(f"\nWrote {OUT_FP} — shape {pooled.shape}")
 

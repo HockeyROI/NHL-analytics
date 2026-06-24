@@ -28,7 +28,8 @@ OUT_FILE   = Path(__file__).parent.parent / "output" / "qnfs_per_season_2022-202
 SEASONS = [20222023, 20232024, 20242025, 20252026]
 MIN_NF_SHOTS_PER_GAME = 3
 QUALITY_THRESHOLD = 0.0
-MIN_GP_PER_SEASON = 10
+MIN_GP_PER_SEASON = 10        # legacy (no longer used to drop rows)
+QUALIFIED_GP_PER_SEASON = 25  # sample-size bar for the `qualified` flag
 
 SAMPLE_NAMES = [
     "Connor Hellebuyck",
@@ -115,10 +116,15 @@ per_season = (
       )
       .reset_index()
 )
-print(f"Goalie-season rows before GP filter: {len(per_season):,}")
+print(f"Goalie-season rows: {len(per_season):,}")
 
-per_season = per_season[per_season["GP"] >= MIN_GP_PER_SEASON].copy()
-print(f"Goalie-season rows after GP >= {MIN_GP_PER_SEASON}: {len(per_season):,}")
+# Do NOT drop on GP: emit every goalie-season and flag whether it clears the
+# 25-GP sample-size bar (the QNFS qualification, matching the pooled build) via
+# `qualified`. App ranks qualified only (others "UR"); downstream analysis
+# should filter on `qualified == True`.
+per_season["qualified"] = per_season["GP"] >= QUALIFIED_GP_PER_SEASON
+print(f"Qualified (GP >= {QUALIFIED_GP_PER_SEASON}): "
+      f"{int(per_season['qualified'].sum())} of {len(per_season)}")
 
 per_season["QNFS_pct"] = per_season["quality_games"] / per_season["GP"]
 
@@ -145,7 +151,7 @@ for c in ("QNFS_pct", "QNFS_lo", "QNFS_hi"):
 # ---- COLUMN ORDER ----
 per_season = per_season[[
     "goalie_id", "goalie_name", "season", "GP",
-    "quality_games", "QNFS_pct", "QNFS_lo", "QNFS_hi", "NF_shots",
+    "quality_games", "QNFS_pct", "QNFS_lo", "QNFS_hi", "NF_shots", "qualified",
 ]]
 
 # ---- SORT: goalie_id, season asc (chronological per goalie) ----
