@@ -3134,6 +3134,10 @@ def main() -> None:
     inject_css()
     render_header()
     season_label, game_type = render_global_filters()
+    st.caption("ℹ️ A **blank cell** anywhere on this page means that player or goalie "
+               "fell below the metric's qualifying **sample-size** minimum for that "
+               "scope — it's “not enough data”, not zero. **(UR)** beside a value means "
+               "the same: shown but unranked.")
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
 
     (player_list_tab, goalie_list_tab,
