@@ -1191,6 +1191,22 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
     return out
 
 
+# Storage→display column map for the appended 2yr pooled row.
+_P2YR_MAP = {"NFI%": "NFI_pct", "RelNFI%": "RelNFI_pct", "RelNFI-A%": "RelNFI_F_pct",
+             "RelNFI-S%": "RelNFI_A_pct", "NFI-A/60": "NFI_A_rate", "NFI-S/60": "NFI_S_rate",
+             "NZI": "NZI", "DZI": "DZI", "OZI": "OZI", "NFI-QG%": "NFI_QG_pct",
+             "xG-QG%": "xG_QG_pct", "RelNFI-QG%": "RelNFI_QG_pct",
+             "RelxG-QG%": "RelxG_QG_pct", "RelxG%": "RelxG_pct"}
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _players_2yr_frame() -> pd.DataFrame:
+    """The 2-year (2024-26) denominator-based pooled player frame — reused to
+    append a '2yr avg' row to the detail/trade trend."""
+    f, _ = _build_players_frame("2yr (2024–2026)")
+    return f
+
+
 def _player_profile_table(pid: int, same_pos: bool = False, families=None,
                           team=None) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     """Rank-annotated per-season trend table for a player. Returns
@@ -1248,6 +1264,42 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
                 else:
                     row[c] = f"{txt} ({rk})"
         rows.append(row)
+
+    # Append a "2yr avg (24-26)" row — the denominator-based 2-season pool, with
+    # the same (league / team) rank brackets, ranked within the 2yr cohort.
+    _f2 = _players_2yr_frame()
+    if not _f2.empty and (_f2["player_id"] == pid).any():
+        _pr = _f2[_f2["player_id"] == pid].iloc[0]
+        _pos = str(_pr.get("position"))
+        _coh = (_f2[_f2["position"] == _pos] if same_pos
+                else _f2[_f2["position"].isin(["F", "D"])])
+        _t2 = _pr.get("team")
+        _tcoh = (_coh[_coh["team"] == _t2] if (team and isinstance(_t2, str)) else None)
+        _lower = {"NFI-S/60"}
+        r2 = {"Season": "2yr avg (24-26)"}
+        if has_team:
+            r2["Team"] = _t2 if isinstance(_t2, str) and _t2 else "—"
+        if has_gp:
+            r2["GP"] = f"{int(_pr['GP'])}" if pd.notna(_pr.get("GP")) else "—"
+        for c in metric_cols:
+            sc = _P2YR_MAP.get(c)
+            v = _pr.get(sc) if sc else None
+            if sc is None or pd.isna(v):
+                r2[c] = "—"
+                continue
+            txt = _b.get(c, lambda v: f"{v}")(v)
+
+            def _rk(fr, _v=v, _c=c, _sc=sc):
+                s = pd.to_numeric(fr[_sc], errors="coerce")
+                better = (s < _v).sum() if _c in _lower else (s > _v).sum()
+                return int(better) + 1
+            lg = _rk(_coh)
+            if team and _tcoh is not None and len(_tcoh):
+                r2[c] = f"{txt} ({lg} / {_rk(_tcoh)})"
+            else:
+                r2[c] = f"{txt} ({lg})"
+        rows.append(r2)
+
     lead = ["Season"] + (["Team"] if has_team else []) + (["GP"] if has_gp else [])
     return pd.DataFrame(rows, columns=lead + metric_cols), trend, metric_cols
 
@@ -2223,12 +2275,13 @@ def _goalie_season_ranks(gid: int) -> dict:
     return out
 
 
-def _render_goalie_profile(gid: int) -> None:
-    """Per-season trend table + line charts for one goalie."""
+def _goalie_profile_table(gid: int) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+    """Rank-annotated per-season goalie trend + a '2yr avg (24-26)' pooled row.
+    Returns (display_df, trend, metric_cols). Shared by the goalie detail and the
+    Trade Analyzer's goalie mode."""
     trend = _goalie_trend(gid)
     if trend.empty:
-        st.info("No per-season data available for this goalie.")
-        return
+        return pd.DataFrame(), trend, []
     metric_cols = [c for c in ("NFI-GSAx/60", "QNFS%", "GQG%")
                    if c in trend.columns]
     ranks = _goalie_season_ranks(gid)
@@ -2247,10 +2300,40 @@ def _render_goalie_profile(gid: int) -> None:
                 rk = ranks.get(c, {}).get(ssn)
                 row[c] = f"{txt} ({rk})" if rk is not None else txt
         rows.append(row)
+
+    # Append a "2yr avg (24-26)" row — denominator-based pool of the last two
+    # seasons (ranked within the 2yr pool).
+    _n2, _q2, _s2 = _pool_goalie_seasons((20242025, 20252026))
+    _src2 = {"NFI-GSAx/60": (_n2, "NFIG60"), "QNFS%": (_q2, "QNFS_pct"),
+             "GQG%": (_s2, "QS_GSAx_pct")}
+    _v2 = {}
+    for c, (fr, col) in _src2.items():
+        rr = fr[fr["goalie_id"] == gid] if not fr.empty else fr
+        _v2[c] = rr[col].iloc[0] if len(rr) else np.nan
+    if any(pd.notna(v) for v in _v2.values()):
+        row = {"Season": "2yr avg (24-26)"}
+        for c in metric_cols:
+            v = _v2.get(c)
+            if pd.isna(v):
+                row[c] = "—"
+                continue
+            txt = _b.get(c, lambda v: f"{v}")(v)
+            fr, col = _src2[c]
+            s = pd.to_numeric(fr[col], errors="coerce")
+            row[c] = f"{txt} ({int((s > v).sum()) + 1})"
+        rows.append(row)
+    return pd.DataFrame(rows, columns=["Season"] + metric_cols), trend, metric_cols
+
+
+def _render_goalie_profile(gid: int) -> None:
+    """Per-season trend table + line charts for one goalie."""
+    disp, trend, metric_cols = _goalie_profile_table(gid)
+    if disp.empty:
+        st.info("No per-season data available for this goalie.")
+        return
     st.caption("Each value shows its **(rank)** — league rank among all goalies "
-               "that season.")
-    _show_df(pd.DataFrame(rows, columns=["Season"] + metric_cols),
-                 width="stretch", hide_index=True)
+               "that season (2yr row ranks within the 2-season pool).")
+    _show_df(disp, width="stretch", hide_index=True)
 
     # CHOICE: split into 2 small multiples. NFI-GSAx/60 is a per-60 rate (~±0.3);
     # QNFS%/GQG% are percentages (~0–100). On a single shared axis the rate
@@ -2621,6 +2704,43 @@ def _render_goalie_playoff_summary(gid: int) -> None:
 TRADE_MAX_PLAYERS = 5
 
 
+def _render_trade_goalies(playoffs: bool) -> None:
+    """Goalie side of the Trade Analyzer — side-by-side goalie detail tables."""
+    names = {}
+    for _ld in (load_goalie_nfi_by_season, load_qnfs_by_season, load_qs_by_season):
+        d = _ld()
+        if not d.empty and "goalie_name" in d.columns:
+            for gid, nm in zip(d["goalie_id"], d["goalie_name"]):
+                if pd.notna(gid) and pd.notna(nm):
+                    names[int(gid)] = str(nm)
+    if not names:
+        st.error("Goalie data not found.")
+        return
+    gid_list = sorted(names, key=lambda g: names[g])
+    st.caption(f"Compare up to {TRADE_MAX_PLAYERS} goalies' detail data side by side "
+               + ("(pooled playoff view)." if playoffs else "(no charts)."))
+    sel = st.multiselect(
+        f"Goalies (max {TRADE_MAX_PLAYERS})", gid_list,
+        format_func=lambda g: names.get(g, str(g)),
+        max_selections=TRADE_MAX_PLAYERS, key="trade_goalies")
+    if not sel:
+        st.caption(f"Pick up to {TRADE_MAX_PLAYERS} goalies to compare.")
+        return
+    if playoffs:
+        for gid in sel:
+            _render_goalie_playoff_summary(int(gid))
+        return
+    st.caption("Each value shows its **(rank)** — league rank among all goalies "
+               "that season (2yr row ranks within the 2-season pool).")
+    for gid in sel:
+        st.markdown(f"**{names.get(int(gid), str(gid))}**")
+        disp, _, _ = _goalie_profile_table(int(gid))
+        if disp.empty:
+            st.info("No per-season data available for this goalie.")
+        else:
+            _show_df(disp, width="stretch", hide_index=True)
+
+
 def render_trade_analyzer(season_label: str, game_type: str) -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Trade Analyzer</h2>",
@@ -2629,6 +2749,11 @@ def render_trade_analyzer(season_label: str, game_type: str) -> None:
     if _block_ref_only(season_label):
         return
     playoffs = game_type == "Playoffs"
+
+    if st.radio("Compare", ["Skaters", "Goalies"], horizontal=True,
+                key="trade_mode") == "Goalies":
+        _render_trade_goalies(playoffs)
+        return
 
     if playoffs:
         frame, _ = _build_players_frame(season_label, playoffs=True)
