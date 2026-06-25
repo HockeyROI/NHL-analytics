@@ -1091,14 +1091,26 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
         pos_group = pos_map.get(pid)
     restrict = same_pos and pos_group is not None
 
-    # Per-season team roster (player_ids + names) when ranking within a team.
+    # Per-season team roster (player_ids + names) for within-team ranks. `team`
+    # may be a specific abbrev, or "__own__" to use the player's OWN team(s) that
+    # season (union of rosters across teams in a traded season).
     team_pids, team_names = {}, {}
     if team and not nfi.empty:
         _rosters = load_team_rosters()
         _nm = nfi.dropna(subset=["player_id"]).copy()
         _nm["season"] = _nm["season"].astype(str)
+        _order = load_player_season_team_order() if team == "__own__" else {}
+        _nfi_team = (dict(zip(zip(_nm["player_id"].astype(int), _nm["season"]), _nm["team"]))
+                     if team == "__own__" else {})
         for ssn in PROFILE_SEASONS:
-            pids = _rosters.get((ssn, team), set())
+            if team == "__own__":
+                _ts = _order.get((pid, ssn)) or []
+                if not _ts:
+                    _t = _nfi_team.get((pid, ssn))
+                    _ts = [_t] if isinstance(_t, str) and _t else []
+                pids = set().union(*[_rosters.get((ssn, t), set()) for t in _ts]) if _ts else set()
+            else:
+                pids = _rosters.get((ssn, team), set())
             team_pids[ssn] = pids
             team_names[ssn] = set(
                 _nm[(_nm["season"] == ssn)
@@ -1258,8 +1270,9 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         if len(prow):
             cohort = "defense" if str(prow["position"].iloc[0]) == "D" else "forwards"
     if team:
+        _team_txt = "their own team's" if team == "__own__" else f"**{team}**"
         st.caption(f"Each value shows **(league / team)** rank — rank among "
-                   f"**{cohort}** league-wide, then among **{team}** skaters that "
+                   f"**{cohort}** league-wide, then among {_team_txt} skaters that "
                    "season. NFI-S/60 (shots against): lowest = #1.")
     else:
         st.caption(f"Each value shows its **(rank)** — rank among **{cohort}** that "
@@ -1565,8 +1578,7 @@ def render_players(season_label: str, game_type: str) -> None:
             _rc = st.radio("Rank against", ["All skaters", _pos_label],
                            horizontal=True, key="players_rank_cohort")
             _render_player_profile(int(pid), same_pos=(_rc != "All skaters"),
-                                   families=display_fams,
-                                   team=(team_sel if team_sel != "All" else None))
+                                   families=display_fams, team="__own__")
 
     # Drill via the search box OR a clicked leaderboard row — either one collapses
     # the leaderboard to just that player's detail.
@@ -2660,11 +2672,12 @@ def render_trade_analyzer(season_label: str, game_type: str) -> None:
     same_pos = cohort != "All skaters"
     _cohort_txt = ("each player's own position group (F vs F, D vs D)"
                    if same_pos else "all skaters")
-    st.caption(f"Each value shows its **(rank)** — rank among {_cohort_txt} "
-               "that season. NFI-S/60 (shots against): lowest = #1.")
+    st.caption(f"Each value shows **(league / team)** rank — among {_cohort_txt} "
+               "league-wide, then within the player's own team that season. "
+               "NFI-S/60 (shots against): lowest = #1.")
     for pid in sel:
         st.markdown(f"**{plabel.get(int(pid), str(pid))}**")
-        disp, _, _ = _player_profile_table(int(pid), same_pos=same_pos)
+        disp, _, _ = _player_profile_table(int(pid), same_pos=same_pos, team="__own__")
         if disp.empty:
             st.info("No per-season data available for this player.")
         else:
