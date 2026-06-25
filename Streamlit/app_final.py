@@ -2256,6 +2256,71 @@ def _render_goalie_profile(gid: int) -> None:
                       color=[_CHART_COLORS.get(c, _CHART_SECOND) for c in pct])
 
 
+def _wilson(k: float, n: float, lower: bool = True, z: float = 1.96) -> float:
+    """Wilson score-interval bound for k successes in n trials (returns 0-1)."""
+    if not n:
+        return np.nan
+    p = k / n
+    denom = 1 + z**2 / n
+    center = p + z**2 / (2 * n)
+    margin = z * np.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))
+    return (center - margin) / denom if lower else (center + margin) / denom
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _pool_goalie_seasons(seasons: tuple) -> tuple:
+    """Faithful denominator-based pool of the by-season goalie files across
+    `seasons`: sum the raw counts, then recompute the rates (so each metric is
+    computed over the combined sample — e.g. quality-games / GP across ~164 games,
+    GSAx / pooled-TOI). Returns (nfi, qn, qs) shaped like the other goalie
+    branches, with per-metric `qualified` flags (NFI-GSAx ≥100·n net-front shots;
+    QNFS/GQG: any single season with ≥25 GP)."""
+    sset = set(seasons)
+    n_seasons = len(seasons)
+    bs = load_goalie_nfi_by_season()
+    nfi = pd.DataFrame()
+    if not bs.empty:
+        b = bs[bs["season"].isin(sset)].copy()
+        # Per-season ES TOI reconstructed from GSAx / per-60, then summed.
+        b["_toi"] = np.where(b["GSAx_per60"].abs() > 1e-9,
+                             b["GSAx"] / b["GSAx_per60"] * 60.0, np.nan)
+        last_team = (b.sort_values("season").drop_duplicates("goalie_id", keep="last")
+                     .set_index("goalie_id")["team"])
+        g = (b.groupby(["goalie_id", "goalie_name"])
+               .agg(GP_nfi=("games", "sum"), total_faced=("total_faced", "sum"),
+                    _gsax=("GSAx", "sum"), _toi=("_toi", "sum")).reset_index())
+        g["NFIG60"] = np.where(g["_toi"] > 0, g["_gsax"] / g["_toi"] * 60.0, np.nan).round(3)
+        g["team"] = g["goalie_id"].map(last_team)
+        g["qual_gsax"] = g["total_faced"] >= 100 * n_seasons
+        nfi = g[["goalie_id", "goalie_name", "team", "GP_nfi", "total_faced",
+                 "NFIG60", "qual_gsax"]]
+    q0 = load_qnfs_by_season()
+    qn = pd.DataFrame()
+    if not q0.empty:
+        b = q0[q0["season"].isin(sset)]
+        g = (b.groupby(["goalie_id", "goalie_name"])
+               .agg(GP_qn=("GP", "sum"), _q=("quality_games", "sum"),
+                    _maxgp=("GP", "max")).reset_index())
+        g["QNFS_pct"] = g["_q"] / g["GP_qn"] * 100
+        g["QNFS_lo"] = g.apply(lambda r: _wilson(r["_q"], r["GP_qn"], True) * 100, axis=1)
+        g["QNFS_hi"] = g.apply(lambda r: _wilson(r["_q"], r["GP_qn"], False) * 100, axis=1)
+        g["qual_qn"] = g["_maxgp"] >= 25
+        qn = g[["goalie_id", "goalie_name", "GP_qn", "QNFS_pct", "QNFS_lo",
+                "QNFS_hi", "qual_qn"]]
+    s0 = load_qs_by_season()
+    qs = pd.DataFrame()
+    if not s0.empty:
+        b = s0[s0["season"].isin(sset)]
+        g = (b.groupby(["goalie_id", "goalie_name"])
+               .agg(GP_qs=("GP", "sum"), _q=("quality_games", "sum"),
+                    _maxgp=("GP", "max")).reset_index())
+        g["QS_GSAx_pct"] = g["_q"] / g["GP_qs"] * 100
+        g["QS_GSAx_lo"] = g.apply(lambda r: _wilson(r["_q"], r["GP_qs"], True) * 100, axis=1)
+        g["qual_qs"] = g["_maxgp"] >= 25
+        qs = g[["goalie_id", "goalie_name", "GP_qs", "QS_GSAx_pct", "QS_GSAx_lo", "qual_qs"]]
+    return nfi, qn, qs
+
+
 def render_goalies(season_label: str, game_type: str) -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Goalie List</h2>",
@@ -2268,16 +2333,13 @@ def render_goalies(season_label: str, game_type: str) -> None:
         st.caption("Playoff view — all playoff games (2022-23 → 2024-25) pooled. "
                    "Small playoff samples: all goalies are ranked (no qualifying floor).")
 
-    # FOLLOW-UP: no 2-year pooled goalie build exists. Goalie GSAx is published
-    # as full-pooled (2022–2026) or per single season; a faithful 2yr pool needs
-    # re-derived denominators (not a season average), so fall back gracefully.
-    if not playoffs and SEASON_KEY.get(season_label) == "pooled_2yr":
-        st.info("2-season (2024–2026) goalie view isn't available yet — pick a "
-                "single season or the full 4yr (2022-2026) view.")
-        return
-
+    is_2yr = (not playoffs) and SEASON_KEY.get(season_label) == "pooled_2yr"
     is_pooled = (not playoffs) and SEASON_KEY.get(season_label, "pooled") == "pooled"
-    if playoffs:
+    if is_2yr:
+        # Faithful denominator-based pool of 2024-25 + 2025-26 (counts summed,
+        # rates recomputed over the combined ~164-game sample).
+        nfi, qn, qs = _pool_goalie_seasons(tuple(int(s) for s in POOLED_2YR_SEASONS))
+    elif playoffs:
         n = load_goalie_nfi_playoffs()
         nfi = (n[["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60"]]
                .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60"})
@@ -2336,7 +2398,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
     # not just accumulated games). Fall back to an in-app floor only when the
     # column is absent (older data file), so the tab never crashes. Playoffs have
     # no floor → rank everyone.
-    _gsax_floor = 300 if is_pooled else 100
+    _gsax_floor = 300 if is_pooled else (200 if is_2yr else 100)
     _fallback = {"qual_gsax": ("total_faced", _gsax_floor),
                  "qual_qn": ("GP_qn", 25), "qual_qs": ("GP_qs", 25)}
     for _qc, (_col, _flr) in _fallback.items():
@@ -2356,6 +2418,8 @@ def render_goalies(season_label: str, game_type: str) -> None:
             _shdef, _shkey, _shmax = 50, "goalies_minshots_playoffs", 1500
         elif is_pooled:
             _shdef, _shkey, _shmax = 500, "goalies_minshots_pooled", 3000
+        elif is_2yr:
+            _shdef, _shkey, _shmax = 300, "goalies_minshots_2yr", 3000
         else:
             _shdef, _shkey, _shmax = 150, "goalies_minshots_season", 3000
         min_shots = st.slider("Min Shots Faced", 0, _shmax, _shdef, 50, key=_shkey)
@@ -2446,7 +2510,8 @@ def render_goalies(season_label: str, game_type: str) -> None:
         _tc = (_coh[_coh["Team"] == goalie_team] if goalie_team != "All" else None)
         _apply_ranks(disp, fmt, _coh, [_m], second_cohort=_tc, mark_unranked=True,
                      qualified=base[_qc])
-    _shot_floor = "300 net-front shots" if is_pooled else "100 net-front shots"
+    _shot_floor = ("300 net-front shots" if is_pooled
+                   else "200 net-front shots" if is_2yr else "100 net-front shots")
     if goalie_team != "All":
         st.caption(f"Each metric shows **(league rank / {goalie_team} rank)**. Every "
                    f"goalie is listed; a metric is ranked only if the goalie clears its "
