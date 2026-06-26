@@ -1314,6 +1314,35 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     return pd.DataFrame(rows, columns=lead + metric_cols), trend, metric_cols
 
 
+_QG_BAR_METRICS = ["NFI%", "NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"]
+
+
+def _qg_bar_chart(vals: dict, label: str) -> None:
+    """Diverging bar of NFI% + the four Quality-Games percentages vs a 50%
+    baseline (50% = league-median consistency: bar up when above, down when
+    below). vals maps display-metric → value on a 0-100 scale."""
+    import altair as alt
+    rows = [{"Metric": m, "value": float(v), "base": 50.0}
+            for m, v in vals.items() if pd.notna(v)]
+    if not rows:
+        st.caption("No NFI% / Quality-Games values for this selection.")
+        return
+    d = pd.DataFrame(rows)
+    st.caption(f"**{label}** — NFI% + Quality-Games % vs the **50% baseline** "
+               "(bar up = above 50%, down = below; 50% ≈ league-median).")
+    bars = alt.Chart(d).mark_bar(size=40).encode(
+        x=alt.X("Metric:N", sort=[r["Metric"] for r in rows],
+                axis=alt.Axis(labelAngle=0, title=None)),
+        y=alt.Y("base:Q", scale=alt.Scale(domain=[0, 100]), title="%"),
+        y2="value:Q",
+        color=alt.condition("datum.value >= 50", alt.value(PALETTE["rising"]),
+                            alt.value(PALETTE["declining"])),
+        tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f", title="%")])
+    rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
+        strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
+    st.altair_chart(bars + rule, use_container_width=True)
+
+
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                            team=None) -> None:
     """Per-season trend table + auto-showing line charts for one player.
@@ -1339,7 +1368,27 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
     else:
         st.caption(f"Each value shows its **(rank)** — rank among **{cohort}** that "
                    "season. NFI-S/60 (shots against): lowest = #1.")
-    _show_df(disp, width="stretch", hide_index=True)
+    _ev = _show_df(disp, width="stretch", hide_index=True, on_select="rerun",
+                   selection_mode="single-row", key=f"pl_detail_{int(pid)}")
+    _sel = getattr(getattr(_ev, "selection", None), "rows", None)
+    if _sel and 0 <= _sel[0] < len(disp):
+        _sl = str(disp.iloc[_sel[0]]["Season"])
+        if _sl == "2yr avg (24-26)":
+            _p2 = _players_2yr_frame()
+            _pr2 = _p2[_p2["player_id"] == int(pid)] if not _p2.empty else _p2
+            _vals = {m: (float(_pr2[_P2YR_MAP[m]].iloc[0]) * 100
+                         if len(_pr2) and _P2YR_MAP.get(m) in _pr2.columns
+                         and pd.notna(_pr2[_P2YR_MAP[m]].iloc[0]) else np.nan)
+                     for m in _QG_BAR_METRICS}
+        else:
+            _tr = trend[trend["Season"].astype(str) == _sl]
+            _vals = {m: (float(_tr[m].iloc[0]) * 100 if len(_tr) and m in _tr.columns
+                         and pd.notna(_tr[m].iloc[0]) else np.nan)
+                     for m in _QG_BAR_METRICS}
+        _qg_bar_chart(_vals, _sl)
+    else:
+        st.caption("Tip: click a year (or the 2yr row) above for an NFI% + "
+                   "Quality-Games bar breakdown vs the 50% baseline.")
 
     def _chart(title: str, cols: list[str]) -> None:
         ys = [c for c in cols if c in trend.columns and trend[c].notna().any()]
