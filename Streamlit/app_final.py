@@ -1329,10 +1329,11 @@ def _chart_brand() -> None:
         unsafe_allow_html=True)
 
 
-# Diverging gradient endpoints: light near the 50% midline → dark far from it.
-# Above 50% = blue, below 50% = orange.
-_BAR_BLUE_LIGHT, _BAR_BLUE_DARK = "#B7D2E8", "#143150"
-_BAR_ORG_LIGHT, _BAR_ORG_DARK = "#FBCDB2", "#B23A0F"
+# Soft pastel diverging gradient: very pale near the 50% midline → a soft, muted
+# version of the base hue further out (stays pastel, never dark). Blue above 50%,
+# orange below.
+_BAR_BLUE_LIGHT, _BAR_BLUE_STRONG = "#E4EFF8", "#8FBADF"
+_BAR_ORG_LIGHT, _BAR_ORG_STRONG = "#FCE7DA", "#F6AC83"
 
 
 def _hex_lerp(c1: str, c2: str, t: float) -> str:
@@ -1346,8 +1347,8 @@ def _bar_color(value: float) -> str:
     """Gradient: closer to the 50% midline → lighter, further → darker; blue above
     50%, orange below. Full saturation at ±20 points (i.e. 30%/70%)."""
     inten = min(1.0, abs(value - 50.0) / 20.0)
-    return (_hex_lerp(_BAR_BLUE_LIGHT, _BAR_BLUE_DARK, inten) if value >= 50
-            else _hex_lerp(_BAR_ORG_LIGHT, _BAR_ORG_DARK, inten))
+    return (_hex_lerp(_BAR_BLUE_LIGHT, _BAR_BLUE_STRONG, inten) if value >= 50
+            else _hex_lerp(_BAR_ORG_LIGHT, _BAR_ORG_STRONG, inten))
 
 
 def _qg_axis_domain(values) -> list:
