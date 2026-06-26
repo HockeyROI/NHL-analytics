@@ -1349,7 +1349,8 @@ def _qg_bar_chart(vals: dict, label: str) -> None:
                "(bar up = above 50%, down = below; 50% ≈ league-median).")
     bars = alt.Chart(d).mark_bar(size=40).encode(
         x=alt.X("Metric:N", sort=[r["Metric"] for r in rows],
-                axis=alt.Axis(labelAngle=0, title=None)),
+                axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold",
+                              labelFontSize=12, labelColor=PALETTE["text"])),
         y=alt.Y("base:Q", scale=alt.Scale(domain=[_lo, _hi]), title="%"),
         y2="value:Q",
         color=alt.condition("datum.value >= 50", alt.value(PALETTE["text"]),
