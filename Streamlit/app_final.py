@@ -1429,11 +1429,15 @@ def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
     _dom = _qg_axis_domain(allv)
     st.caption(f"**{label}** — NFI% + Quality-Games % vs the **50% baseline**, one "
                "panel per player (bar up = above 50%; darker = further from 50%).")
+    # Width per panel so the panels together fill the container (two players
+    # shouldn't be skinnier than the single-player chart).
+    _n = max(1, len(players_vals))
+    _w = int(max(160, 720 / _n))
     _ch = alt.Chart(d)   # shared data so a layered chart can be faceted
-    bars = _ch.mark_bar(size=22).encode(
+    bars = _ch.mark_bar(size=34).encode(
         x=alt.X("Metric:N", sort=_QG_BAR_METRICS,
-                axis=alt.Axis(labelAngle=-40, title=None, labelFontWeight="bold",
-                              labelFontSize=10, labelColor=PALETTE["text"])),
+                axis=alt.Axis(labelAngle=-30, title=None, labelFontWeight="bold",
+                              labelFontSize=11, labelColor=PALETTE["text"])),
         y=alt.Y("base:Q", scale=alt.Scale(domain=_dom), title="%"),
         y2="value:Q",
         color=alt.Color("color:N", scale=None, legend=None),
@@ -1441,10 +1445,10 @@ def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
                  alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = _ch.mark_rule(strokeDash=[4, 4],
                          color=PALETTE["text_secondary"]).encode(y=alt.datum(50))
-    chart = alt.layer(bars, rule).properties(width=180).facet(
+    chart = alt.layer(bars, rule).properties(width=_w, height=300).facet(
         column=alt.Column("Player:N", title=None,
-                          header=alt.Header(labelFontWeight="bold", labelFontSize=12)))
-    st.altair_chart(chart)
+                          header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
+    st.altair_chart(chart, use_container_width=True)
     _chart_brand()
 
 
