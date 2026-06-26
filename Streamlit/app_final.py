@@ -1491,6 +1491,15 @@ def _qg_line_encodings(series):
                                                   range=[_QG_SERIES_DASH[s] for s in series])))
 
 
+def _qg_line_ydomain(values) -> list:
+    """Zoom the QG line y-axis to ~0.35-0.75 (where most players land), expanding
+    only if a value falls outside that band."""
+    vv = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    if vv.empty:
+        return [0.35, 0.75]
+    return [min(0.35, float(vv.min()) - 0.02), max(0.75, float(vv.max()) + 0.02)]
+
+
 def _qg_combined_line(trend: pd.DataFrame) -> None:
     """One Quality-Games line chart with all four %: NFI family in orange, xG
     family in blue; raw versions solid, relative (Rel*) versions dashed."""
@@ -1502,7 +1511,8 @@ def _qg_combined_line(trend: pd.DataFrame) -> None:
                "raw = solid, relative (**Rel**) = **dashed**.")
     chart = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
         x=alt.X("Season:N", title=None),
-        y=alt.Y("value:Q", title=None),
+        y=alt.Y("value:Q", title=None,
+                scale=alt.Scale(domain=_qg_line_ydomain(long["value"]))),
         tooltip=["Season:N", "Series:N", alt.Tooltip("value:Q", format=".3f")],
         **_qg_line_encodings(series)).properties(height=320)
     st.altair_chart(chart, use_container_width=True)
@@ -1529,7 +1539,8 @@ def _qg_line_chart_compare(players: dict) -> None:
                "(blue); relative (**Rel**) versions **dashed**.")
     base = alt.Chart(d).mark_line(point=True, strokeWidth=2).encode(
         x=alt.X("Season:N", title=None, axis=alt.Axis(labelAngle=-30)),
-        y=alt.Y("value:Q", title=None),
+        y=alt.Y("value:Q", title=None,
+                scale=alt.Scale(domain=_qg_line_ydomain(d["value"]))),
         tooltip=["Player:N", "Season:N", "Series:N", alt.Tooltip("value:Q", format=".3f")],
         **_qg_line_encodings(series)).properties(width=_w, height=280)
     chart = base.facet(column=alt.Column("Player:N", title=None,
