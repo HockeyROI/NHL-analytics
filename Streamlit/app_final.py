@@ -463,7 +463,7 @@ def _show_df(obj, **kwargs) -> None:
 
 
 def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=(), second_cohort=None,
-                 mark_unranked=False, qualified=None):
+                 mark_unranked=False, qualified=None, team_rank_idx=None):
     """Append ' (rank)' to each ranked column's DISPLAY string while leaving the
     underlying cell value numeric, so header-sort still orders by the real value.
 
@@ -513,9 +513,12 @@ def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=(), second_cohort=No
             continue
 
         # Row-based: build each row's suffix from its OWN qualification, then make
-        # cell values unique (real + i·1e-9) so the formatter keys back to it.
+        # cell values unique (real + i·1e-9) so the formatter keys back to it. The
+        # second (team) rank comes from team_rank_idx[col][row] when given (per-row
+        # own-team rank), else from second_cohort's value map.
         real = pd.to_numeric(disp[col], errors="coerce")
         qmask = qualified.reindex(disp.index).fillna(False).astype(bool)
+        _trk = (team_rank_idx or {}).get(col, {})
         suffix = {}
         perturbed = real.copy()
         for i, (idx, x) in enumerate(real.items()):
@@ -525,7 +528,10 @@ def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=(), second_cohort=No
             perturbed.iloc[i] = px
             if qmask.iloc[i]:
                 r = vmap.get(x)
-                r2 = vmap2.get(x) if vmap2 is not None else None
+                if team_rank_idx is not None:
+                    r2 = _trk.get(idx)
+                else:
+                    r2 = vmap2.get(x) if vmap2 is not None else None
                 if r is None:
                     suffix[px] = " (UR)" if mark_unranked else ""
                 elif r2 is not None:
@@ -1732,31 +1738,45 @@ def render_players(season_label: str, game_type: str) -> None:
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
                     "NFI-S/60", "NZI", "DZI", "OZI",
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"]
-    # When a team is selected, add a second rank within that team's cohort
-    # (traded players count for each of their teams).
-    if team_sel == "All":
-        _team_cohort = None
-    elif _has_teams:
-        _team_cohort = rank_cohort[rank_cohort["_teams"].apply(lambda ts: team_sel in ts)]
+    # Second bracket number = within-team rank. With a team selected, rank within
+    # that team; otherwise within each player's own (most-recent) team. Computed
+    # per-row over the qualified cohort and keyed to the displayed rows by id.
+    _team_rank_idx = {}
+    _df_pid = dict(zip(df.index, df["player_id"]))
+    if team_sel != "All":
+        _tc = (rank_cohort[rank_cohort["_teams"].apply(lambda ts: team_sel in ts)]
+               if _has_teams else rank_cohort[rank_cohort["Team"] == team_sel])
+        for col in _player_rank:
+            if col not in _tc.columns:
+                continue
+            tr = pd.to_numeric(_tc[col], errors="coerce").rank(
+                ascending=(col == "NFI-S/60"), method="min")
+            p2t = dict(zip(_tc["player_id"], tr))
+            _team_rank_idx[col] = {i: int(p2t[p]) for i, p in _df_pid.items()
+                                   if pd.notna(p2t.get(p))}
     else:
-        _team_cohort = rank_cohort[rank_cohort["Team"] == team_sel]
+        _coh_team = (rank_cohort["_teams"].apply(lambda ts: ts[-1] if isinstance(ts, list) and ts else None)
+                     if _has_teams else rank_cohort.get("Team"))
+        if _coh_team is not None:
+            for col in _player_rank:
+                if col not in rank_cohort.columns:
+                    continue
+                tr = pd.to_numeric(rank_cohort[col], errors="coerce").groupby(
+                    _coh_team).rank(ascending=(col == "NFI-S/60"), method="min")
+                p2t = dict(zip(rank_cohort["player_id"], tr))
+                _team_rank_idx[col] = {i: int(p2t[p]) for i, p in _df_pid.items()
+                                       if pd.notna(p2t.get(p))}
     _pl_qual = pd.to_numeric(disp["TOI"], errors="coerce").fillna(0) >= rank_floor
     _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better={"NFI-S/60"},
-                 second_cohort=_team_cohort, mark_unranked=True, qualified=_pl_qual)
+                 mark_unranked=True, qualified=_pl_qual, team_rank_idx=_team_rank_idx)
     _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
                      "D": "defense"}[pos]
-    if team_sel != "All":
-        st.caption(f"Each metric shows **(league rank / {team_sel} rank)** within "
-                   f"**{_cohort_label}**, then within {team_sel}. Only players with "
-                   f"**≥ {rank_floor:,} ES minutes** are ranked; lower the Min ES "
-                   f"TOI slider to reveal the rest as **(UR)** = unranked. NFI-S/60 "
-                   f"(shots against): lowest = #1.")
-    else:
-        st.caption(f"Each metric shows its **(rank)** within **{_cohort_label}** "
-                   f"(set by the Position filter). Only players with **≥ "
-                   f"{rank_floor:,} ES minutes** are ranked; lower the Min ES TOI "
-                   f"slider to reveal the rest as **(UR)** = unranked. NFI-S/60 "
-                   f"(shots against): lowest = #1.")
+    _team_txt = team_sel if team_sel != "All" else "their own team"
+    st.caption(f"Each metric shows **(league rank / team rank)** — rank within "
+               f"**{_cohort_label}** league-wide, then within **{_team_txt}**. Only "
+               f"players with **≥ {rank_floor:,} ES minutes** are ranked; lower the "
+               f"Min ES TOI slider to reveal the rest as **(UR)** = unranked. "
+               f"NFI-S/60 (shots against): lowest = #1.")
     _sort_hint()
     st.caption("Click a row to open that player's detail (collapses the list).")
     _gen = st.session_state.get("_pl_tbl_gen", 0)
