@@ -1476,14 +1476,17 @@ def _qg_line_long(trend: pd.DataFrame):
 
 
 def _qg_line_encodings(series):
-    """color + strokeDash both keyed on Series (same title) so Altair merges them
-    into ONE legend with named, coloured, correctly-dashed entries."""
+    """color + strokeDash both keyed on Series (same legend) so Altair merges them
+    into ONE bottom legend whose symbols are coloured solid/dashed LINES (not the
+    point marker)."""
     import altair as alt
+    _leg = alt.Legend(title=None, orient="bottom", direction="horizontal",
+                      symbolType="stroke", symbolStrokeWidth=2.5, symbolSize=260)
     return dict(
-        color=alt.Color("Series:N", sort=series, legend=alt.Legend(title=None),
+        color=alt.Color("Series:N", sort=series, legend=_leg,
                         scale=alt.Scale(domain=series,
                                         range=[_QG_SERIES_COLOR[s] for s in series])),
-        strokeDash=alt.StrokeDash("Series:N", sort=series, legend=alt.Legend(title=None),
+        strokeDash=alt.StrokeDash("Series:N", sort=series, legend=_leg,
                                   scale=alt.Scale(domain=series,
                                                   range=[_QG_SERIES_DASH[s] for s in series])))
 
