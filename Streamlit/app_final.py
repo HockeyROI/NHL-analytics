@@ -3058,22 +3058,7 @@ def render_trade_analyzer(season_label: str, game_type: str) -> None:
             _render_player_playoff_summary(frame, int(pid))
         return
 
-    # Side-by-side comparisons — one panel per player. Bars = the filter's year;
-    # the secondary line image = QG % over time.
-    _seasons_all = [SEASON_DISPLAY.get(s, s) for s in PROFILE_SEASONS] + ["2yr avg (24-26)"]
-    _cmp_yr = _default_qg_year(season_label, _seasons_all)
-    _trends, _pv = {}, {}
-    for pid in sel:
-        _nm = plabel.get(int(pid), str(pid))
-        _tr = _player_trend(int(pid))
-        if not _tr.empty:
-            _trends[_nm] = _tr
-            _pv[_nm] = _player_qg_vals(int(pid), _tr, _cmp_yr)
-    if _pv:
-        _qg_bar_chart_compare(_pv, _cmp_yr)
-    if _trends:
-        _qg_line_chart_compare(_trends)
-
+    # Data first: per-player detail tables.
     cohort = st.radio("Rank against", ["All skaters", "Same position"],
                       horizontal=True, key="trade_rank_cohort")
     same_pos = cohort != "All skaters"
@@ -3089,6 +3074,22 @@ def render_trade_analyzer(season_label: str, game_type: str) -> None:
             st.info("No per-season data available for this player.")
         else:
             _show_df(disp, width="stretch", hide_index=True)
+
+    # Then the side-by-side comparison charts — one panel per player. Bars = the
+    # filter's year; the secondary line image = QG % over time.
+    _seasons_all = [SEASON_DISPLAY.get(s, s) for s in PROFILE_SEASONS] + ["2yr avg (24-26)"]
+    _cmp_yr = _default_qg_year(season_label, _seasons_all)
+    _trends, _pv = {}, {}
+    for pid in sel:
+        _nm = plabel.get(int(pid), str(pid))
+        _tr = _player_trend(int(pid))
+        if not _tr.empty:
+            _trends[_nm] = _tr
+            _pv[_nm] = _player_qg_vals(int(pid), _tr, _cmp_yr)
+    if _pv:
+        _qg_bar_chart_compare(_pv, _cmp_yr)
+    if _trends:
+        _qg_line_chart_compare(_trends)
 
 
 # ---------------------------------------------------------------------------
