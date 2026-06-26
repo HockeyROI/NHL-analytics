@@ -1315,6 +1315,18 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
 
 
 _QG_BAR_METRICS = ["NFI%", "NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"]
+_BRAND_DEEP = "#0A1A2F"   # "Hockey" — deeper than the chart navy
+_BRAND_BLUE = PALETTE["blue"]   # "ROI" — brand blue (#2E7DC4)
+
+
+def _chart_brand() -> None:
+    """HockeyROI wordmark rendered just under a chart (Hockey deep-navy, ROI blue)."""
+    st.markdown(
+        "<div style='text-align:right; margin:-0.7rem 0 0.5rem 0; font-weight:800; "
+        "font-size:0.95rem; letter-spacing:0.2px;'>"
+        f"<span style='color:{_BRAND_DEEP};'>Hockey</span>"
+        f"<span style='color:{_BRAND_BLUE};'>ROI</span></div>",
+        unsafe_allow_html=True)
 
 
 def _qg_bar_chart(vals: dict, label: str) -> None:
@@ -1328,19 +1340,25 @@ def _qg_bar_chart(vals: dict, label: str) -> None:
         st.caption("No NFI% / Quality-Games values for this selection.")
         return
     d = pd.DataFrame(rows)
+    # Most values sit in ~30-70%, so zoom the axis there (expanded only if a
+    # value falls outside) instead of a flat 0-100 that hides the spread.
+    _vv = [r["value"] for r in rows]
+    _lo = min(30, int(np.floor(min(_vv))) - 2)
+    _hi = max(70, int(np.ceil(max(_vv))) + 2)
     st.caption(f"**{label}** — NFI% + Quality-Games % vs the **50% baseline** "
                "(bar up = above 50%, down = below; 50% ≈ league-median).")
     bars = alt.Chart(d).mark_bar(size=40).encode(
         x=alt.X("Metric:N", sort=[r["Metric"] for r in rows],
                 axis=alt.Axis(labelAngle=0, title=None)),
-        y=alt.Y("base:Q", scale=alt.Scale(domain=[0, 100]), title="%"),
+        y=alt.Y("base:Q", scale=alt.Scale(domain=[_lo, _hi]), title="%"),
         y2="value:Q",
-        color=alt.condition("datum.value >= 50", alt.value(PALETTE["rising"]),
-                            alt.value(PALETTE["declining"])),
+        color=alt.condition("datum.value >= 50", alt.value(PALETTE["orange"]),
+                            alt.value(PALETTE["text"])),
         tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
     st.altair_chart(bars + rule, use_container_width=True)
+    _chart_brand()
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
@@ -1397,6 +1415,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         st.caption(title)
         st.line_chart(trend.set_index("Season")[ys],
                       color=[_CHART_COLORS.get(c, _CHART_SECOND) for c in ys])
+        _chart_brand()
 
     # Scales differ across families — one chart per scale so none flattens.
     # NFI% (0–1 absolute share) is split from the RelNFI family (points, ~±5).
@@ -2416,12 +2435,14 @@ def _render_goalie_profile(gid: int) -> None:
         st.caption("NFI-GSAx per 60")
         st.line_chart(trend.set_index("Season")[["NFI-GSAx/60"]],
                       color=[_CHART_COLORS.get("NFI-GSAx/60", _CHART_SECOND)])
+        _chart_brand()
     pct = [c for c in ("QNFS%", "GQG%")
            if c in trend.columns and trend[c].notna().any()]
     if pct:
         st.caption("Consistency % (QNFS%, GQG%)")
         st.line_chart(trend.set_index("Season")[pct],
                       color=[_CHART_COLORS.get(c, _CHART_SECOND) for c in pct])
+        _chart_brand()
 
 
 def _wilson(k: float, n: float, lower: bool = True, z: float = 1.96) -> float:
