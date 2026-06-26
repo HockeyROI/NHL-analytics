@@ -1333,7 +1333,7 @@ def _chart_brand() -> None:
 # further out (blue navy above 50%, brand orange below) — same colours as the
 # solid version, just softened toward the middle.
 _BAR_BLUE_LIGHT, _BAR_BLUE_STRONG = "#BCD0E2", PALETTE["text"]      # → #1B3A5C navy
-_BAR_ORG_LIGHT, _BAR_ORG_STRONG = "#FFCDB5", PALETTE["orange"]      # → #FF6B35 orange
+_BAR_ORG_LIGHT, _BAR_ORG_STRONG = "#FF9D6B", PALETTE["orange"]      # → #FF6B35 orange
 
 
 def _hex_lerp(c1: str, c2: str, t: float) -> str:
