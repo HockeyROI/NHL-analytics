@@ -1456,37 +1456,83 @@ def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
     _chart_brand(width_px=_w * _n + 24 * (_n - 1) + 55)
 
 
+# Quality-Games line series: display name, colour, and dash per metric. NFI
+# family orange / xG family blue; relative versions dashed.
+_QG_LINE_ORDER = ["NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"]
+_QG_SERIES = {"NFI-QG%": "NFI", "xG-QG%": "xG", "RelNFI-QG%": "Rel NFI", "RelxG-QG%": "Rel xG"}
+_QG_SERIES_COLOR = {"NFI": _CHART_PRIMARY, "Rel NFI": _CHART_PRIMARY,
+                    "xG": _CHART_SECOND, "Rel xG": _CHART_SECOND}
+_QG_SERIES_DASH = {"NFI": [1, 0], "xG": [1, 0], "Rel NFI": [6, 4], "Rel xG": [6, 4]}
+
+
+def _qg_line_long(trend: pd.DataFrame):
+    cols = [c for c in _QG_LINE_ORDER if c in trend.columns and trend[c].notna().any()]
+    if not cols:
+        return None, []
+    long = (trend[["Season"] + cols].melt("Season", var_name="Metric",
+            value_name="value").dropna(subset=["value"]))
+    long["Series"] = long["Metric"].map(_QG_SERIES)
+    return long, [_QG_SERIES[c] for c in cols]
+
+
+def _qg_line_encodings(series):
+    """color + strokeDash both keyed on Series (same title) so Altair merges them
+    into ONE legend with named, coloured, correctly-dashed entries."""
+    import altair as alt
+    return dict(
+        color=alt.Color("Series:N", sort=series, legend=alt.Legend(title=None),
+                        scale=alt.Scale(domain=series,
+                                        range=[_QG_SERIES_COLOR[s] for s in series])),
+        strokeDash=alt.StrokeDash("Series:N", sort=series, legend=alt.Legend(title=None),
+                                  scale=alt.Scale(domain=series,
+                                                  range=[_QG_SERIES_DASH[s] for s in series])))
+
+
 def _qg_combined_line(trend: pd.DataFrame) -> None:
     """One Quality-Games line chart with all four %: NFI family in orange, xG
     family in blue; raw versions solid, relative (Rel*) versions dashed."""
     import altair as alt
-    order = ["NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"]
-    cols = [c for c in order if c in trend.columns and trend[c].notna().any()]
-    if not cols:
+    long, series = _qg_line_long(trend)
+    if long is None:
         return
-    _fam = {"NFI-QG%": "NFI", "RelNFI-QG%": "NFI", "xG-QG%": "xG", "RelxG-QG%": "xG"}
-    _kind = {"NFI-QG%": "Raw", "xG-QG%": "Raw",
-             "RelNFI-QG%": "Relative", "RelxG-QG%": "Relative"}
-    long = (trend[["Season"] + cols].melt("Season", var_name="Metric",
-            value_name="value").dropna(subset=["value"]))
-    long["Family"] = long["Metric"].map(_fam)
-    long["Kind"] = long["Metric"].map(_kind)
     st.caption("Quality Games % — **NFI** (orange) vs **xG** (blue); "
-               "raw = solid, relative = **dashed**")
+               "raw = solid, relative (**Rel**) = **dashed**.")
     chart = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
         x=alt.X("Season:N", title=None),
         y=alt.Y("value:Q", title=None),
-        color=alt.Color("Family:N", sort=["NFI", "xG"], legend=alt.Legend(title=None),
-                        scale=alt.Scale(domain=["NFI", "xG"],
-                                        range=[_CHART_PRIMARY, _CHART_SECOND])),
-        strokeDash=alt.StrokeDash("Kind:N", sort=["Raw", "Relative"],
-                                  legend=alt.Legend(title=None),
-                                  scale=alt.Scale(domain=["Raw", "Relative"],
-                                                  range=[[1, 0], [5, 4]])),
-        detail="Metric:N",
-        tooltip=["Season:N", "Metric:N", alt.Tooltip("value:Q", format=".3f")])
+        tooltip=["Season:N", "Series:N", alt.Tooltip("value:Q", format=".3f")],
+        **_qg_line_encodings(series)).properties(height=320)
     st.altair_chart(chart, use_container_width=True)
     _chart_brand()
+
+
+def _qg_line_chart_compare(players: dict) -> None:
+    """Side-by-side QG % line charts, one panel per player. players: {name: trend}."""
+    import altair as alt
+    parts, series = [], []
+    for name, tr in players.items():
+        long, ser = _qg_line_long(tr)
+        if long is None:
+            continue
+        long["Player"] = name
+        parts.append(long)
+        series = series or ser
+    if not parts:
+        return
+    d = pd.concat(parts, ignore_index=True)
+    _n = max(1, len(players))
+    _w = int(max(200, 1040 / _n))
+    st.caption("Quality Games % over time, per player — **NFI** (orange) vs **xG** "
+               "(blue); relative (**Rel**) versions **dashed**.")
+    base = alt.Chart(d).mark_line(point=True, strokeWidth=2).encode(
+        x=alt.X("Season:N", title=None, axis=alt.Axis(labelAngle=-30)),
+        y=alt.Y("value:Q", title=None),
+        tooltip=["Player:N", "Season:N", "Series:N", alt.Tooltip("value:Q", format=".3f")],
+        **_qg_line_encodings(series)).properties(width=_w, height=280)
+    chart = base.facet(column=alt.Column("Player:N", title=None,
+                       header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
+    st.altair_chart(chart, use_container_width=True)
+    _chart_brand(width_px=_w * _n + 24 * (_n - 1) + 55)
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
@@ -3009,16 +3055,21 @@ def render_trade_analyzer(season_label: str, game_type: str) -> None:
             _render_player_playoff_summary(frame, int(pid))
         return
 
-    # Side-by-side QG bar comparison — one panel per player, for the filter's year.
+    # Side-by-side comparisons — one panel per player. Bars = the filter's year;
+    # the secondary line image = QG % over time.
     _seasons_all = [SEASON_DISPLAY.get(s, s) for s in PROFILE_SEASONS] + ["2yr avg (24-26)"]
     _cmp_yr = _default_qg_year(season_label, _seasons_all)
-    _pv = {}
+    _trends, _pv = {}, {}
     for pid in sel:
+        _nm = plabel.get(int(pid), str(pid))
         _tr = _player_trend(int(pid))
         if not _tr.empty:
-            _pv[plabel.get(int(pid), str(pid))] = _player_qg_vals(int(pid), _tr, _cmp_yr)
+            _trends[_nm] = _tr
+            _pv[_nm] = _player_qg_vals(int(pid), _tr, _cmp_yr)
     if _pv:
         _qg_bar_chart_compare(_pv, _cmp_yr)
+    if _trends:
+        _qg_line_chart_compare(_trends)
 
     cohort = st.radio("Rank against", ["All skaters", "Same position"],
                       horizontal=True, key="trade_rank_cohort")
