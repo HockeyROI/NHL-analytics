@@ -1315,17 +1315,17 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
 
 
 _QG_BAR_METRICS = ["NFI%", "NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"]
-_BRAND_DEEP = "#0A1A2F"   # "Hockey" — deeper than the chart navy
-_BRAND_BLUE = PALETTE["blue"]   # "ROI" — brand blue (#2E7DC4)
+_BRAND_DEEP = "#0A1A2F"          # "Hockey" — deeper than the chart navy
+_BRAND_ROI = PALETTE["orange"]   # "ROI" — brand orange (#FF6B35)
 
 
 def _chart_brand() -> None:
-    """HockeyROI wordmark rendered just under a chart (Hockey deep-navy, ROI blue)."""
+    """HockeyROI wordmark rendered just under a chart (Hockey deep-navy, ROI orange)."""
     st.markdown(
         "<div style='text-align:right; margin:-0.7rem 0 0.5rem 0; font-weight:800; "
         "font-size:0.95rem; letter-spacing:0.2px;'>"
         f"<span style='color:{_BRAND_DEEP};'>Hockey</span>"
-        f"<span style='color:{_BRAND_BLUE};'>ROI</span></div>",
+        f"<span style='color:{_BRAND_ROI};'>ROI</span></div>",
         unsafe_allow_html=True)
 
 
@@ -1352,8 +1352,8 @@ def _qg_bar_chart(vals: dict, label: str) -> None:
                 axis=alt.Axis(labelAngle=0, title=None)),
         y=alt.Y("base:Q", scale=alt.Scale(domain=[_lo, _hi]), title="%"),
         y2="value:Q",
-        color=alt.condition("datum.value >= 50", alt.value(PALETTE["orange"]),
-                            alt.value(PALETTE["text"])),
+        color=alt.condition("datum.value >= 50", alt.value(PALETTE["text"]),
+                            alt.value(PALETTE["orange"])),
         tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
