@@ -1452,6 +1452,39 @@ def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
     _chart_brand()
 
 
+def _qg_combined_line(trend: pd.DataFrame) -> None:
+    """One Quality-Games line chart with all four %: NFI family in orange, xG
+    family in blue; raw versions solid, relative (Rel*) versions dashed."""
+    import altair as alt
+    order = ["NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"]
+    cols = [c for c in order if c in trend.columns and trend[c].notna().any()]
+    if not cols:
+        return
+    _fam = {"NFI-QG%": "NFI", "RelNFI-QG%": "NFI", "xG-QG%": "xG", "RelxG-QG%": "xG"}
+    _kind = {"NFI-QG%": "Raw", "xG-QG%": "Raw",
+             "RelNFI-QG%": "Relative", "RelxG-QG%": "Relative"}
+    long = (trend[["Season"] + cols].melt("Season", var_name="Metric",
+            value_name="value").dropna(subset=["value"]))
+    long["Family"] = long["Metric"].map(_fam)
+    long["Kind"] = long["Metric"].map(_kind)
+    st.caption("Quality Games % — **NFI** (orange) vs **xG** (blue); "
+               "raw = solid, relative = **dashed**")
+    chart = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
+        x=alt.X("Season:N", title=None),
+        y=alt.Y("value:Q", title=None),
+        color=alt.Color("Family:N", sort=["NFI", "xG"], legend=alt.Legend(title=None),
+                        scale=alt.Scale(domain=["NFI", "xG"],
+                                        range=[_CHART_PRIMARY, _CHART_SECOND])),
+        strokeDash=alt.StrokeDash("Kind:N", sort=["Raw", "Relative"],
+                                  legend=alt.Legend(title=None),
+                                  scale=alt.Scale(domain=["Raw", "Relative"],
+                                                  range=[[1, 0], [5, 4]])),
+        detail="Metric:N",
+        tooltip=["Season:N", "Metric:N", alt.Tooltip("value:Q", format=".3f")])
+    st.altair_chart(chart, use_container_width=True)
+    _chart_brand()
+
+
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                            team=None, season_label=None) -> None:
     """Per-season trend table + auto-showing line charts for one player.
@@ -1515,9 +1548,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
     if "Zone Impact" in _show_fams:
         _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
     if "Quality Games" in _show_fams:
-        _chart("Quality Games % — raw (NFI-QG%, xG-QG%)", ["NFI-QG%", "xG-QG%"])
-        _chart("Quality Games % — relative (RelNFI-QG%, RelxG-QG%)",
-               ["RelNFI-QG%", "RelxG-QG%"])
+        _qg_combined_line(trend)
         _chart("Relative xG per 60 (RelxG%)", ["RelxG%"])
 
 
