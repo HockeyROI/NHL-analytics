@@ -1319,11 +1319,14 @@ _BRAND_DEEP = "#0A1A2F"          # "Hockey" — deeper than the chart navy
 _BRAND_ROI = PALETTE["orange"]   # "ROI" — brand orange (#FF6B35)
 
 
-def _chart_brand() -> None:
-    """HockeyROI wordmark rendered just under a chart (Hockey deep-navy, ROI orange)."""
+def _chart_brand(width_px: int = None) -> None:
+    """HockeyROI wordmark rendered just under a chart (Hockey deep-navy, ROI
+    orange). width_px caps the wordmark's block so it sits under the chart's right
+    edge (for fixed-width faceted charts) rather than the far container edge."""
+    _w = f"max-width:{int(width_px)}px; " if width_px else ""
     st.markdown(
-        "<div style='text-align:right; margin:-0.7rem 0 0.5rem 0; font-weight:800; "
-        "font-size:0.95rem; letter-spacing:0.2px;'>"
+        f"<div style='{_w}text-align:right; margin:-0.7rem 0 0.5rem 0; "
+        "font-weight:800; font-size:0.95rem; letter-spacing:0.2px;'>"
         f"<span style='color:{_BRAND_DEEP};'>Hockey</span>"
         f"<span style='color:{_BRAND_ROI};'>ROI</span></div>",
         unsafe_allow_html=True)
@@ -1429,10 +1432,10 @@ def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
     _dom = _qg_axis_domain(allv)
     st.caption(f"**{label}** — NFI% + Quality-Games % vs the **50% baseline**, one "
                "panel per player (bar up = above 50%; darker = further from 50%).")
-    # Width per panel so the panels together fill the container (two players
-    # shouldn't be skinnier than the single-player chart).
+    # Width per panel so the panels together fill a wide layout (faceted charts
+    # ignore use_container_width, so size the panels up explicitly).
     _n = max(1, len(players_vals))
-    _w = int(max(160, 720 / _n))
+    _w = int(max(200, 1040 / _n))
     _ch = alt.Chart(d)   # shared data so a layered chart can be faceted
     bars = _ch.mark_bar(size=34).encode(
         x=alt.X("Metric:N", sort=_QG_BAR_METRICS,
@@ -1449,7 +1452,8 @@ def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
         column=alt.Column("Player:N", title=None,
                           header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
     st.altair_chart(chart, use_container_width=True)
-    _chart_brand()
+    # Align the wordmark under the chart's right edge (≈ panel widths + spacing).
+    _chart_brand(width_px=_w * _n + 24 * (_n - 1) + 55)
 
 
 def _qg_combined_line(trend: pd.DataFrame) -> None:
