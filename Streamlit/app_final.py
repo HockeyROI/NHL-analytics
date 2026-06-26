@@ -1329,36 +1329,121 @@ def _chart_brand() -> None:
         unsafe_allow_html=True)
 
 
+# Diverging gradient endpoints: light near the 50% midline → dark far from it.
+# Above 50% = blue, below 50% = orange.
+_BAR_BLUE_LIGHT, _BAR_BLUE_DARK = "#B7D2E8", "#143150"
+_BAR_ORG_LIGHT, _BAR_ORG_DARK = "#FBCDB2", "#B23A0F"
+
+
+def _hex_lerp(c1: str, c2: str, t: float) -> str:
+    t = max(0.0, min(1.0, t))
+    a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(a[k] + (b[k] - a[k]) * t):02X}" for k in range(3))
+
+
+def _bar_color(value: float) -> str:
+    """Gradient: closer to the 50% midline → lighter, further → darker; blue above
+    50%, orange below. Full saturation at ±20 points (i.e. 30%/70%)."""
+    inten = min(1.0, abs(value - 50.0) / 20.0)
+    return (_hex_lerp(_BAR_BLUE_LIGHT, _BAR_BLUE_DARK, inten) if value >= 50
+            else _hex_lerp(_BAR_ORG_LIGHT, _BAR_ORG_DARK, inten))
+
+
+def _qg_axis_domain(values) -> list:
+    vv = [v for v in values if pd.notna(v)]
+    if not vv:
+        return [30, 70]
+    return [min(30, int(np.floor(min(vv))) - 2), max(70, int(np.ceil(max(vv))) + 2)]
+
+
+def _player_qg_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
+    """The 5 bar metrics (0-100) for one player at a season label or the 2yr row."""
+    if label == "2yr avg (24-26)":
+        _p2 = _players_2yr_frame()
+        _pr = _p2[_p2["player_id"] == int(pid)] if not _p2.empty else _p2
+        return {m: (float(_pr[_P2YR_MAP[m]].iloc[0]) * 100
+                    if len(_pr) and _P2YR_MAP.get(m) in _pr.columns
+                    and pd.notna(_pr[_P2YR_MAP[m]].iloc[0]) else np.nan)
+                for m in _QG_BAR_METRICS}
+    _tr = trend[trend["Season"].astype(str) == str(label)]
+    return {m: (float(_tr[m].iloc[0]) * 100 if len(_tr) and m in _tr.columns
+                and pd.notna(_tr[m].iloc[0]) else np.nan) for m in _QG_BAR_METRICS}
+
+
+def _default_qg_year(season_label, seasons) -> str:
+    """Row label to default the bar to, from the global Season filter."""
+    key = SEASON_KEY.get(season_label) if season_label else None
+    if key == "pooled_2yr" and "2yr avg (24-26)" in seasons:
+        return "2yr avg (24-26)"
+    if season_label in seasons:
+        return season_label
+    _non2 = [s for s in seasons if s != "2yr avg (24-26)"]
+    return _non2[-1] if _non2 else (seasons[-1] if seasons else None)
+
+
 def _qg_bar_chart(vals: dict, label: str) -> None:
     """Diverging bar of NFI% + the four Quality-Games percentages vs a 50%
     baseline (50% = league-median consistency: bar up when above, down when
     below). vals maps display-metric → value on a 0-100 scale."""
     import altair as alt
-    rows = [{"Metric": m, "value": float(v), "base": 50.0}
+    rows = [{"Metric": m, "value": float(v), "base": 50.0, "color": _bar_color(v)}
             for m, v in vals.items() if pd.notna(v)]
     if not rows:
         st.caption("No NFI% / Quality-Games values for this selection.")
         return
     d = pd.DataFrame(rows)
-    # Most values sit in ~30-70%, so zoom the axis there (expanded only if a
-    # value falls outside) instead of a flat 0-100 that hides the spread.
-    _vv = [r["value"] for r in rows]
-    _lo = min(30, int(np.floor(min(_vv))) - 2)
-    _hi = max(70, int(np.ceil(max(_vv))) + 2)
+    _dom = _qg_axis_domain([r["value"] for r in rows])
     st.caption(f"**{label}** — NFI% + Quality-Games % vs the **50% baseline** "
-               "(bar up = above 50%, down = below; 50% ≈ league-median).")
+               "(bar up = above 50%, down = below; darker = further from 50%).")
     bars = alt.Chart(d).mark_bar(size=40).encode(
         x=alt.X("Metric:N", sort=[r["Metric"] for r in rows],
                 axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold",
                               labelFontSize=12, labelColor=PALETTE["text"])),
-        y=alt.Y("base:Q", scale=alt.Scale(domain=[_lo, _hi]), title="%"),
+        y=alt.Y("base:Q", scale=alt.Scale(domain=_dom), title="%"),
         y2="value:Q",
-        color=alt.condition("datum.value >= 50", alt.value(PALETTE["text"]),
-                            alt.value(PALETTE["orange"])),
+        color=alt.Color("color:N", scale=None, legend=None),
         tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
     st.altair_chart(bars + rule, use_container_width=True)
+    _chart_brand()
+
+
+def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
+    """Side-by-side small-multiple bar charts (one panel per player) of the 5 QG
+    metrics vs the 50% baseline. players_vals: {player_name: {metric: 0-100}}."""
+    import altair as alt
+    rows, allv = [], []
+    for pname, vals in players_vals.items():
+        for m, v in vals.items():
+            if pd.notna(v):
+                rows.append({"Player": pname, "Metric": m, "value": float(v),
+                             "base": 50.0, "color": _bar_color(v)})
+                allv.append(float(v))
+    if not rows:
+        st.caption("No NFI% / Quality-Games values to compare for this selection.")
+        return
+    d = pd.DataFrame(rows)
+    _dom = _qg_axis_domain(allv)
+    st.caption(f"**{label}** — NFI% + Quality-Games % vs the **50% baseline**, one "
+               "panel per player (bar up = above 50%; darker = further from 50%).")
+    _ch = alt.Chart(d)   # shared data so a layered chart can be faceted
+    bars = _ch.mark_bar(size=22).encode(
+        x=alt.X("Metric:N", sort=_QG_BAR_METRICS,
+                axis=alt.Axis(labelAngle=-40, title=None, labelFontWeight="bold",
+                              labelFontSize=10, labelColor=PALETTE["text"])),
+        y=alt.Y("base:Q", scale=alt.Scale(domain=_dom), title="%"),
+        y2="value:Q",
+        color=alt.Color("color:N", scale=None, legend=None),
+        tooltip=[alt.Tooltip("Player:N"), alt.Tooltip("Metric:N"),
+                 alt.Tooltip("value:Q", format=".1f", title="%")])
+    rule = _ch.mark_rule(strokeDash=[4, 4],
+                         color=PALETTE["text_secondary"]).encode(y=alt.datum(50))
+    chart = alt.layer(bars, rule).properties(width=180).facet(
+        column=alt.Column("Player:N", title=None,
+                          header=alt.Header(labelFontWeight="bold", labelFontSize=12)))
+    st.altair_chart(chart)
     _chart_brand()
 
 
@@ -1392,38 +1477,17 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                    selection_mode="single-row", key=f"pl_detail_{int(pid)}")
     _sel = getattr(getattr(_ev, "selection", None), "rows", None)
     _seasons = disp["Season"].astype(str).tolist()
-
-    def _vals_for(label):
-        if label == "2yr avg (24-26)":
-            _p2 = _players_2yr_frame()
-            _pr2 = _p2[_p2["player_id"] == int(pid)] if not _p2.empty else _p2
-            return {m: (float(_pr2[_P2YR_MAP[m]].iloc[0]) * 100
-                        if len(_pr2) and _P2YR_MAP.get(m) in _pr2.columns
-                        and pd.notna(_pr2[_P2YR_MAP[m]].iloc[0]) else np.nan)
-                    for m in _QG_BAR_METRICS}
-        _tr = trend[trend["Season"].astype(str) == label]
-        return {m: (float(_tr[m].iloc[0]) * 100 if len(_tr) and m in _tr.columns
-                    and pd.notna(_tr[m].iloc[0]) else np.nan) for m in _QG_BAR_METRICS}
-
     if _sel and 0 <= _sel[0] < len(_seasons):
-        _row_i = _sel[0]                       # user clicked a year
+        _yr = _seasons[_sel[0]]                 # user clicked a year
     else:
-        # Default the bar to the row matching the global Season filter.
-        _key = SEASON_KEY.get(season_label) if season_label else None
-        if _key == "pooled_2yr" and "2yr avg (24-26)" in _seasons:
-            _row_i = _seasons.index("2yr avg (24-26)")
-        elif season_label in _seasons:
-            _row_i = _seasons.index(season_label)
-        else:                                  # 4yr / unknown → latest single season
-            _non2 = [i for i, s in enumerate(_seasons) if s != "2yr avg (24-26)"]
-            _row_i = _non2[-1] if _non2 else len(_seasons) - 1
+        _yr = _default_qg_year(season_label, _seasons)   # default to filter's year
         # If that row has no data for this player, fall back to the latest that does.
-        if all(pd.isna(v) for v in _vals_for(_seasons[_row_i]).values()):
-            _wd = [i for i, s in enumerate(_seasons)
-                   if any(pd.notna(v) for v in _vals_for(s).values())]
+        if _yr and all(pd.isna(v) for v in _player_qg_vals(pid, trend, _yr).values()):
+            _wd = [s for s in _seasons
+                   if any(pd.notna(v) for v in _player_qg_vals(pid, trend, s).values())]
             if _wd:
-                _row_i = _wd[-1]
-    _qg_bar_chart(_vals_for(_seasons[_row_i]), _seasons[_row_i])
+                _yr = _wd[-1]
+    _qg_bar_chart(_player_qg_vals(pid, trend, _yr), _yr)
     st.caption("↕ Click a different year (or the 2yr row) above to change the bars.")
 
     def _chart(title: str, cols: list[str]) -> None:
@@ -2904,6 +2968,17 @@ def render_trade_analyzer(season_label: str, game_type: str) -> None:
         for pid in sel:
             _render_player_playoff_summary(frame, int(pid))
         return
+
+    # Side-by-side QG bar comparison — one panel per player, for the filter's year.
+    _seasons_all = [SEASON_DISPLAY.get(s, s) for s in PROFILE_SEASONS] + ["2yr avg (24-26)"]
+    _cmp_yr = _default_qg_year(season_label, _seasons_all)
+    _pv = {}
+    for pid in sel:
+        _tr = _player_trend(int(pid))
+        if not _tr.empty:
+            _pv[plabel.get(int(pid), str(pid))] = _player_qg_vals(int(pid), _tr, _cmp_yr)
+    if _pv:
+        _qg_bar_chart_compare(_pv, _cmp_yr)
 
     cohort = st.radio("Rank against", ["All skaters", "Same position"],
                       horizontal=True, key="trade_rank_cohort")
