@@ -1459,10 +1459,12 @@ def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
 # Quality-Games line series: display name, colour, and dash per metric. NFI
 # family orange / xG family blue; relative versions dashed.
 _QG_LINE_ORDER = ["NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"]
-_QG_SERIES = {"NFI-QG%": "NFI", "xG-QG%": "xG", "RelNFI-QG%": "Rel NFI", "RelxG-QG%": "Rel xG"}
-_QG_SERIES_COLOR = {"NFI": _CHART_PRIMARY, "Rel NFI": _CHART_PRIMARY,
-                    "xG": _CHART_SECOND, "Rel xG": _CHART_SECOND}
-_QG_SERIES_DASH = {"NFI": [1, 0], "xG": [1, 0], "Rel NFI": [6, 4], "Rel xG": [6, 4]}
+_QG_SERIES = {"NFI-QG%": "NFI-QG%", "xG-QG%": "xG-QG%",
+              "RelNFI-QG%": "Rel NFI-QG%", "RelxG-QG%": "Rel xG-QG%"}
+_QG_SERIES_COLOR = {"NFI-QG%": _CHART_PRIMARY, "Rel NFI-QG%": _CHART_PRIMARY,
+                    "xG-QG%": _CHART_SECOND, "Rel xG-QG%": _CHART_SECOND}
+_QG_SERIES_DASH = {"NFI-QG%": [1, 0], "xG-QG%": [1, 0],
+                   "Rel NFI-QG%": [6, 4], "Rel xG-QG%": [6, 4]}
 
 
 def _qg_line_long(trend: pd.DataFrame):
