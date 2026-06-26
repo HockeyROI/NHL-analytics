@@ -1362,10 +1362,11 @@ def _qg_bar_chart(vals: dict, label: str) -> None:
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
-                           team=None) -> None:
+                           team=None, season_label=None) -> None:
     """Per-season trend table + auto-showing line charts for one player.
     families: optional list of metric families to show (None/empty = all).
-    team: when set, cells also show the within-team rank as (league / team)."""
+    team: when set, cells also show the within-team rank as (league / team).
+    season_label: the global Season filter — used to default-select the bar row."""
     disp, trend, metric_cols = _player_profile_table(pid, same_pos=same_pos,
                                                      families=families, team=team)
     if disp.empty:
@@ -1389,24 +1390,40 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
     _ev = _show_df(disp, width="stretch", hide_index=True, on_select="rerun",
                    selection_mode="single-row", key=f"pl_detail_{int(pid)}")
     _sel = getattr(getattr(_ev, "selection", None), "rows", None)
-    if _sel and 0 <= _sel[0] < len(disp):
-        _sl = str(disp.iloc[_sel[0]]["Season"])
-        if _sl == "2yr avg (24-26)":
+    _seasons = disp["Season"].astype(str).tolist()
+
+    def _vals_for(label):
+        if label == "2yr avg (24-26)":
             _p2 = _players_2yr_frame()
             _pr2 = _p2[_p2["player_id"] == int(pid)] if not _p2.empty else _p2
-            _vals = {m: (float(_pr2[_P2YR_MAP[m]].iloc[0]) * 100
-                         if len(_pr2) and _P2YR_MAP.get(m) in _pr2.columns
-                         and pd.notna(_pr2[_P2YR_MAP[m]].iloc[0]) else np.nan)
-                     for m in _QG_BAR_METRICS}
-        else:
-            _tr = trend[trend["Season"].astype(str) == _sl]
-            _vals = {m: (float(_tr[m].iloc[0]) * 100 if len(_tr) and m in _tr.columns
-                         and pd.notna(_tr[m].iloc[0]) else np.nan)
-                     for m in _QG_BAR_METRICS}
-        _qg_bar_chart(_vals, _sl)
+            return {m: (float(_pr2[_P2YR_MAP[m]].iloc[0]) * 100
+                        if len(_pr2) and _P2YR_MAP.get(m) in _pr2.columns
+                        and pd.notna(_pr2[_P2YR_MAP[m]].iloc[0]) else np.nan)
+                    for m in _QG_BAR_METRICS}
+        _tr = trend[trend["Season"].astype(str) == label]
+        return {m: (float(_tr[m].iloc[0]) * 100 if len(_tr) and m in _tr.columns
+                    and pd.notna(_tr[m].iloc[0]) else np.nan) for m in _QG_BAR_METRICS}
+
+    if _sel and 0 <= _sel[0] < len(_seasons):
+        _row_i = _sel[0]                       # user clicked a year
     else:
-        st.caption("Tip: click a year (or the 2yr row) above for an NFI% + "
-                   "Quality-Games bar breakdown vs the 50% baseline.")
+        # Default the bar to the row matching the global Season filter.
+        _key = SEASON_KEY.get(season_label) if season_label else None
+        if _key == "pooled_2yr" and "2yr avg (24-26)" in _seasons:
+            _row_i = _seasons.index("2yr avg (24-26)")
+        elif season_label in _seasons:
+            _row_i = _seasons.index(season_label)
+        else:                                  # 4yr / unknown → latest single season
+            _non2 = [i for i, s in enumerate(_seasons) if s != "2yr avg (24-26)"]
+            _row_i = _non2[-1] if _non2 else len(_seasons) - 1
+        # If that row has no data for this player, fall back to the latest that does.
+        if all(pd.isna(v) for v in _vals_for(_seasons[_row_i]).values()):
+            _wd = [i for i, s in enumerate(_seasons)
+                   if any(pd.notna(v) for v in _vals_for(s).values())]
+            if _wd:
+                _row_i = _wd[-1]
+    _qg_bar_chart(_vals_for(_seasons[_row_i]), _seasons[_row_i])
+    st.caption("↕ Click a different year (or the 2yr row) above to change the bars.")
 
     def _chart(title: str, cols: list[str]) -> None:
         ys = [c for c in cols if c in trend.columns and trend[c].notna().any()]
@@ -1708,7 +1725,8 @@ def render_players(season_label: str, game_type: str) -> None:
             _rc = st.radio("Rank against", ["All skaters", _pos_label],
                            horizontal=True, key="players_rank_cohort")
             _render_player_profile(int(pid), same_pos=(_rc != "All skaters"),
-                                   families=display_fams, team="__own__")
+                                   families=display_fams, team="__own__",
+                                   season_label=season_label)
 
     # Drill via the search box OR a clicked leaderboard row — either one collapses
     # the leaderboard to just that player's detail.
