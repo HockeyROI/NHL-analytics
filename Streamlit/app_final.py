@@ -1347,15 +1347,21 @@ def _export_spec(spec_json: str) -> str:
     import json
     d = json.loads(spec_json)
     _multi = any(k in d for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
-    d["padding"] = 22
+    d["padding"] = {"left": 10, "top": 10, "right": 28, "bottom": 10}
     if not _multi:
         d["autosize"] = {"type": "pad", "contains": "padding"}
         if d.get("width") in (None, "container"):
             d["width"] = 860
+    _font = "Helvetica, Arial, sans-serif"
     cfg = d.setdefault("config", {})
-    cfg.setdefault("axis", {"domainColor": "#cccccc", "gridColor": "#ececec",
-                            "tickColor": "#cccccc", "labelColor": PALETTE["text"],
-                            "titleColor": PALETTE["text"]})
+    cfg.setdefault("axis", {"gridColor": "#ececec", "tickColor": "#cccccc",
+                            "labelColor": PALETTE["text"], "titleColor": PALETTE["text"],
+                            "labelFont": _font, "titleFont": _font})
+    cfg.setdefault("axisY", {"domain": False, "ticks": False})   # no left axis line
+    cfg.setdefault("axisX", {"domainColor": "#cccccc"})
+    cfg.setdefault("legend", {"labelFont": _font, "titleFont": _font})
+    cfg.setdefault("title", {"font": _font})
+    cfg.setdefault("text", {"font": _font})
     cfg.setdefault("view", {"stroke": "transparent"})
     return json.dumps(d)
 
@@ -1377,11 +1383,12 @@ def _brand_layer():
     the right edge; 'Hockey' just left of it (width − ~27px for 'ROI')."""
     import altair as alt
     b = alt.Chart(pd.DataFrame([{"_": 0}]))
-    common = dict(align="right", baseline="top", fontSize=12, fontWeight="bold")
+    common = dict(align="right", baseline="top", fontSize=12, fontWeight="bold",
+                  font="Helvetica, Arial, sans-serif")
     hockey = b.mark_text(color=_BRAND_DEEP, **common).encode(
-        x=alt.value(alt.ExprRef("width - 27")), y=alt.value(3), text=alt.value("Hockey"))
+        x=alt.value(alt.ExprRef("width - 32")), y=alt.value(3), text=alt.value("Hockey"))
     roi = b.mark_text(color=_BRAND_ROI, **common).encode(
-        x=alt.value(alt.ExprRef("width")), y=alt.value(3), text=alt.value("ROI"))
+        x=alt.value(alt.ExprRef("width - 5")), y=alt.value(3), text=alt.value("ROI"))
     return alt.layer(hockey, roi)
 
 
@@ -1398,10 +1405,10 @@ def _show_chart(chart, dl_name: str, brand_width: int = None) -> None:
     png = _alt_png(disp.to_json())
     if png:
         _key = "dl_" + hashlib.md5(dl_name.encode()).hexdigest()[:12]
-        _sp, _btn = st.columns([6, 1.5])
+        _sp, _btn = st.columns([20, 1])
         with _btn:
-            st.download_button("⬇ Save PNG", data=png, file_name=f"{dl_name}.png",
-                               mime="image/png", key=_key, use_container_width=True)
+            st.download_button("⬇", data=png, file_name=f"{dl_name}.png",
+                               mime="image/png", key=_key, help="Save chart as PNG")
     if _multi:
         _chart_brand(brand_width)
 
