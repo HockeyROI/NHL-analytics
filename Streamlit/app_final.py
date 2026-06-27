@@ -2256,6 +2256,15 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
     hdf = pd.DataFrame([{m: v for m, v in items}])[[m for m, _ in items]]
     _show_df(hdf, width="stretch", hide_index=True)
 
+    # Quality-Games diverging bar vs the 50% baseline — same chart as the regular
+    # season (NFI% + the four QG %), built from this player's pooled playoff row.
+    qg_vals = {m: (float(r[_P2YR_MAP[m]]) * 100
+                   if _P2YR_MAP.get(m) in r.index and pd.notna(r.get(_P2YR_MAP[m]))
+                   else np.nan)
+               for m in _QG_BAR_METRICS}
+    if any(pd.notna(v) for v in qg_vals.values()):
+        _qg_bar_chart(qg_vals, "Playoffs (2022-25)")
+
 
 # ---------------------------------------------------------------------------
 # Teams tab — team NFI% (CNFI+MNFI share) + Attack/Suppress + Quality Games
