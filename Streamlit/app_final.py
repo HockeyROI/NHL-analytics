@@ -1320,15 +1320,19 @@ _BRAND_ROI = PALETTE["orange"]   # "ROI" — brand orange (#FF6B35)
 
 
 def _chart_brand(width_px: int = None) -> None:
-    """HockeyROI wordmark rendered just under a chart (Hockey deep-navy, ROI
-    orange). width_px caps the wordmark's block so it sits under the chart's right
-    edge (for fixed-width faceted charts) rather than the far container edge."""
+    """HockeyROI footer rendered just under a chart: the site URL (grey) then the
+    two-colour wordmark (Hockey deep-navy, ROI orange), right-aligned. width_px
+    caps the block so it sits under the chart's right edge (for fixed-width faceted
+    charts) rather than the far container edge."""
     _w = f"max-width:{int(width_px)}px; " if width_px else ""
     st.markdown(
-        f"<div style='{_w}text-align:right; margin:-0.7rem 0 0.5rem 0; "
-        "font-weight:800; font-size:0.95rem; letter-spacing:0.2px;'>"
+        f"<div style='{_w}text-align:right; margin:-0.3rem 0 0.6rem 0; "
+        "letter-spacing:0.2px;'>"
+        f"<span style='color:#7A8694; font-size:0.78rem; "
+        f"margin-right:9px; vertical-align:middle;'>{_BRAND_URL}</span>"
+        "<span style='font-weight:800; font-size:0.95rem; vertical-align:middle;'>"
         f"<span style='color:{_BRAND_DEEP};'>Hockey</span>"
-        f"<span style='color:{_BRAND_ROI};'>ROI</span></div>",
+        f"<span style='color:{_BRAND_ROI};'>ROI</span></span></div>",
         unsafe_allow_html=True)
 
 
@@ -1435,28 +1439,34 @@ def _brand_layer(y_off: int = 40):
 
 
 def _show_chart(chart, dl_name: str, brand_width: int = None) -> None:
-    """Render an Altair chart + a 'Save PNG' download button. Non-faceted charts
-    carry the two-colour HockeyROI wordmark embedded in the plot (so it's in the
-    PNG); faceted charts keep the wordmark below. The PNG (vl-convert) is padded,
-    sized, and lightly styled to match the on-screen chart."""
+    """Render an Altair chart + a 'Save PNG' download button. The HockeyROI
+    wordmark + site URL show as an HTML footer UNDER the on-screen chart (so they
+    never interact with Streamlit's 'fit' autosize and can't distort the axes),
+    and are embedded INSIDE the PNG export (vl-convert, 'pad' autosize) so the
+    download still carries them."""
     import altair as alt
     import hashlib
     _cd = chart.to_dict()
     _multi = any(k in _cd for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
-    # Bottom-legend charts render the legend beneath the x-axis labels, so drop
-    # the footer onto the legend's row; otherwise it sits just below the labels.
-    _y_off = 66 if _has_bottom_legend(_cd) else 40
-    disp = chart if _multi else alt.layer(chart, _brand_layer(_y_off))
-    st.altair_chart(disp, use_container_width=True)
-    png = _alt_png(disp.to_json())
+    # On-screen: the bare chart (no embedded footer → axes render undistorted).
+    st.altair_chart(chart, use_container_width=True)
+    # PNG only: embed the footer. Bottom-legend charts render the legend beneath
+    # the x-axis labels, so drop the footer onto the legend's row; otherwise it
+    # sits just below the labels.
+    if _multi:
+        _png_chart = chart
+    else:
+        _y_off = 66 if _has_bottom_legend(_cd) else 40
+        _png_chart = alt.layer(chart, _brand_layer(_y_off))
+    png = _alt_png(_png_chart.to_json())
     if png:
         _key = "dl_" + hashlib.md5(dl_name.encode()).hexdigest()[:12]
         _sp, _btn = st.columns([20, 1])
         with _btn:
             st.download_button("⬇", data=png, file_name=f"{dl_name}.png",
                                mime="image/png", key=_key, help="Save chart as PNG")
-    if _multi:
-        _chart_brand(brand_width)
+    # On-screen footer, under the chart, for every chart.
+    _chart_brand(brand_width)
 
 
 # Diverging gradient: a light tint near the 50% midline → the FULL brand colour
