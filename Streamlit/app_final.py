@@ -1398,75 +1398,55 @@ def _alt_png(spec_json: str):
 _BRAND_URL = "hockeyroi.streamlit.app"
 
 
-def _has_bottom_legend(obj) -> bool:
-    """True if the spec places a legend at the bottom — those charts need the
-    footer dropped further (onto the legend's row) so it clears the x-axis labels."""
-    if isinstance(obj, dict):
-        lg = obj.get("legend")
-        if isinstance(lg, dict) and lg.get("orient") == "bottom":
-            return True
-        return any(_has_bottom_legend(v) for v in obj.values())
-    if isinstance(obj, list):
-        return any(_has_bottom_legend(v) for v in obj)
-    return False
-
-
-def _brand_layer(y_off: int = 40):
-    """The HockeyROI footer drawn INSIDE the plot so it's part of the Save-as-PNG
-    image: a two-colour 'HockeyROI' wordmark anchored to the chart's BOTTOM-right,
-    with the site URL just to its left. Both sit in the bottom padding (y just below
-    the plot), right-aligned to the chart's right edge. y_off pushes the row down to
-    just below the x-axis labels (40), or onto the legend row when a bottom legend
-    would otherwise sit beneath the labels (66)."""
+def _brand_layer():
+    """The HockeyROI footer drawn INSIDE the plot, bottom-right, just ABOVE the
+    x-axis. Staying within the plot bounds (y < height) means it never distorts the
+    axes (Streamlit's 'fit' autosize only shrinks the plot for marks placed BELOW
+    it) and is never clipped — and it's part of the Save-as-PNG image. Two-colour
+    'HockeyROI' wordmark with the site URL just to its left; each glyph gets a white
+    halo (a white-outlined copy drawn behind) so it stays legible over dark bars as
+    well as on the white background. The two words abut at a shared anchor (Hockey
+    right-aligned, ROI left-aligned) so 'HockeyROI' has no gap whatever its width."""
     import altair as alt
     b = alt.Chart(pd.DataFrame([{"_": 0}]))
-    # Sit below the x-axis labels (clears even angled season labels) so the
-    # footer never overlaps them; autosize 'pad' grows the canvas to include it.
-    _y = alt.value(alt.ExprRef(f"height + {int(y_off)}"))
-    # Wordmark: abut the two words at a shared anchor (Hockey right-aligned, ROI
-    # left-aligned) so 'HockeyROI' has no gap regardless of rendered text width.
-    hockey = b.mark_text(align="right", baseline="top", fontSize=12, fontWeight="bold",
-                         color=_BRAND_DEEP).encode(
-        x=alt.value(alt.ExprRef("width - 27")), y=_y, text=alt.value("Hockey"))
-    roi = b.mark_text(align="left", baseline="top", fontSize=12, fontWeight="bold",
-                      color=_BRAND_ROI).encode(
-        x=alt.value(alt.ExprRef("width - 27")), y=_y, text=alt.value("ROI"))
-    # URL to the LEFT of the wordmark (the wordmark block is ~75px wide).
-    url = b.mark_text(align="right", baseline="top", fontSize=10,
-                      color="#7A8694").encode(
-        x=alt.value(alt.ExprRef("width - 84")), y=_y, text=alt.value(_BRAND_URL))
-    return alt.layer(url, hockey, roi)
+    _y = alt.value(alt.ExprRef("height - 6"))   # just above the x-axis line
+
+    def _word(text, x_expr, align, color, size):
+        x = alt.value(alt.ExprRef(x_expr))
+        halo = b.mark_text(align=align, baseline="bottom", fontSize=size, fontWeight="bold",
+                           color="white", stroke="white", strokeWidth=3, opacity=0.9).encode(
+            x=x, y=_y, text=alt.value(text))
+        fg = b.mark_text(align=align, baseline="bottom", fontSize=size, fontWeight="bold",
+                         color=color).encode(x=x, y=_y, text=alt.value(text))
+        return halo, fg
+
+    u_h, u_f = _word(_BRAND_URL, "width - 84", "right", "#7A8694", 10)   # URL, left of mark
+    h_h, h_f = _word("Hockey", "width - 27", "right", _BRAND_DEEP, 12)
+    r_h, r_f = _word("ROI", "width - 27", "left", _BRAND_ROI, 12)
+    # All halos first (behind), then the crisp coloured glyphs on top.
+    return alt.layer(u_h, h_h, r_h, u_f, h_f, r_f)
 
 
 def _show_chart(chart, dl_name: str, brand_width: int = None) -> None:
-    """Render an Altair chart + a 'Save PNG' download button. The HockeyROI
-    wordmark + site URL show as an HTML footer UNDER the on-screen chart (so they
-    never interact with Streamlit's 'fit' autosize and can't distort the axes),
-    and are embedded INSIDE the PNG export (vl-convert, 'pad' autosize) so the
-    download still carries them."""
+    """Render an Altair chart + a 'Save PNG' download button. Non-faceted charts
+    carry the two-colour HockeyROI wordmark + site URL embedded inside the plot
+    (bottom-right, just above the x-axis) so it shows on-screen AND in the PNG
+    without distorting the axes; faceted charts keep the HTML wordmark below."""
     import altair as alt
     import hashlib
     _cd = chart.to_dict()
     _multi = any(k in _cd for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
-    # On-screen: the bare chart (no embedded footer → axes render undistorted).
-    st.altair_chart(chart, use_container_width=True)
-    # PNG only: embed the footer. Bottom-legend charts render the legend beneath
-    # the x-axis labels, so drop the footer onto the legend's row; otherwise it
-    # sits just below the labels.
-    if _multi:
-        _png_chart = chart
-    else:
-        _y_off = 66 if _has_bottom_legend(_cd) else 40
-        _png_chart = alt.layer(chart, _brand_layer(_y_off))
-    png = _alt_png(_png_chart.to_json())
+    disp = chart if _multi else alt.layer(chart, _brand_layer())
+    st.altair_chart(disp, use_container_width=True)
+    png = _alt_png(disp.to_json())
     if png:
         _key = "dl_" + hashlib.md5(dl_name.encode()).hexdigest()[:12]
         _sp, _btn = st.columns([20, 1])
         with _btn:
             st.download_button("⬇", data=png, file_name=f"{dl_name}.png",
                                mime="image/png", key=_key, help="Save chart as PNG")
-    # On-screen footer, under the chart, for every chart.
-    _chart_brand(brand_width)
+    if _multi:
+        _chart_brand(brand_width)
 
 
 # Diverging gradient: a light tint near the 50% midline → the FULL brand colour
