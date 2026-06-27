@@ -1332,13 +1332,30 @@ def _chart_brand(width_px: int = None) -> None:
         unsafe_allow_html=True)
 
 
+def _brand_layer():
+    """A two-colour 'HockeyROI' wordmark anchored to the chart's top-right, drawn
+    INSIDE the plot so it's part of the image when you Save as PNG. 'ROI' sits at
+    the right edge; 'Hockey' just left of it (width − ~27px for 'ROI')."""
+    import altair as alt
+    b = alt.Chart(pd.DataFrame([{"_": 0}]))
+    common = dict(align="right", baseline="top", fontSize=12, fontWeight="bold")
+    hockey = b.mark_text(color=_BRAND_DEEP, **common).encode(
+        x=alt.value(alt.ExprRef("width - 27")), y=alt.value(3), text=alt.value("Hockey"))
+    roi = b.mark_text(color=_BRAND_ROI, **common).encode(
+        x=alt.value(alt.ExprRef("width")), y=alt.value(3), text=alt.value("ROI"))
+    return alt.layer(hockey, roi)
+
+
 def _show_chart(chart, dl_name: str, brand_width: int = None) -> None:
-    """Render an Altair chart + the HockeyROI wordmark. Downloads use the chart's
-    built-in hover menu (⋮ → Save as PNG), which exports the actual on-screen
-    render — a server-side re-render (vl-convert) can't match Streamlit's chart
-    theme or include the separate logo, so it's not used."""
-    st.altair_chart(chart, use_container_width=True)
-    _chart_brand(brand_width)
+    """Render an Altair chart with the HockeyROI wordmark embedded (so it's in the
+    saved PNG via ⋮ → Save as PNG). Faceted charts can't be layered, so they keep
+    the wordmark rendered just below instead."""
+    import altair as alt
+    if any(k in chart.to_dict() for k in ("facet", "hconcat", "vconcat", "concat", "repeat")):
+        st.altair_chart(chart, use_container_width=True)
+        _chart_brand(brand_width)
+    else:
+        st.altair_chart(alt.layer(chart, _brand_layer()), use_container_width=True)
 
 
 # Diverging gradient: a light tint near the 50% midline → the FULL brand colour
