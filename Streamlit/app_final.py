@@ -1369,9 +1369,14 @@ def _export_spec(spec_json: str) -> str:
     cfg = d.setdefault("config", {})
     cfg.setdefault("axis", {"gridColor": "#ececec", "tickColor": "#cccccc",
                             "labelColor": PALETTE["text"], "titleColor": PALETTE["text"]})
-    cfg.setdefault("axisY", {"domain": False, "ticks": False})   # no left axis line
+    cfg.setdefault("axisY", {})
     cfg.setdefault("axisX", {"domainColor": "#cccccc"})
     cfg.setdefault("view", {"stroke": "transparent"})
+    # Force the left y-axis line + ticks off (matches the on-screen chart). Must be
+    # forced, NOT setdefault: a layered/composed spec can already carry an axisY
+    # config, in which case setdefault would silently leave the domain line on.
+    cfg["axisY"]["domain"] = False
+    cfg["axisY"]["ticks"] = False
     # Force Inter everywhere text is drawn so the PNG matches the on-screen font.
     for _grp in ("axis", "axisX", "axisY", "legend", "header"):
         _g = cfg.setdefault(_grp, {})
