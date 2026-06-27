@@ -1640,9 +1640,9 @@ def _qg_combined_line(trend: pd.DataFrame) -> None:
                 scale=alt.Scale(domain=_qg_line_ydomain(long["value"]))),
         tooltip=["Season:N", "Series:N", alt.Tooltip("value:Q", format=".3f")],
         **_qg_line_encodings(series)).properties(height=320)
-    # The y-axis is zoomed, so the lines crowd the bottom — lift the footer well
-    # clear of the x-axis.
-    _show_chart(chart, dl_name="Quality-Games-line", brand_lift=46)
+    # The y-axis is zoomed, so the lines crowd the bottom — lift the footer clear
+    # of the x-axis (between the too-low 20 and the too-high 46).
+    _show_chart(chart, dl_name="Quality-Games-line", brand_lift=33)
 
 
 def _qg_line_chart_compare(players: dict) -> None:
