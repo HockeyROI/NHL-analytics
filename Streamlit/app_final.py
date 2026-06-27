@@ -1332,70 +1332,13 @@ def _chart_brand(width_px: int = None) -> None:
         unsafe_allow_html=True)
 
 
-try:
-    import vl_convert as _vlc            # PNG export backend (installed on deploy)
-    _HAS_VLC = True
-except Exception:
-    _HAS_VLC = False
-
-
-def _export_spec(spec_json: str) -> str:
-    """Make a Vega-Lite spec safe to render to a standalone PNG: add padding +
-    pad-autosize so nothing clips, give single-view charts an explicit width (the
-    on-screen 'container' width can't resolve outside a browser), and embed a
-    HockeyROI title so the brand is part of the saved image."""
-    import json
-    d = json.loads(spec_json)
-    _multi = any(k in d for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
-    d["padding"] = 22
-    if not _multi:
-        d["autosize"] = {"type": "pad", "contains": "padding"}
-        if d.get("width") in (None, "container"):
-            d["width"] = 680
-    d.setdefault("title", {"text": "HockeyROI", "anchor": "end", "orient": "bottom",
-                           "color": _BRAND_DEEP, "fontSize": 13, "fontWeight": "bold",
-                           "offset": 8})
-    return json.dumps(d)
-
-
-@st.cache_data(show_spinner=False, ttl=3600, max_entries=300)
-def _alt_png(spec_json: str):
-    """Render a Vega-Lite spec to PNG bytes (None if export unavailable)."""
-    if not _HAS_VLC:
-        return None
-    try:
-        return _vlc.vegalite_to_png(_export_spec(spec_json), scale=2)
-    except Exception:
-        return None
-
-
-def _brand_html(align: str = "left") -> str:
-    return (f"<div style='text-align:{align}; margin-top:0.3rem; font-weight:800; "
-            "font-size:0.95rem; letter-spacing:0.2px;'>"
-            f"<span style='color:{_BRAND_DEEP};'>Hockey</span>"
-            f"<span style='color:{_BRAND_ROI};'>ROI</span></div>")
-
-
 def _show_chart(chart, dl_name: str, brand_width: int = None) -> None:
-    """Render an Altair chart, then (when PNG export is available) a right-aligned
-    download icon next to the HockeyROI wordmark — the built-in chart toolbar is
-    hidden in that case (see inject_css). Falls back to the wordmark + the native
-    toolbar when vl-convert isn't installed."""
-    import hashlib
-    spec = chart.to_json()
+    """Render an Altair chart + the HockeyROI wordmark. Downloads use the chart's
+    built-in hover menu (⋮ → Save as PNG), which exports the actual on-screen
+    render — a server-side re-render (vl-convert) can't match Streamlit's chart
+    theme or include the separate logo, so it's not used."""
     st.altair_chart(chart, use_container_width=True)
-    png = _alt_png(spec)
-    if png:
-        _key = "dl_" + hashlib.md5(spec.encode()).hexdigest()[:12]
-        _sp, _dl, _br = st.columns([8, 1.0, 2.0])
-        with _dl:
-            st.download_button("⬇", data=png, file_name=f"{dl_name}.png",
-                               mime="image/png", key=_key, use_container_width=True,
-                               help="Download this chart as a PNG")
-        with _br:
-            st.markdown(_brand_html("left"), unsafe_allow_html=True)
-    else:
-        _chart_brand(brand_width)
+    _chart_brand(brand_width)
 
 
 # Diverging gradient: a light tint near the 50% midline → the FULL brand colour
@@ -1689,6 +1632,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
     if "Net Front Impact" in _show_fams:
         _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
+        _chart("NFI% (net-front share)", ["NFI%"])
     if "Quality Games" in _show_fams:
         _chart("Relative xG per 60 (RelxG%)", ["RelxG%"])
 
@@ -3510,19 +3454,14 @@ def main() -> None:
         initial_sidebar_state="collapsed",
     )
     inject_css()
-    if _HAS_VLC:   # download is via the icon under each chart → hide the Vega menu
-        st.markdown("<style>.vega-embed details, .vega-embed .vega-actions "
-                    "{display:none !important;}</style>", unsafe_allow_html=True)
     render_header()
     season_label, game_type = render_global_filters()
     st.caption("ℹ️ A **blank cell** anywhere on this page means that player or goalie "
                "fell below the metric's qualifying **sample-size** minimum for that "
                "scope — it's “not enough data”, not zero. **(UR)** beside a value means "
                "the same: shown but unranked.")
-    st.caption("📥 **Download any chart** as a PNG with the **⬇** icon beneath it "
-               "(next to the HockeyROI logo)." if _HAS_VLC else
-               "📥 **Download any chart:** hover it and use the **⋮** menu → **Save as "
-               "PNG**.")
+    st.caption("📥 **Download any chart:** hover over it and click the **⋮** menu in "
+               "its top-right corner → **Save as PNG** (exports it exactly as shown).")
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
 
     (player_list_tab, goalie_list_tab,
