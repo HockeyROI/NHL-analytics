@@ -1640,8 +1640,9 @@ def _qg_combined_line(trend: pd.DataFrame) -> None:
                 scale=alt.Scale(domain=_qg_line_ydomain(long["value"]))),
         tooltip=["Season:N", "Series:N", alt.Tooltip("value:Q", format=".3f")],
         **_qg_line_encodings(series)).properties(height=320)
-    # The y-axis is zoomed, so the lines crowd the bottom — lift the footer higher.
-    _show_chart(chart, dl_name="Quality-Games-line", brand_lift=20)
+    # The y-axis is zoomed, so the lines crowd the bottom — lift the footer well
+    # clear of the x-axis.
+    _show_chart(chart, dl_name="Quality-Games-line", brand_lift=46)
 
 
 def _qg_line_chart_compare(players: dict) -> None:
@@ -2039,6 +2040,11 @@ def render_players(season_label: str, game_type: str) -> None:
     # the leaderboard to just that player's detail.
     if player_sel is not None:
         st.session_state["_pl_drill"] = None     # an explicit search overrides a click
+        # Back button clears the search box (a selected selectbox value is a chip,
+        # not free text, so this is the clean way to reset it). Use a callback so
+        # the widget's state can be modified before the next run instantiates it.
+        st.button("← Back to leaderboard", key="pl_back_search",
+                  on_click=lambda: st.session_state.update(players_search=None))
         _drill(player_sel)
         return
     _drill_pid = st.session_state.get("_pl_drill")
