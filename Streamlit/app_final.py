@@ -1346,16 +1346,23 @@ def _brand_layer():
     return alt.layer(hockey, roi)
 
 
+# Chart menu: only the Save-as-PNG action (no SVG / source / Vega-editor items).
+_EMBED_OPTS = {"embedOptions": {"actions": {
+    "export": {"svg": False, "png": True}, "source": False,
+    "compiled": False, "editor": False}}}
+
+
 def _show_chart(chart, dl_name: str, brand_width: int = None) -> None:
     """Render an Altair chart with the HockeyROI wordmark embedded (so it's in the
-    saved PNG via ⋮ → Save as PNG). Faceted charts can't be layered, so they keep
-    the wordmark rendered just below instead."""
+    saved PNG via the menu → Save as PNG, the only menu action). Faceted charts
+    can't be layered, so they keep the wordmark rendered just below instead."""
     import altair as alt
     if any(k in chart.to_dict() for k in ("facet", "hconcat", "vconcat", "concat", "repeat")):
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart.properties(usermeta=_EMBED_OPTS), use_container_width=True)
         _chart_brand(brand_width)
     else:
-        st.altair_chart(alt.layer(chart, _brand_layer()), use_container_width=True)
+        st.altair_chart(alt.layer(chart, _brand_layer()).properties(usermeta=_EMBED_OPTS),
+                        use_container_width=True)
 
 
 # Diverging gradient: a light tint near the 50% midline → the FULL brand colour
@@ -3471,6 +3478,10 @@ def main() -> None:
         initial_sidebar_state="collapsed",
     )
     inject_css()
+    # Drop the chart "expand/fullscreen" toolbar button — downloads are via the
+    # chart menu's Save-as-PNG (the only menu action; see _EMBED_OPTS).
+    st.markdown("<style>[data-testid='StyledFullScreenButton']"
+                "{display:none !important;}</style>", unsafe_allow_html=True)
     render_header()
     season_label, game_type = render_global_filters()
     st.caption("ℹ️ A **blank cell** anywhere on this page means that player or goalie "
