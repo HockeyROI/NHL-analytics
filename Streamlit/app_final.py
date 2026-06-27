@@ -2231,7 +2231,13 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
         v = r.get(col)
         return "—" if pd.isna(v) else f"{v:+.2f}"
 
+    # Quality Games metrics first, then NFI family, Zone Impact, and TOI.
     items = [
+        ("NFI-QG%", _f("NFI_QG_pct", "pct")),
+        ("RelNFI-QG%", _f("RelNFI_QG_pct", "pct")),
+        ("xG-QG%", _f("xG_QG_pct", "pct")),
+        ("RelxG-QG%", _f("RelxG_QG_pct", "pct")),
+        ("RelxG%", _rel("RelxG_pct")),
         ("RelNFI%", _rel("RelNFI_pct")),
         ("RelNFI-A%", _rel("RelNFI_F_pct")),
         ("RelNFI-S%", _rel("RelNFI_A_pct")),
@@ -2241,17 +2247,14 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
         ("NZI", _f("NZI", "rate")),
         ("DZI", _f("DZI", "rate")),
         ("OZI", _f("OZI", "rate")),
-        ("RelNFI-QG%", _f("RelNFI_QG_pct", "pct")),
-        ("NFI-QG%", _f("NFI_QG_pct", "pct")),
-        ("RelxG%", _rel("RelxG_pct")),
-        ("RelxG-QG%", _f("RelxG_QG_pct", "pct")),
-        ("xG-QG%", _f("xG_QG_pct", "pct")),
         ("ES TOI (min)", _f("toi_min", "toi")),
     ]
     st.caption(f"**{r['player_name']} ({r['position']})** · pooled playoffs "
                "(2022-23 → 2024-25).")
-    _show_df(pd.DataFrame(items, columns=["Metric", "Value"]),
-                 width="stretch", hide_index=True)
+    # Horizontal layout: metrics as columns, a single value row (matches the rest
+    # of the app), rather than a tall two-column Metric/Value table.
+    hdf = pd.DataFrame([{m: v for m, v in items}])[[m for m, _ in items]]
+    _show_df(hdf, width="stretch", hide_index=True)
 
 
 # ---------------------------------------------------------------------------
