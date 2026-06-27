@@ -1401,7 +1401,9 @@ def _brand_layer():
     the plot), right-aligned to the chart's right edge."""
     import altair as alt
     b = alt.Chart(pd.DataFrame([{"_": 0}]))
-    _y = alt.value(alt.ExprRef("height + 16"))   # below the plot, in the bottom pad
+    # Sit below the x-axis labels (clears even angled season labels) so the
+    # footer never overlaps them; autosize 'pad' grows the canvas to include it.
+    _y = alt.value(alt.ExprRef("height + 40"))
     # Wordmark: abut the two words at a shared anchor (Hockey right-aligned, ROI
     # left-aligned) so 'HockeyROI' has no gap regardless of rendered text width.
     hockey = b.mark_text(align="right", baseline="top", fontSize=12, fontWeight="bold",
@@ -2009,8 +2011,10 @@ def render_players(season_label: str, game_type: str) -> None:
             _pos_label = "Defense only" if _is_d else "Forwards only"
             _rc = st.radio("Rank against", ["All skaters", _pos_label],
                            horizontal=True, key="players_rank_cohort")
+            # Drill-in is the full detail view: always show every chart/column
+            # (families=None), independent of the leaderboard's column toggle.
             _render_player_profile(int(pid), same_pos=(_rc != "All skaters"),
-                                   families=display_fams, team="__own__",
+                                   families=None, team="__own__",
                                    season_label=season_label)
 
     # Drill via the search box OR a clicked leaderboard row — either one collapses
