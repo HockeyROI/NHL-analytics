@@ -1398,7 +1398,7 @@ def _alt_png(spec_json: str):
 _BRAND_URL = "hockeyroi.streamlit.app"
 
 
-def _brand_layer():
+def _brand_layer(lift: int = 6):
     """The HockeyROI footer drawn INSIDE the plot, bottom-right, just ABOVE the
     x-axis. Staying within the plot bounds (y < height) means it never distorts the
     axes (Streamlit's 'fit' autosize only shrinks the plot for marks placed BELOW
@@ -1406,10 +1406,12 @@ def _brand_layer():
     'HockeyROI' wordmark with the site URL just to its left; each glyph gets a white
     halo (a white-outlined copy drawn behind) so it stays legible over dark bars as
     well as on the white background. The two words abut at a shared anchor (Hockey
-    right-aligned, ROI left-aligned) so 'HockeyROI' has no gap whatever its width."""
+    right-aligned, ROI left-aligned) so 'HockeyROI' has no gap whatever its width.
+    lift: pixels above the x-axis line (raise it on charts whose data crowds the
+    bottom, e.g. the zoomed Quality-Games 4-line chart)."""
     import altair as alt
     b = alt.Chart(pd.DataFrame([{"_": 0}]))
-    _y = alt.value(alt.ExprRef("height - 6"))   # just above the x-axis line
+    _y = alt.value(alt.ExprRef(f"height - {int(lift)}"))   # just above the x-axis line
 
     def _word(text, x_expr, align, color, size):
         x = alt.value(alt.ExprRef(x_expr))
@@ -1427,16 +1429,17 @@ def _brand_layer():
     return alt.layer(u_h, h_h, r_h, u_f, h_f, r_f)
 
 
-def _show_chart(chart, dl_name: str, brand_width: int = None) -> None:
+def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 6) -> None:
     """Render an Altair chart + a 'Save PNG' download button. Non-faceted charts
     carry the two-colour HockeyROI wordmark + site URL embedded inside the plot
     (bottom-right, just above the x-axis) so it shows on-screen AND in the PNG
-    without distorting the axes; faceted charts keep the HTML wordmark below."""
+    without distorting the axes; faceted charts keep the HTML wordmark below.
+    brand_lift raises the embedded footer when the chart's data crowds the bottom."""
     import altair as alt
     import hashlib
     _cd = chart.to_dict()
     _multi = any(k in _cd for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
-    disp = chart if _multi else alt.layer(chart, _brand_layer())
+    disp = chart if _multi else alt.layer(chart, _brand_layer(brand_lift))
     st.altair_chart(disp, use_container_width=True)
     png = _alt_png(disp.to_json())
     if png:
@@ -1632,7 +1635,8 @@ def _qg_combined_line(trend: pd.DataFrame) -> None:
                 scale=alt.Scale(domain=_qg_line_ydomain(long["value"]))),
         tooltip=["Season:N", "Series:N", alt.Tooltip("value:Q", format=".3f")],
         **_qg_line_encodings(series)).properties(height=320)
-    _show_chart(chart, dl_name="Quality-Games-line")
+    # The y-axis is zoomed, so the lines crowd the bottom — lift the footer higher.
+    _show_chart(chart, dl_name="Quality-Games-line", brand_lift=20)
 
 
 def _qg_line_chart_compare(players: dict) -> None:
