@@ -1232,7 +1232,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     rate_cols = ["NFI-A/60", "NFI-S/60"]
     zone_cols = ["NZI", "DZI", "OZI"]
     qg_cols = ["RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"]
-    metric_cols = [c for c in share_cols + rate_cols + zone_cols + qg_cols
+    metric_cols = [c for c in qg_cols + share_cols + rate_cols + zone_cols
                    if c in trend.columns]
     if families:   # narrow to the selected metric families
         _fam_of = {col: fam for fam, fcols in PLAYER_FAMILY_COLS.items() for col in fcols}
@@ -1603,18 +1603,20 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                       color=[_CHART_COLORS.get(c, _CHART_SECOND) for c in ys])
         _chart_brand()
 
-    # Scales differ across families — one chart per scale so none flattens.
-    # NFI% (0–1 absolute share) is split from the RelNFI family (points, ~±5).
-    # Charts follow the family filter (selected families only; none = all).
-    if "Net Front Impact" in _show_fams:
-        _chart("NFI% (share)", ["NFI%"])
-        _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
-               ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
-        _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
-    if "Zone Impact" in _show_fams:
-        _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
+    # Chart order (after the bar chart): QG 4-line, RelNFI family, Zone, raw
+    # net-front per-60, then relative xG. Each follows the family filter
+    # (selected families only; none selected = all). One chart per scale so none
+    # flattens.
     if "Quality Games" in _show_fams:
         _qg_combined_line(trend)
+    if "Net Front Impact" in _show_fams:
+        _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
+               ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
+    if "Zone Impact" in _show_fams:
+        _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
+    if "Net Front Impact" in _show_fams:
+        _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
+    if "Quality Games" in _show_fams:
         _chart("Relative xG per 60 (RelxG%)", ["RelxG%"])
 
 
@@ -1778,10 +1780,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
 # (display names, post-rename). Identity columns (Player/Pos/Team/GP/TOI) always
 # show.
 PLAYER_FAMILY_COLS = {
+    "Quality Games": ["RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"],
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
     "Zone Impact": ["NZI", "DZI", "OZI"],
-    "Quality Games": ["RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"],
 }
 
 
@@ -1955,9 +1957,10 @@ def render_players(season_label: str, game_type: str) -> None:
     # Always show the full column set (Compact view removed; Qual GP dropped).
     # NFI-A/60 / NFI-S/60 are RAW per-60 rates; RelNFI-A% / RelNFI-S% are the
     # relative (vs own-team) versions — both coexist, placed side by side.
-    cols = ["Player", "Pos", "Team", "GP", "TOI", "RelNFI%", "RelNFI-A%",
-            "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI",
-            "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"]
+    cols = ["Player", "Pos", "Team", "GP", "TOI",
+            "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
+            "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
+            "NZI", "DZI", "OZI"]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
