@@ -1335,8 +1335,18 @@ def _chart_brand(width_px: int = None) -> None:
 try:
     import vl_convert as _vlc            # PNG export backend (installed on deploy)
     _HAS_VLC = True
+    # Register the bundled Inter TTFs so the server-side PNG renders in the SAME
+    # font as the on-screen chart (Streamlit uses the Inter webfont; vl-convert
+    # has no system access, so without this it falls back to its default font).
+    try:
+        _vlc.register_font_directory(str(APP_DIR / "fonts"))
+    except Exception:
+        pass
 except Exception:
     _HAS_VLC = False
+
+# The font the PNG is rendered with — must match the on-screen UI font (Inter).
+_CHART_FONT = "Inter"
 
 
 def _export_spec(spec_json: str) -> str:
@@ -1347,7 +1357,7 @@ def _export_spec(spec_json: str) -> str:
     import json
     d = json.loads(spec_json)
     _multi = any(k in d for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
-    d["padding"] = {"left": 10, "top": 10, "right": 28, "bottom": 10}
+    d["padding"] = {"left": 10, "top": 10, "right": 28, "bottom": 18}
     if not _multi:
         d["autosize"] = {"type": "pad", "contains": "padding"}
         if d.get("width") in (None, "container"):
@@ -1358,6 +1368,15 @@ def _export_spec(spec_json: str) -> str:
     cfg.setdefault("axisY", {"domain": False, "ticks": False})   # no left axis line
     cfg.setdefault("axisX", {"domainColor": "#cccccc"})
     cfg.setdefault("view", {"stroke": "transparent"})
+    # Force Inter everywhere text is drawn so the PNG matches the on-screen font.
+    for _grp in ("axis", "axisX", "axisY", "legend", "header"):
+        _g = cfg.setdefault(_grp, {})
+        _g["labelFont"] = _CHART_FONT
+        _g["titleFont"] = _CHART_FONT
+    cfg.setdefault("title", {})["font"] = _CHART_FONT
+    cfg.setdefault("title", {})["subtitleFont"] = _CHART_FONT
+    cfg.setdefault("text", {})["font"] = _CHART_FONT   # mark_text (incl. wordmark/URL)
+    cfg["font"] = _CHART_FONT
     return json.dumps(d)
 
 
@@ -1372,22 +1391,30 @@ def _alt_png(spec_json: str):
         return None
 
 
+_BRAND_URL = "hockeyroi.streamlit.app"
+
+
 def _brand_layer():
-    """A two-colour 'HockeyROI' wordmark anchored to the chart's top-right, drawn
-    INSIDE the plot so it's part of the image when you Save as PNG. 'ROI' sits at
-    the right edge; 'Hockey' just left of it (width − ~27px for 'ROI')."""
+    """The HockeyROI footer drawn INSIDE the plot so it's part of the Save-as-PNG
+    image: a two-colour 'HockeyROI' wordmark anchored to the chart's BOTTOM-right,
+    with the site URL just to its left. Both sit in the bottom padding (y just below
+    the plot), right-aligned to the chart's right edge."""
     import altair as alt
     b = alt.Chart(pd.DataFrame([{"_": 0}]))
-    # Abut the two words at a shared anchor (Hockey right-aligned, ROI left-aligned)
-    # so 'HockeyROI' has no gap regardless of the rendered text width. No explicit
-    # font — inherit the chart's default so it matches on-screen.
+    _y = alt.value(alt.ExprRef("height + 16"))   # below the plot, in the bottom pad
+    # Wordmark: abut the two words at a shared anchor (Hockey right-aligned, ROI
+    # left-aligned) so 'HockeyROI' has no gap regardless of rendered text width.
     hockey = b.mark_text(align="right", baseline="top", fontSize=12, fontWeight="bold",
                          color=_BRAND_DEEP).encode(
-        x=alt.value(alt.ExprRef("width - 33")), y=alt.value(3), text=alt.value("Hockey"))
+        x=alt.value(alt.ExprRef("width - 27")), y=_y, text=alt.value("Hockey"))
     roi = b.mark_text(align="left", baseline="top", fontSize=12, fontWeight="bold",
                       color=_BRAND_ROI).encode(
-        x=alt.value(alt.ExprRef("width - 33")), y=alt.value(3), text=alt.value("ROI"))
-    return alt.layer(hockey, roi)
+        x=alt.value(alt.ExprRef("width - 27")), y=_y, text=alt.value("ROI"))
+    # URL to the LEFT of the wordmark (the wordmark block is ~75px wide).
+    url = b.mark_text(align="right", baseline="top", fontSize=10,
+                      color="#7A8694").encode(
+        x=alt.value(alt.ExprRef("width - 84")), y=_y, text=alt.value(_BRAND_URL))
+    return alt.layer(url, hockey, roi)
 
 
 def _show_chart(chart, dl_name: str, brand_width: int = None) -> None:
@@ -1954,6 +1981,8 @@ def render_players(season_label: str, game_type: str) -> None:
     # Metric-family toggles first, then the Team filter. Families start with none
     # selected (only the identity columns show); click a family to display it.
     fcol, tcol = st.columns([2.8, 1.0])
+    # Quality Games shows by default; the user can toggle other families on/off.
+    st.session_state.setdefault("players_display_seg", ["Quality Games"])
     with fcol:
         display_fams = st.segmented_control(
             "**Display a Metric Family**", list(PLAYER_FAMILY_COLS),
