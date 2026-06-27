@@ -1332,6 +1332,53 @@ def _chart_brand(width_px: int = None) -> None:
         unsafe_allow_html=True)
 
 
+try:
+    import vl_convert as _vlc            # PNG export backend (installed on deploy)
+    _HAS_VLC = True
+except Exception:
+    _HAS_VLC = False
+
+
+@st.cache_data(show_spinner=False, ttl=3600, max_entries=300)
+def _alt_png(spec_json: str):
+    """Render a Vega-Lite spec to PNG bytes (None if export unavailable)."""
+    if not _HAS_VLC:
+        return None
+    try:
+        return _vlc.vegalite_to_png(spec_json, scale=2)
+    except Exception:
+        return None
+
+
+def _brand_html(align: str = "left") -> str:
+    return (f"<div style='text-align:{align}; margin-top:0.3rem; font-weight:800; "
+            "font-size:0.95rem; letter-spacing:0.2px;'>"
+            f"<span style='color:{_BRAND_DEEP};'>Hockey</span>"
+            f"<span style='color:{_BRAND_ROI};'>ROI</span></div>")
+
+
+def _show_chart(chart, dl_name: str, brand_width: int = None) -> None:
+    """Render an Altair chart, then (when PNG export is available) a right-aligned
+    download icon next to the HockeyROI wordmark — the built-in chart toolbar is
+    hidden in that case (see inject_css). Falls back to the wordmark + the native
+    toolbar when vl-convert isn't installed."""
+    import hashlib
+    spec = chart.to_json()
+    st.altair_chart(chart, use_container_width=True)
+    png = _alt_png(spec)
+    if png:
+        _key = "dl_" + hashlib.md5(spec.encode()).hexdigest()[:12]
+        _sp, _dl, _br = st.columns([8, 1.0, 2.0])
+        with _dl:
+            st.download_button("⬇", data=png, file_name=f"{dl_name}.png",
+                               mime="image/png", key=_key, use_container_width=True,
+                               help="Download this chart as a PNG")
+        with _br:
+            st.markdown(_brand_html("left"), unsafe_allow_html=True)
+    else:
+        _chart_brand(brand_width)
+
+
 # Diverging gradient: a light tint near the 50% midline → the FULL brand colour
 # further out (blue navy above 50%, brand orange below) — same colours as the
 # solid version, just softened toward the middle.
@@ -1410,8 +1457,7 @@ def _qg_bar_chart(vals: dict, label: str) -> None:
         tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
-    st.altair_chart(bars + rule, use_container_width=True)
-    _chart_brand()
+    _show_chart(bars + rule, dl_name=f"QG-bars-{label}")
 
 
 def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
@@ -1451,9 +1497,8 @@ def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
     chart = alt.layer(bars, rule).properties(width=_w, height=300).facet(
         column=alt.Column("Player:N", title=None,
                           header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
-    st.altair_chart(chart, use_container_width=True)
-    # Align the wordmark under the chart's right edge (≈ panel widths + spacing).
-    _chart_brand(width_px=_w * _n + 24 * (_n - 1) + 55)
+    _show_chart(chart, dl_name="Trade-QG-bars",
+                brand_width=_w * _n + 24 * (_n - 1) + 55)
 
 
 # Quality-Games line series: display name, colour, and dash per metric. NFI
@@ -1517,8 +1562,7 @@ def _qg_combined_line(trend: pd.DataFrame) -> None:
                 scale=alt.Scale(domain=_qg_line_ydomain(long["value"]))),
         tooltip=["Season:N", "Series:N", alt.Tooltip("value:Q", format=".3f")],
         **_qg_line_encodings(series)).properties(height=320)
-    st.altair_chart(chart, use_container_width=True)
-    _chart_brand()
+    _show_chart(chart, dl_name="Quality-Games-line")
 
 
 def _qg_line_chart_compare(players: dict) -> None:
@@ -1547,8 +1591,8 @@ def _qg_line_chart_compare(players: dict) -> None:
         **_qg_line_encodings(series)).properties(width=_w, height=280)
     chart = base.facet(column=alt.Column("Player:N", title=None,
                        header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
-    st.altair_chart(chart, use_container_width=True)
-    _chart_brand(width_px=_w * _n + 24 * (_n - 1) + 55)
+    _show_chart(chart, dl_name="Trade-QG-line",
+                brand_width=_w * _n + 24 * (_n - 1) + 55)
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
@@ -1595,13 +1639,23 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
     st.caption("↕ Click a different year (or the 2yr row) above to change the bars.")
 
     def _chart(title: str, cols: list[str]) -> None:
+        import altair as alt
         ys = [c for c in cols if c in trend.columns and trend[c].notna().any()]
         if not ys:
             return
         st.caption(title)
-        st.line_chart(trend.set_index("Season")[ys],
-                      color=[_CHART_COLORS.get(c, _CHART_SECOND) for c in ys])
-        _chart_brand()
+        long = (trend[["Season"] + ys].melt("Season", var_name="Metric",
+                value_name="value").dropna(subset=["value"]))
+        ch = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
+            x=alt.X("Season:N", title=None),
+            y=alt.Y("value:Q", title=None),
+            color=alt.Color("Metric:N", sort=ys, legend=alt.Legend(
+                orient="bottom", title=None, symbolType="stroke", symbolStrokeWidth=2.5),
+                scale=alt.Scale(domain=ys,
+                                range=[_CHART_COLORS.get(c, _CHART_SECOND) for c in ys])),
+            tooltip=["Season:N", "Metric:N", alt.Tooltip("value:Q", format=".2f")]
+            ).properties(height=300)
+        _show_chart(ch, dl_name=title.split(" (")[0].replace(" ", "-"))
 
     # Chart order (after the bar chart): QG 4-line, RelNFI family, Zone, raw
     # net-front per-60, then relative xG. Each follows the family filter
@@ -2619,18 +2673,28 @@ def _render_goalie_profile(gid: int) -> None:
     # QNFS%/GQG% are percentages (~0–100). On a single shared axis the rate
     # collapses to a flat line near zero, so the rate gets its own chart and the
     # two percentages share one.
-    if "NFI-GSAx/60" in trend.columns and trend["NFI-GSAx/60"].notna().any():
-        st.caption("NFI-GSAx per 60")
-        st.line_chart(trend.set_index("Season")[["NFI-GSAx/60"]],
-                      color=[_CHART_COLORS.get("NFI-GSAx/60", _CHART_SECOND)])
-        _chart_brand()
-    pct = [c for c in ("QNFS%", "GQG%")
-           if c in trend.columns and trend[c].notna().any()]
-    if pct:
-        st.caption("Consistency % (QNFS%, GQG%)")
-        st.line_chart(trend.set_index("Season")[pct],
-                      color=[_CHART_COLORS.get(c, _CHART_SECOND) for c in pct])
-        _chart_brand()
+    import altair as alt
+
+    def _gchart(title, ys):
+        ys = [c for c in ys if c in trend.columns and trend[c].notna().any()]
+        if not ys:
+            return
+        st.caption(title)
+        long = (trend[["Season"] + ys].melt("Season", var_name="Metric",
+                value_name="value").dropna(subset=["value"]))
+        ch = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
+            x=alt.X("Season:N", title=None),
+            y=alt.Y("value:Q", title=None),
+            color=alt.Color("Metric:N", sort=ys, legend=alt.Legend(
+                orient="bottom", title=None, symbolType="stroke", symbolStrokeWidth=2.5),
+                scale=alt.Scale(domain=ys,
+                                range=[_CHART_COLORS.get(c, _CHART_SECOND) for c in ys])),
+            tooltip=["Season:N", "Metric:N", alt.Tooltip("value:Q", format=".3f")]
+            ).properties(height=300)
+        _show_chart(ch, dl_name=title.split(" (")[0].replace(" ", "-"))
+
+    _gchart("NFI-GSAx per 60", ["NFI-GSAx/60"])
+    _gchart("Consistency % (QNFS%, GQG%)", ["QNFS%", "GQG%"])
 
 
 def _wilson(k: float, n: float, lower: bool = True, z: float = 1.96) -> float:
@@ -3427,14 +3491,19 @@ def main() -> None:
         initial_sidebar_state="collapsed",
     )
     inject_css()
+    if _HAS_VLC:   # download is via the icon under each chart → hide the Vega menu
+        st.markdown("<style>.vega-embed details, .vega-embed .vega-actions "
+                    "{display:none !important;}</style>", unsafe_allow_html=True)
     render_header()
     season_label, game_type = render_global_filters()
     st.caption("ℹ️ A **blank cell** anywhere on this page means that player or goalie "
                "fell below the metric's qualifying **sample-size** minimum for that "
                "scope — it's “not enough data”, not zero. **(UR)** beside a value means "
                "the same: shown but unranked.")
-    st.caption("📥 **Download any chart:** hover over it and click the **⋮** menu in "
-               "its top-right corner → **Save as PNG** (or SVG).")
+    st.caption("📥 **Download any chart** as a PNG with the **⬇** icon beneath it "
+               "(next to the HockeyROI logo)." if _HAS_VLC else
+               "📥 **Download any chart:** hover it and use the **⋮** menu → **Save as "
+               "PNG**.")
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
 
     (player_list_tab, goalie_list_tab,
