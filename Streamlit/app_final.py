@@ -3430,6 +3430,8 @@ def main() -> None:
                "fell below the metric's qualifying **sample-size** minimum for that "
                "scope — it's “not enough data”, not zero. **(UR)** beside a value means "
                "the same: shown but unranked.")
+    st.caption("📥 **Download any chart:** hover over it and click the **⋮** menu in "
+               "its top-right corner → **Save as PNG** (or SVG).")
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
 
     (player_list_tab, goalie_list_tab,
