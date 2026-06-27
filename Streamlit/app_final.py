@@ -1352,16 +1352,11 @@ def _export_spec(spec_json: str) -> str:
         d["autosize"] = {"type": "pad", "contains": "padding"}
         if d.get("width") in (None, "container"):
             d["width"] = 860
-    _font = "Helvetica, Arial, sans-serif"
     cfg = d.setdefault("config", {})
     cfg.setdefault("axis", {"gridColor": "#ececec", "tickColor": "#cccccc",
-                            "labelColor": PALETTE["text"], "titleColor": PALETTE["text"],
-                            "labelFont": _font, "titleFont": _font})
+                            "labelColor": PALETTE["text"], "titleColor": PALETTE["text"]})
     cfg.setdefault("axisY", {"domain": False, "ticks": False})   # no left axis line
     cfg.setdefault("axisX", {"domainColor": "#cccccc"})
-    cfg.setdefault("legend", {"labelFont": _font, "titleFont": _font})
-    cfg.setdefault("title", {"font": _font})
-    cfg.setdefault("text", {"font": _font})
     cfg.setdefault("view", {"stroke": "transparent"})
     return json.dumps(d)
 
@@ -1383,12 +1378,15 @@ def _brand_layer():
     the right edge; 'Hockey' just left of it (width − ~27px for 'ROI')."""
     import altair as alt
     b = alt.Chart(pd.DataFrame([{"_": 0}]))
-    common = dict(align="right", baseline="top", fontSize=12, fontWeight="bold",
-                  font="Helvetica, Arial, sans-serif")
-    hockey = b.mark_text(color=_BRAND_DEEP, **common).encode(
-        x=alt.value(alt.ExprRef("width - 32")), y=alt.value(3), text=alt.value("Hockey"))
-    roi = b.mark_text(color=_BRAND_ROI, **common).encode(
-        x=alt.value(alt.ExprRef("width - 5")), y=alt.value(3), text=alt.value("ROI"))
+    # Abut the two words at a shared anchor (Hockey right-aligned, ROI left-aligned)
+    # so 'HockeyROI' has no gap regardless of the rendered text width. No explicit
+    # font — inherit the chart's default so it matches on-screen.
+    hockey = b.mark_text(align="right", baseline="top", fontSize=12, fontWeight="bold",
+                         color=_BRAND_DEEP).encode(
+        x=alt.value(alt.ExprRef("width - 33")), y=alt.value(3), text=alt.value("Hockey"))
+    roi = b.mark_text(align="left", baseline="top", fontSize=12, fontWeight="bold",
+                      color=_BRAND_ROI).encode(
+        x=alt.value(alt.ExprRef("width - 33")), y=alt.value(3), text=alt.value("ROI"))
     return alt.layer(hockey, roi)
 
 
