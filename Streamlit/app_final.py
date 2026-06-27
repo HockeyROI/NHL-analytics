@@ -1394,16 +1394,31 @@ def _alt_png(spec_json: str):
 _BRAND_URL = "hockeyroi.streamlit.app"
 
 
-def _brand_layer():
+def _has_bottom_legend(obj) -> bool:
+    """True if the spec places a legend at the bottom — those charts need the
+    footer dropped further (onto the legend's row) so it clears the x-axis labels."""
+    if isinstance(obj, dict):
+        lg = obj.get("legend")
+        if isinstance(lg, dict) and lg.get("orient") == "bottom":
+            return True
+        return any(_has_bottom_legend(v) for v in obj.values())
+    if isinstance(obj, list):
+        return any(_has_bottom_legend(v) for v in obj)
+    return False
+
+
+def _brand_layer(y_off: int = 40):
     """The HockeyROI footer drawn INSIDE the plot so it's part of the Save-as-PNG
     image: a two-colour 'HockeyROI' wordmark anchored to the chart's BOTTOM-right,
     with the site URL just to its left. Both sit in the bottom padding (y just below
-    the plot), right-aligned to the chart's right edge."""
+    the plot), right-aligned to the chart's right edge. y_off pushes the row down to
+    just below the x-axis labels (40), or onto the legend row when a bottom legend
+    would otherwise sit beneath the labels (66)."""
     import altair as alt
     b = alt.Chart(pd.DataFrame([{"_": 0}]))
     # Sit below the x-axis labels (clears even angled season labels) so the
     # footer never overlaps them; autosize 'pad' grows the canvas to include it.
-    _y = alt.value(alt.ExprRef("height + 40"))
+    _y = alt.value(alt.ExprRef(f"height + {int(y_off)}"))
     # Wordmark: abut the two words at a shared anchor (Hockey right-aligned, ROI
     # left-aligned) so 'HockeyROI' has no gap regardless of rendered text width.
     hockey = b.mark_text(align="right", baseline="top", fontSize=12, fontWeight="bold",
@@ -1426,8 +1441,12 @@ def _show_chart(chart, dl_name: str, brand_width: int = None) -> None:
     sized, and lightly styled to match the on-screen chart."""
     import altair as alt
     import hashlib
-    _multi = any(k in chart.to_dict() for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
-    disp = chart if _multi else alt.layer(chart, _brand_layer())
+    _cd = chart.to_dict()
+    _multi = any(k in _cd for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
+    # Bottom-legend charts render the legend beneath the x-axis labels, so drop
+    # the footer onto the legend's row; otherwise it sits just below the labels.
+    _y_off = 66 if _has_bottom_legend(_cd) else 40
+    disp = chart if _multi else alt.layer(chart, _brand_layer(_y_off))
     st.altair_chart(disp, use_container_width=True)
     png = _alt_png(disp.to_json())
     if png:
