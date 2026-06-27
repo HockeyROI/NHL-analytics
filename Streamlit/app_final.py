@@ -1332,6 +1332,45 @@ def _chart_brand(width_px: int = None) -> None:
         unsafe_allow_html=True)
 
 
+try:
+    import vl_convert as _vlc            # PNG export backend (installed on deploy)
+    _HAS_VLC = True
+except Exception:
+    _HAS_VLC = False
+
+
+def _export_spec(spec_json: str) -> str:
+    """Make a Vega-Lite spec render to a clean standalone PNG: padding + pad-
+    autosize so nothing clips, an explicit width for single-view charts (the
+    on-screen 'container' width can't resolve headless), and a light axis/view
+    config so it doesn't get the default Vega axis box."""
+    import json
+    d = json.loads(spec_json)
+    _multi = any(k in d for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
+    d["padding"] = 22
+    if not _multi:
+        d["autosize"] = {"type": "pad", "contains": "padding"}
+        if d.get("width") in (None, "container"):
+            d["width"] = 860
+    cfg = d.setdefault("config", {})
+    cfg.setdefault("axis", {"domainColor": "#cccccc", "gridColor": "#ececec",
+                            "tickColor": "#cccccc", "labelColor": PALETTE["text"],
+                            "titleColor": PALETTE["text"]})
+    cfg.setdefault("view", {"stroke": "transparent"})
+    return json.dumps(d)
+
+
+@st.cache_data(show_spinner=False, ttl=3600, max_entries=300)
+def _alt_png(spec_json: str):
+    """Vega-Lite spec → PNG bytes (None if export unavailable)."""
+    if not _HAS_VLC:
+        return None
+    try:
+        return _vlc.vegalite_to_png(_export_spec(spec_json), scale=2)
+    except Exception:
+        return None
+
+
 def _brand_layer():
     """A two-colour 'HockeyROI' wordmark anchored to the chart's top-right, drawn
     INSIDE the plot so it's part of the image when you Save as PNG. 'ROI' sits at
@@ -1346,23 +1385,25 @@ def _brand_layer():
     return alt.layer(hockey, roi)
 
 
-# Chart menu: only the Save-as-PNG action (no SVG / source / Vega-editor items).
-_EMBED_OPTS = {"embedOptions": {"actions": {
-    "export": {"svg": False, "png": True}, "source": False,
-    "compiled": False, "editor": False}}}
-
-
 def _show_chart(chart, dl_name: str, brand_width: int = None) -> None:
-    """Render an Altair chart with the HockeyROI wordmark embedded (so it's in the
-    saved PNG via the menu → Save as PNG, the only menu action). Faceted charts
-    can't be layered, so they keep the wordmark rendered just below instead."""
+    """Render an Altair chart + a 'Save PNG' download button. Non-faceted charts
+    carry the two-colour HockeyROI wordmark embedded in the plot (so it's in the
+    PNG); faceted charts keep the wordmark below. The PNG (vl-convert) is padded,
+    sized, and lightly styled to match the on-screen chart."""
     import altair as alt
-    if any(k in chart.to_dict() for k in ("facet", "hconcat", "vconcat", "concat", "repeat")):
-        st.altair_chart(chart.properties(usermeta=_EMBED_OPTS), use_container_width=True)
+    import hashlib
+    _multi = any(k in chart.to_dict() for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
+    disp = chart if _multi else alt.layer(chart, _brand_layer())
+    st.altair_chart(disp, use_container_width=True)
+    png = _alt_png(disp.to_json())
+    if png:
+        _key = "dl_" + hashlib.md5(dl_name.encode()).hexdigest()[:12]
+        _sp, _btn = st.columns([6, 1.5])
+        with _btn:
+            st.download_button("⬇ Save PNG", data=png, file_name=f"{dl_name}.png",
+                               mime="image/png", key=_key, use_container_width=True)
+    if _multi:
         _chart_brand(brand_width)
-    else:
-        st.altair_chart(alt.layer(chart, _brand_layer()).properties(usermeta=_EMBED_OPTS),
-                        use_container_width=True)
 
 
 # Diverging gradient: a light tint near the 50% midline → the FULL brand colour
@@ -3478,10 +3519,13 @@ def main() -> None:
         initial_sidebar_state="collapsed",
     )
     inject_css()
-    # Drop the chart "expand/fullscreen" toolbar button — downloads are via the
-    # chart menu's Save-as-PNG (the only menu action; see _EMBED_OPTS).
-    st.markdown("<style>[data-testid='StyledFullScreenButton']"
-                "{display:none !important;}</style>", unsafe_allow_html=True)
+    # Charts use the '⬇ Save PNG' button, so drop the chart fullscreen button
+    # (scoped to charts — data tables keep their toolbar) and the Vega menu.
+    _css = ("[data-testid='stElementContainer']:has([data-testid='stVegaLiteChart']) "
+            "[data-testid='StyledFullScreenButton']{display:none !important;}")
+    if _HAS_VLC:
+        _css += ".vega-embed details,.vega-embed .vega-actions{display:none !important;}"
+    st.markdown(f"<style>{_css}</style>", unsafe_allow_html=True)
     render_header()
     season_label, game_type = render_global_filters()
     st.caption("ℹ️ A **blank cell** anywhere on this page means that player or goalie "
