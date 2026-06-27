@@ -1231,7 +1231,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     share_cols = ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%"]
     rate_cols = ["NFI-A/60", "NFI-S/60"]
     zone_cols = ["NZI", "DZI", "OZI"]
-    qg_cols = ["RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"]
+    qg_cols = ["xG-QG%", "RelxG-QG%", "RelxG%", "NFI-QG%", "RelNFI-QG%"]
     metric_cols = [c for c in qg_cols + share_cols + rate_cols + zone_cols
                    if c in trend.columns]
     if families:   # narrow to the selected metric families
@@ -1339,13 +1339,32 @@ except Exception:
     _HAS_VLC = False
 
 
+def _export_spec(spec_json: str) -> str:
+    """Make a Vega-Lite spec safe to render to a standalone PNG: add padding +
+    pad-autosize so nothing clips, give single-view charts an explicit width (the
+    on-screen 'container' width can't resolve outside a browser), and embed a
+    HockeyROI title so the brand is part of the saved image."""
+    import json
+    d = json.loads(spec_json)
+    _multi = any(k in d for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
+    d["padding"] = 22
+    if not _multi:
+        d["autosize"] = {"type": "pad", "contains": "padding"}
+        if d.get("width") in (None, "container"):
+            d["width"] = 680
+    d.setdefault("title", {"text": "HockeyROI", "anchor": "end", "orient": "bottom",
+                           "color": _BRAND_DEEP, "fontSize": 13, "fontWeight": "bold",
+                           "offset": 8})
+    return json.dumps(d)
+
+
 @st.cache_data(show_spinner=False, ttl=3600, max_entries=300)
 def _alt_png(spec_json: str):
     """Render a Vega-Lite spec to PNG bytes (None if export unavailable)."""
     if not _HAS_VLC:
         return None
     try:
-        return _vlc.vegalite_to_png(spec_json, scale=2)
+        return _vlc.vegalite_to_png(_export_spec(spec_json), scale=2)
     except Exception:
         return None
 
@@ -1834,7 +1853,7 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
 # (display names, post-rename). Identity columns (Player/Pos/Team/GP/TOI) always
 # show.
 PLAYER_FAMILY_COLS = {
-    "Quality Games": ["RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"],
+    "Quality Games": ["xG-QG%", "RelxG-QG%", "RelxG%", "NFI-QG%", "RelNFI-QG%"],
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
     "Zone Impact": ["NZI", "DZI", "OZI"],
@@ -2012,7 +2031,7 @@ def render_players(season_label: str, game_type: str) -> None:
     # NFI-A/60 / NFI-S/60 are RAW per-60 rates; RelNFI-A% / RelNFI-S% are the
     # relative (vs own-team) versions — both coexist, placed side by side.
     cols = ["Player", "Pos", "Team", "GP", "TOI",
-            "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
+            "xG-QG%", "RelxG-QG%", "RelxG%", "NFI-QG%", "RelNFI-QG%",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "NZI", "DZI", "OZI"]
     # Zone now populates for single seasons too (per-season files), so it is no
