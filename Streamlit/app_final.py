@@ -1405,31 +1405,32 @@ _BRAND_URL = "hockeyroi.streamlit.app"
 
 def _brand_layer(lift: int = 6):
     """The HockeyROI footer drawn INSIDE the plot, bottom-right, just ABOVE the
-    x-axis. Staying within the plot bounds (y < height) means it never distorts the
-    axes (Streamlit's 'fit' autosize only shrinks the plot for marks placed BELOW
-    it) and is never clipped — and it's part of the Save-as-PNG image. Two-colour
-    'HockeyROI' wordmark with the site URL just to its left; each glyph gets a white
-    halo (a white-outlined copy drawn behind) so it stays legible over dark bars as
-    well as on the white background. The two words abut at a shared anchor (Hockey
-    right-aligned, ROI left-aligned) so 'HockeyROI' has no gap whatever its width.
-    lift: pixels above the x-axis line (raise it on charts whose data crowds the
-    bottom, e.g. the zoomed Quality-Games 4-line chart)."""
+    x-axis, as two stacked right-aligned lines: the two-colour 'HockeyROI' wordmark
+    on top, the site URL beneath it. Staying within the plot bounds (y < height)
+    means it never distorts the axes (Streamlit's 'fit' autosize only shrinks the
+    plot for marks placed BELOW it) and is never clipped — and it's part of the
+    Save-as-PNG image. Each glyph gets a white halo (a white-outlined copy drawn
+    behind) so it stays legible over dark bars as well as on the white background.
+    The wordmark's two words abut at a shared anchor (Hockey right-aligned, ROI
+    left-aligned) so 'HockeyROI' has no gap whatever its width. lift: pixels the
+    URL (bottom line) sits above the x-axis; the wordmark rides one line higher."""
     import altair as alt
     b = alt.Chart(pd.DataFrame([{"_": 0}]))
-    _y = alt.value(alt.ExprRef(f"height - {int(lift)}"))   # just above the x-axis line
+    _y_url = alt.value(alt.ExprRef(f"height - {int(lift)}"))        # bottom line: URL
+    _y_mark = alt.value(alt.ExprRef(f"height - {int(lift) + 14}"))  # line above: wordmark
 
-    def _word(text, x_expr, align, color, size):
+    def _word(text, x_expr, align, color, size, yv):
         x = alt.value(alt.ExprRef(x_expr))
         halo = b.mark_text(align=align, baseline="bottom", fontSize=size, fontWeight="bold",
                            color="white", stroke="white", strokeWidth=3, opacity=0.9).encode(
-            x=x, y=_y, text=alt.value(text))
+            x=x, y=yv, text=alt.value(text))
         fg = b.mark_text(align=align, baseline="bottom", fontSize=size, fontWeight="bold",
-                         color=color).encode(x=x, y=_y, text=alt.value(text))
+                         color=color).encode(x=x, y=yv, text=alt.value(text))
         return halo, fg
 
-    u_h, u_f = _word(_BRAND_URL, "width - 84", "right", "#7A8694", 10)   # URL, left of mark
-    h_h, h_f = _word("Hockey", "width - 27", "right", _BRAND_DEEP, 12)
-    r_h, r_f = _word("ROI", "width - 27", "left", _BRAND_ROI, 12)
+    h_h, h_f = _word("Hockey", "width - 27", "right", _BRAND_DEEP, 12, _y_mark)
+    r_h, r_f = _word("ROI", "width - 27", "left", _BRAND_ROI, 12, _y_mark)
+    u_h, u_f = _word(_BRAND_URL, "width", "right", "#7A8694", 10, _y_url)  # under the mark
     # All halos first (behind), then the crisp coloured glyphs on top.
     return alt.layer(u_h, h_h, r_h, u_f, h_f, r_f)
 
