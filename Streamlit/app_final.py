@@ -1320,19 +1320,19 @@ _BRAND_ROI = PALETTE["orange"]   # "ROI" — brand orange (#FF6B35)
 
 
 def _chart_brand(width_px: int = None) -> None:
-    """HockeyROI footer rendered just under a chart: the site URL (grey) then the
-    two-colour wordmark (Hockey deep-navy, ROI orange), right-aligned. width_px
-    caps the block so it sits under the chart's right edge (for fixed-width faceted
-    charts) rather than the far container edge."""
+    """HockeyROI footer rendered just under a (faceted) chart, stacked to match the
+    embedded version: the two-colour wordmark (Hockey deep-navy, ROI orange) on top,
+    the site URL beneath it, right-aligned. width_px caps the block so it sits under
+    the chart's right edge (for fixed-width faceted charts) rather than the far
+    container edge."""
     _w = f"max-width:{int(width_px)}px; " if width_px else ""
     st.markdown(
-        f"<div style='{_w}text-align:right; margin:-0.3rem 0 0.6rem 0; "
-        "letter-spacing:0.2px;'>"
-        f"<span style='color:#7A8694; font-size:0.78rem; "
-        f"margin-right:9px; vertical-align:middle;'>{_BRAND_URL}</span>"
-        "<span style='font-weight:800; font-size:0.95rem; vertical-align:middle;'>"
+        f"<div style='{_w}text-align:right; margin:-0.3rem 0 0.5rem 0; "
+        "line-height:1.05; letter-spacing:0.2px;'>"
+        "<div style='font-weight:800; font-size:0.95rem;'>"
         f"<span style='color:{_BRAND_DEEP};'>Hockey</span>"
-        f"<span style='color:{_BRAND_ROI};'>ROI</span></span></div>",
+        f"<span style='color:{_BRAND_ROI};'>ROI</span></div>"
+        f"<div style='color:#7A8694; font-size:0.78rem;'>{_BRAND_URL}</div></div>",
         unsafe_allow_html=True)
 
 
@@ -1413,7 +1413,9 @@ def _brand_layer(lift: int = 6):
     behind) so it stays legible over dark bars as well as on the white background.
     The wordmark's two words abut at a shared anchor (Hockey right-aligned, ROI
     left-aligned) so 'HockeyROI' has no gap whatever its width. lift: pixels the
-    URL (bottom line) sits above the x-axis; the wordmark rides one line higher."""
+    URL (bottom line) sits above the x-axis; the wordmark rides one line higher.
+    (Faceted charts can't embed this — value-positioned marks don't resolve to a
+    panel's coordinates — so they use the stacked HTML footer in _chart_brand.)"""
     import altair as alt
     b = alt.Chart(pd.DataFrame([{"_": 0}]))
     _y_url = alt.value(alt.ExprRef(f"height - {int(lift)}"))        # bottom line: URL
@@ -1439,14 +1441,19 @@ def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 
     """Render an Altair chart + a 'Save PNG' download button. Non-faceted charts
     carry the two-colour HockeyROI wordmark + site URL embedded inside the plot
     (bottom-right, just above the x-axis) so it shows on-screen AND in the PNG
-    without distorting the axes; faceted charts keep the HTML wordmark below.
-    brand_lift raises the embedded footer when the chart's data crowds the bottom."""
+    without distorting the axes. Faceted charts can't embed it, so they show the
+    same stacked wordmark + URL as an HTML footer right under the chart (above the
+    Save button). brand_lift raises the embedded footer when data crowds the bottom."""
     import altair as alt
     import hashlib
     _cd = chart.to_dict()
     _multi = any(k in _cd for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
     disp = chart if _multi else alt.layer(chart, _brand_layer(brand_lift))
     st.altair_chart(disp, use_container_width=True)
+    # Faceted charts: stacked HTML wordmark + URL directly under the chart (before
+    # the Save button) so it sits right beneath the plot, matching the single charts.
+    if _multi:
+        _chart_brand(brand_width)
     png = _alt_png(disp.to_json())
     if png:
         _key = "dl_" + hashlib.md5(dl_name.encode()).hexdigest()[:12]
@@ -1454,8 +1461,6 @@ def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 
         with _btn:
             st.download_button("⬇", data=png, file_name=f"{dl_name}.png",
                                mime="image/png", key=_key, help="Save chart as PNG")
-    if _multi:
-        _chart_brand(brand_width)
 
 
 # Diverging gradient: a light tint near the 50% midline → the FULL brand colour
