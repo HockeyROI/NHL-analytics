@@ -1525,9 +1525,10 @@ def _qg_bar_chart(vals: dict, label: str) -> None:
     _dom = _qg_axis_domain([r["value"] for r in rows])
     st.caption(f"**{label}** — NFI% + Quality-Games % vs the **50% baseline** "
                "(bar up = above 50%, down = below; darker = further from 50%).")
-    # Colour the last two category labels orange, the rest blue.
-    _last2 = "[" + ",".join(f"'{r['Metric']}'" for r in rows[-2:]) + "]"
-    _label_color = {"expr": f"indexof({_last2}, datum.value) >= 0 "
+    # Colour the 2nd and 4th category labels orange, the rest blue.
+    _orange_lbls = "[" + ",".join(f"'{rows[i]['Metric']}'"
+                                  for i in (1, 3) if i < len(rows)) + "]"
+    _label_color = {"expr": f"indexof({_orange_lbls}, datum.value) >= 0 "
                             f"? '{PALETTE['orange']}' : '{PALETTE['text']}'"}
     bars = alt.Chart(d).mark_bar(size=40).encode(
         x=alt.X("Metric:N", sort=[r["Metric"] for r in rows],
