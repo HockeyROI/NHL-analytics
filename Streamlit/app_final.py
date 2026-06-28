@@ -1403,6 +1403,40 @@ def _alt_png(spec_json: str):
 _BRAND_URL = "hockeyroi.streamlit.app"
 
 
+def _png_add_brand(png):
+    """Composite the stacked HockeyROI wordmark + site URL into a white footer
+    strip at the bottom of an already-rendered PNG (scale=2). Used for multi-panel
+    (faceted) charts, whose brand can't be embedded inside the Vega plot — value-
+    positioned marks don't resolve to a panel's coordinates — so the download still
+    carries the brand, matching the on-screen HTML footer."""
+    if not png:
+        return png
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import io
+        im = Image.open(io.BytesIO(png)).convert("RGB")
+        W, H = im.size
+        _fd = str(APP_DIR / "fonts")
+        f_mark = ImageFont.truetype(f"{_fd}/Inter-Bold.ttf", 24)
+        f_url = ImageFont.truetype(f"{_fd}/Inter-Regular.ttf", 20)
+        strip = 60
+        out = Image.new("RGB", (W, H + strip), (255, 255, 255))
+        out.paste(im, (0, 0))
+        dr = ImageDraw.Draw(out)
+        right = W - 24
+        y_url = H + strip - 12               # bottom line: URL
+        y_mark = y_url - 26                   # line above: wordmark
+        _w_roi = dr.textlength("ROI", font=f_mark)
+        dr.text((right, y_mark), "ROI", font=f_mark, fill=(255, 107, 53), anchor="rs")
+        dr.text((right - _w_roi, y_mark), "Hockey", font=f_mark, fill=(10, 26, 47), anchor="rs")
+        dr.text((right, y_url), _BRAND_URL, font=f_url, fill=(122, 134, 148), anchor="rs")
+        buf = io.BytesIO()
+        out.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return png
+
+
 def _brand_layer(lift: int = 6):
     """The HockeyROI footer drawn INSIDE the plot, bottom-right, just ABOVE the
     x-axis, as two stacked right-aligned lines: the two-colour 'HockeyROI' wordmark
@@ -1441,20 +1475,21 @@ def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 
     """Render an Altair chart + a 'Save PNG' download button. Non-faceted charts
     carry the two-colour HockeyROI wordmark + site URL embedded inside the plot
     (bottom-right, just above the x-axis) so it shows on-screen AND in the PNG
-    without distorting the axes. Faceted charts can't embed it, so they show the
-    same stacked wordmark + URL as an HTML footer right under the chart (above the
-    Save button). brand_lift raises the embedded footer when data crowds the bottom."""
+    without distorting the axes. Faceted/multi-panel charts can't embed it (value-
+    positioned marks don't resolve to a panel's coordinates), so they show the same
+    stacked wordmark + URL as an HTML footer on-screen and have it composited into
+    the PNG. brand_lift raises the embedded footer when data crowds the bottom."""
     import altair as alt
     import hashlib
     _cd = chart.to_dict()
     _multi = any(k in _cd for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
     disp = chart if _multi else alt.layer(chart, _brand_layer(brand_lift))
     st.altair_chart(disp, use_container_width=True)
-    # Faceted charts: stacked HTML wordmark + URL directly under the chart (before
-    # the Save button) so it sits right beneath the plot, matching the single charts.
     if _multi:
         _chart_brand(brand_width)
     png = _alt_png(disp.to_json())
+    if _multi:
+        png = _png_add_brand(png)        # composite the brand into the download
     if png:
         _key = "dl_" + hashlib.md5(dl_name.encode()).hexdigest()[:12]
         _sp, _btn = st.columns([20, 1])
