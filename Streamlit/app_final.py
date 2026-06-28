@@ -1528,7 +1528,7 @@ def _qg_bar_chart(vals: dict, label: str) -> None:
     bars = alt.Chart(d).mark_bar(size=40).encode(
         x=alt.X("Metric:N", sort=[r["Metric"] for r in rows],
                 axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold",
-                              labelFontSize=12, labelColor=PALETTE["text"])),
+                              labelFontSize=12, labelColor=PALETTE["orange"])),
         y=alt.Y("base:Q", scale=alt.Scale(domain=_dom), title="%"),
         y2="value:Q",
         color=alt.Color("color:N", scale=None, legend=None),
