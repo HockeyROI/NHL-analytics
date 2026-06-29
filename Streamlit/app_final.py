@@ -452,10 +452,17 @@ def _show_df(obj, **kwargs) -> None:
     cols = obj.data.columns if hasattr(obj, "data") else obj.columns
     if len(cols):
         cc = dict(kwargs.pop("column_config", {}) or {})
-        # The detail/trade trend's leading "Season" column holds the long
-        # "2yr avg (24-26)" label — give it a wider fixed width so it isn't
-        # clipped; other leading columns stay content-sized.
-        _w = "medium" if str(cols[0]) == "Season" else None
+        # The leading "Season" column doesn't size to content reliably (it clips),
+        # so give it an explicit pixel width fitted to its longest label: tight for
+        # single-season views ("2024-25") and just wide enough for the long pooled
+        # "2yr avg (24-26)" row — no dead space, no clipping (important on mobile).
+        if str(cols[0]) == "Season":
+            _frame = obj.data if hasattr(obj, "data") else obj
+            _vals = _frame[cols[0]].astype(str).tolist()
+            _maxlen = max([len("Season")] + [len(v) for v in _vals])
+            _w = min(200, max(56, round(_maxlen * 8.8) + 20))
+        else:
+            _w = None   # other leading columns stay content-sized
         cc.setdefault(cols[0], st.column_config.Column(pinned=True, width=_w))
         kwargs["column_config"] = cc
     kwargs["width"] = "content"   # size to content (no clipping) rather than stretch
