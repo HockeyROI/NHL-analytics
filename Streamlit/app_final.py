@@ -460,7 +460,7 @@ def _show_df(obj, **kwargs) -> None:
             _frame = obj.data if hasattr(obj, "data") else obj
             _vals = _frame[cols[0]].astype(str).tolist()
             _maxlen = max([len("Season")] + [len(v) for v in _vals])
-            _w = min(200, max(56, round(_maxlen * 8.8) + 20))
+            _w = min(190, max(50, round(_maxlen * 7.0) + 12))
         else:
             _w = None   # other leading columns stay content-sized
         cc.setdefault(cols[0], st.column_config.Column(pinned=True, width=_w))
