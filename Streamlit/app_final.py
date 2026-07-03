@@ -763,11 +763,17 @@ def load_player_season_team_order() -> dict:
         return {}
     df = pd.read_csv(fp, usecols=["player_id", "season", "game_id", "team_abbrev"])
     df["season"] = df["season"].astype(str)
-    first = (df.groupby(["player_id", "season", "team_abbrev"])["game_id"].min()
-             .reset_index().sort_values(["player_id", "season", "game_id"]))
+    agg = (df.groupby(["player_id", "season", "team_abbrev"])
+           .agg(first_game=("game_id", "min"), games=("game_id", "size"))
+           .reset_index().sort_values(["player_id", "season", "first_game"]))
     out = {}
-    for (pid, sn), g in first.groupby(["player_id", "season"], sort=False):
-        out[(int(pid), sn)] = g["team_abbrev"].tolist()
+    for (pid, sn), g in agg.groupby(["player_id", "season"], sort=False):
+        # Drop stray single-game teams (mislabeled game logs — e.g. a 1-game VGK
+        # blip for a player who really split the season COL/CGY) when the player
+        # has a real multi-game team; keep all if every team is a single game.
+        _real = g[g["games"] >= 2]
+        keep = _real if not _real.empty else g
+        out[(int(pid), sn)] = keep["team_abbrev"].tolist()
     return out
 
 
@@ -1444,6 +1450,39 @@ def _png_add_brand(png):
         return png
 
 
+# Set by drill-in views so a downloaded chart carries whose data it is (composited
+# into a title strip at the top of the PNG). Reset to None on leaderboard views.
+_CHART_TITLE = None
+
+
+def _set_dl_title(name) -> None:
+    global _CHART_TITLE
+    _CHART_TITLE = str(name) if name else None
+
+
+def _png_add_title(png, title):
+    """Composite a bold title (the player/goalie/comparison name) into a white strip
+    at the TOP of a rendered PNG, so a saved chart identifies whose data it is."""
+    if not png or not title:
+        return png
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import io
+        im = Image.open(io.BytesIO(png)).convert("RGB")
+        W, H = im.size
+        f = ImageFont.truetype(str(APP_DIR / "fonts" / "Inter-Bold.ttf"), 30)
+        strip = 48
+        out = Image.new("RGB", (W, H + strip), (255, 255, 255))
+        out.paste(im, (0, strip))
+        dr = ImageDraw.Draw(out)
+        dr.text((16, strip // 2), title, font=f, fill=(27, 58, 92), anchor="lm")
+        buf = io.BytesIO()
+        out.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return png
+
+
 def _brand_layer(lift: int = 6):
     """The HockeyROI footer drawn INSIDE the plot, bottom-right, just ABOVE the
     x-axis, as two stacked right-aligned lines: the two-colour 'HockeyROI' wordmark
@@ -1497,6 +1536,8 @@ def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 
     png = _alt_png(disp.to_json())
     if _multi:
         png = _png_add_brand(png)        # composite the brand into the download
+    if _CHART_TITLE:
+        png = _png_add_title(png, _CHART_TITLE)   # name whose data it is
     if png:
         _key = "dl_" + hashlib.md5(dl_name.encode()).hexdigest()[:12]
         _sp, _btn = st.columns([20, 1])
@@ -1982,6 +2023,7 @@ def render_players(season_label: str, game_type: str) -> None:
     )
     if _block_ref_only(season_label):
         return
+    _set_dl_title(None)                    # only drill-in charts get a name
     playoffs = game_type == "Playoffs"
     scope_label = "all playoffs (2022-2025 pooled)" if playoffs else season_label
     if playoffs:
@@ -2074,7 +2116,9 @@ def render_players(season_label: str, game_type: str) -> None:
     # Drill-in (via the search box OR clicking a leaderboard row): show one
     # player's detail (trend + charts) here. Clear/deselect to return to the list.
     def _drill(pid):
-        st.markdown(f"### {_plabel.get(int(pid), str(pid))}")
+        _pname = _plabel.get(int(pid), str(pid))
+        _set_dl_title(_pname)                     # name downloaded charts
+        st.markdown(f"### {_pname}")
         if playoffs:
             _render_player_playoff_summary(frame, int(pid))
         else:
@@ -2523,6 +2567,7 @@ def render_teams(season_label: str, game_type: str) -> None:
     )
     if _block_ref_only(season_label):
         return
+    _set_dl_title(None)
     playoffs = game_type == "Playoffs"
     if playoffs:
         _render_teams_playoffs(season_label)
@@ -2735,19 +2780,32 @@ def _goalie_trend(gid: int) -> pd.DataFrame:
     base = base[base["season"].isin(seasons_int)].copy()
     base["Season"] = (base["season"].astype(str).map(SEASON_DISPLAY)
                       .fillna(base["season"].astype(str)))
+    # Games played per season (prefer NFI 'games', fall back to QNFS/QS 'GP').
+    _gp = {}
+    for _df, _c in ((n, "games"), (q, "GP"), (s, "GP")):
+        if _df.empty or _c not in _df.columns:
+            continue
+        for _, _rr in _df[_df["goalie_id"] == gid].iterrows():
+            _s = int(_rr["season"])
+            if _s not in _gp and pd.notna(_rr[_c]):
+                _gp[_s] = int(_rr[_c])
+    base["GP"] = base["season"].map(_gp)
     return base.sort_values("season").reset_index(drop=True)
 
 
 def _goalie_season_ranks(gid: int) -> dict:
-    """Per-season LEAGUE rank of each metric among all goalies that season
-    (#1 = best). Returns {display_col: {season_int: rank}}."""
+    """Per-season LEAGUE rank of each metric among the QUALIFIED goalies that
+    season (#1 = best) — the same cohort the leaderboard ranks over, so the drill-in
+    rank matches the list. A goalie below the metric's qualifying floor gets no rank
+    (they show as unranked on the list too). Returns {display_col: {season: rank}}."""
     gid = int(gid)
     out = {}
     seasons_int = [20222023, 20232024, 20242025, 20252026]
-    for loader, src, disp_c in (
-        (load_goalie_nfi_by_season, "GSAx_per60", "NFI-GSAx/60"),
-        (load_qnfs_by_season, "QNFS_pct", "QNFS%"),
-        (load_qs_by_season, "QS_GSAx_pct", "GQG%"),
+    # per metric: (loader, value col, display col, fallback floor col, floor)
+    for loader, src, disp_c, floor_col, floor in (
+        (load_goalie_nfi_by_season, "GSAx_per60", "NFI-GSAx/60", "total_faced", 100),
+        (load_qnfs_by_season, "QNFS_pct", "QNFS%", "GP", 25),
+        (load_qs_by_season, "QS_GSAx_pct", "GQG%", "GP", 25),
     ):
         df = loader()
         if df.empty or src not in df.columns:
@@ -2757,9 +2815,20 @@ def _goalie_season_ranks(gid: int) -> dict:
         d = {}
         for ssn in seasons_int:
             sub = df[df["season"] == ssn]
-            pv = sub.loc[sub["goalie_id"] == gid, src]
-            if len(pv) and pd.notna(pv.iloc[0]):
-                d[ssn] = _league_rank(sub[src], pv.iloc[0])
+            if sub.empty:
+                continue
+            # Qualified cohort = the producer's `qualified` flag when present,
+            # else the in-app floor (matches render_goalies).
+            if "qualified" in sub.columns:
+                qmask = sub["qualified"].fillna(False).astype(bool)
+            elif floor_col in sub.columns:
+                qmask = sub[floor_col].fillna(0) >= floor
+            else:
+                qmask = pd.Series(True, index=sub.index)
+            prow = sub[sub["goalie_id"] == gid]
+            if (len(prow) and pd.notna(prow[src].iloc[0])
+                    and bool(qmask.loc[prow.index[0]])):
+                d[ssn] = _league_rank(sub[qmask][src], prow[src].iloc[0])
         out[disp_c] = d
     return out
 
@@ -2773,6 +2842,7 @@ def _goalie_profile_table(gid: int) -> tuple[pd.DataFrame, pd.DataFrame, list[st
         return pd.DataFrame(), trend, []
     metric_cols = [c for c in ("NFI-GSAx/60", "QNFS%", "GQG%")
                    if c in trend.columns]
+    has_gp = "GP" in trend.columns and trend["GP"].notna().any()
     ranks = _goalie_season_ranks(gid)
     _b = {"NFI-GSAx/60": lambda v: f"{v:+.3f}",
           "QNFS%": lambda v: f"{v:.1f}%", "GQG%": lambda v: f"{v:.1f}%"}
@@ -2780,6 +2850,8 @@ def _goalie_profile_table(gid: int) -> tuple[pd.DataFrame, pd.DataFrame, list[st
     for _, r in trend.iterrows():
         ssn = int(r["season"])
         row = {"Season": r["Season"]}
+        if has_gp:
+            row["GP"] = f"{int(r['GP'])}" if pd.notna(r.get("GP")) else "—"
         for c in metric_cols:
             v = r[c]
             if pd.isna(v):
@@ -2801,6 +2873,9 @@ def _goalie_profile_table(gid: int) -> tuple[pd.DataFrame, pd.DataFrame, list[st
         _v2[c] = rr[col].iloc[0] if len(rr) else np.nan
     if any(pd.notna(v) for v in _v2.values()):
         row = {"Season": "2yr avg (24-26)"}
+        if has_gp:
+            _gp2 = trend[trend["season"].isin((20242025, 20252026))]["GP"].dropna()
+            row["GP"] = f"{int(_gp2.sum())}" if len(_gp2) else "—"
         for c in metric_cols:
             v = _v2.get(c)
             if pd.isna(v):
@@ -2811,7 +2886,8 @@ def _goalie_profile_table(gid: int) -> tuple[pd.DataFrame, pd.DataFrame, list[st
             s = pd.to_numeric(fr[col], errors="coerce")
             row[c] = f"{txt} ({int((s > v).sum()) + 1})"
         rows.append(row)
-    return pd.DataFrame(rows, columns=["Season"] + metric_cols), trend, metric_cols
+    _lead = ["Season"] + (["GP"] if has_gp else [])
+    return pd.DataFrame(rows, columns=_lead + metric_cols), trend, metric_cols
 
 
 def _render_goalie_profile(gid: int) -> None:
@@ -2830,16 +2906,17 @@ def _render_goalie_profile(gid: int) -> None:
     # two percentages share one.
     import altair as alt
 
-    def _gchart(title, ys):
+    def _gchart(title, ys, ydomain=None):
         ys = [c for c in ys if c in trend.columns and trend[c].notna().any()]
         if not ys:
             return
         st.caption(title)
         long = (trend[["Season"] + ys].melt("Season", var_name="Metric",
                 value_name="value").dropna(subset=["value"]))
+        _yscale = alt.Scale(domain=ydomain) if ydomain else alt.Undefined
         ch = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
             x=alt.X("Season:N", title=None),
-            y=alt.Y("value:Q", title=None),
+            y=alt.Y("value:Q", title=None, scale=_yscale),
             color=alt.Color("Metric:N", sort=ys, legend=alt.Legend(
                 orient="bottom", title=None, symbolType="stroke", symbolStrokeWidth=2.5),
                 scale=alt.Scale(domain=ys,
@@ -2849,7 +2926,12 @@ def _render_goalie_profile(gid: int) -> None:
         _show_chart(ch, dl_name=title.split(" (")[0].replace(" ", "-"))
 
     _gchart("NFI-GSAx per 60", ["NFI-GSAx/60"])
-    _gchart("Consistency % (QNFS%, GQG%)", ["QNFS%", "GQG%"])
+    # QNFS%/GQG% consistency: zoom the y-axis to 30-70% (expand only if a value
+    # falls outside that band, so nothing is clipped).
+    _cons_vals = pd.concat([trend[c] for c in ("QNFS%", "GQG%")
+                            if c in trend.columns], ignore_index=True)
+    _gchart("Consistency % (QNFS%, GQG%)", ["QNFS%", "GQG%"],
+            ydomain=_qg_axis_domain(_cons_vals.tolist()))
 
 
 def _wilson(k: float, n: float, lower: bool = True, z: float = 1.96) -> float:
@@ -2924,6 +3006,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
     )
     if _block_ref_only(season_label):
         return
+    _set_dl_title(None)                    # only drill-in charts get a name
     playoffs = game_type == "Playoffs"
     if playoffs:
         st.caption("Playoff view — all playoff games (2022-23 → 2024-25) pooled. "
@@ -3036,6 +3119,7 @@ def render_goalies(season_label: str, game_type: str) -> None:
     # Drill-in (via "Find a goalie" OR a clicked row) — either collapses the
     # leaderboard to just that goalie's detail.
     def _goalie_drill(gid, label):
+        _set_dl_title(label)                     # name downloaded charts
         st.markdown(f"### {label}")
         if playoffs:
             _render_goalie_playoff_summary(int(gid))
@@ -3046,6 +3130,8 @@ def render_goalies(season_label: str, game_type: str) -> None:
         st.session_state["_gl_drill"] = None     # an explicit search overrides a click
         gid = _gid_of.get(goalie_pick)
         if gid is not None and pd.notna(gid):
+            st.button("← Back to leaderboard", key="gl_back_search",
+                      on_click=lambda: st.session_state.update(goalies_name_pick="All goalies"))
             _goalie_drill(int(gid), goalie_pick)
         return
     _gl_drill = st.session_state.get("_gl_drill")
@@ -3249,6 +3335,7 @@ def render_trade_analyzer(season_label: str, game_type: str) -> None:
     )
     if _block_ref_only(season_label):
         return
+    _set_dl_title(None)
     playoffs = game_type == "Playoffs"
 
     if st.radio("Compare", ["Skaters", "Goalies"], horizontal=True,
@@ -3322,8 +3409,10 @@ def render_trade_analyzer(season_label: str, game_type: str) -> None:
             _trends[_nm] = _tr
             _pv[_nm] = _player_qg_vals(int(pid), _tr, _cmp_yr)
     if _pv:
+        _set_dl_title(" vs ".join(_pv.keys()))
         _qg_bar_chart_compare(_pv, _cmp_yr)
     if _trends:
+        _set_dl_title(" vs ".join(_trends.keys()))
         _qg_line_chart_compare(_trends)
 
 
@@ -3535,6 +3624,7 @@ def render_referees(season_label: str, game_type: str) -> None:
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Referees</h2>",
         unsafe_allow_html=True,
     )
+    _set_dl_title(None)
     # The Referees tab reads the SHARED global Season filter (no second picker).
     # Referee data only exists 2023-24+, so it supports the single seasons it has
     # plus its own "3yr (Referees only)" pool; for any other selection (2022-23,
