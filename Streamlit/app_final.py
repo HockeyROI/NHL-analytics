@@ -2054,11 +2054,12 @@ PLAYER_FAMILY_COLS = {
 }
 
 
-def render_players(season_label: str, game_type: str) -> None:
+def render_players() -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Player List</h2>",
         unsafe_allow_html=True,
     )
+    season_label, game_type = render_scoped_filters("players")
     if _block_ref_only(season_label):
         return
     _set_dl_title(None)                    # only drill-in charts get a name
@@ -2600,11 +2601,12 @@ def _render_teams_playoffs(season_label: str) -> None:
     )
 
 
-def render_teams(season_label: str, game_type: str) -> None:
+def render_teams() -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Teams</h2>",
         unsafe_allow_html=True,
     )
+    season_label, game_type = render_scoped_filters("teams")
     if _block_ref_only(season_label):
         return
     _set_dl_title(None)
@@ -3039,11 +3041,12 @@ def _pool_goalie_seasons(seasons: tuple) -> tuple:
     return nfi, qn, qs
 
 
-def render_goalies(season_label: str, game_type: str) -> None:
+def render_goalies() -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Goalie List</h2>",
         unsafe_allow_html=True,
     )
+    season_label, game_type = render_scoped_filters("goalies")
     if _block_ref_only(season_label):
         return
     _set_dl_title(None)                    # only drill-in charts get a name
@@ -3368,11 +3371,12 @@ def _render_trade_goalies(playoffs: bool) -> None:
             _show_df(disp, width="stretch", hide_index=True)
 
 
-def render_trade_analyzer(season_label: str, game_type: str) -> None:
+def render_trade_analyzer() -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Trade Analyzer</h2>",
         unsafe_allow_html=True,
     )
+    season_label, game_type = render_scoped_filters("trade")
     if _block_ref_only(season_label):
         return
     _set_dl_title(None)
@@ -3660,13 +3664,15 @@ def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str
     _show_df(pd.DataFrame(brows), width="stretch", hide_index=True)
 
 
-def render_referees(season_label: str, game_type: str) -> None:
+def render_referees() -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Referees</h2>",
         unsafe_allow_html=True,
     )
+    season_label, game_type = render_scoped_filters("referees")
     _set_dl_title(None)
-    # The Referees tab reads the SHARED global Season filter (no second picker).
+    # The Referees tab reads the SHARED global Season filter (the same one shown on
+    # every tab).
     # Referee data only exists 2023-24+, so it supports the single seasons it has
     # plus its own "3yr (Referees only)" pool; for any other selection (2022-23,
     # 2yr, 4yr, Playoffs) it shows a "not available" notice.
@@ -3727,40 +3733,49 @@ def render_referees(season_label: str, game_type: str) -> None:
 POOLED_4YR_LABEL = "4yr (2022-2026)"
 
 
-def render_global_filters() -> tuple[str, str]:
-    """Season + game-type filters in the main page body (no sidebar).
+def render_scoped_filters(scope: str) -> tuple[str, str]:
+    """Season + game-type filters rendered INSIDE each tab (next to that tab's own
+    filters), but kept GLOBAL: every tab writes to and reads from the same shared
+    session_state, so changing the season on one tab changes it everywhere. Each
+    tab gets its own widget keys (Streamlit renders every tab each run, so a single
+    shared key would collide); on_change callbacks push the pick to the shared keys
+    and each run pre-seeds this scope's widgets from them to stay in sync.
 
-    Playoffs only ship the pooled view (single-playoff-year samples are too
-    small), so when Playoffs is selected the Season filter is locked to the
-    4-year pooled view — shown disabled, with the user's regular-season pick
-    preserved (separate widget key) for when they switch back."""
+    Playoffs only ship the pooled view (single-playoff-year samples are too small),
+    so when Playoffs is selected the Season box is locked to the 4-year pooled view,
+    with the user's regular-season pick preserved for when they switch back."""
     st.session_state.setdefault("g_game_type", "Regular Season")
-    # Non-widget mirror of the regular-season pick. Streamlit drops a widget's
-    # state when it isn't rendered (i.e. while the Season box is hidden in
-    # playoff mode), so we stash the choice here to restore it on the way back.
     st.session_state.setdefault("g_season_pick", "2025-26")
-    is_playoffs = st.session_state.get("g_game_type") == "Playoffs"
+    _gt_key, _ss_key = f"g_gt_{scope}", f"g_ssn_{scope}"
+    # Pre-seed this scope's widgets from the shared value (before instantiation).
+    st.session_state[_gt_key] = st.session_state["g_game_type"]
+    is_playoffs = st.session_state["g_game_type"] == "Playoffs"
+    if not is_playoffs:
+        st.session_state[_ss_key] = st.session_state["g_season_pick"]
     season_opts = list(SEASON_KEY.keys())
+
+    def _sync_gt():
+        st.session_state["g_game_type"] = st.session_state[_gt_key]
+
+    def _sync_ssn():
+        st.session_state["g_season_pick"] = st.session_state[_ss_key]
+
     c1, c2 = st.columns([1.2, 2.4])
     with c1:
         if is_playoffs:
             st.selectbox("Season", season_opts,
                          index=season_opts.index(POOLED_4YR_LABEL),
-                         disabled=True, key="g_season_locked")
+                         disabled=True, key=f"g_ssn_locked_{scope}")
             season = POOLED_4YR_LABEL
         else:
-            season = st.selectbox(
-                "Season", season_opts,
-                index=season_opts.index(st.session_state["g_season_pick"]),
-                key="g_season")
-            st.session_state["g_season_pick"] = season
+            season = st.selectbox("Season", season_opts, key=_ss_key,
+                                  on_change=_sync_ssn)
     with c2:
         game_type = st.radio("Game type", ["Regular Season", "Playoffs"],
-                             horizontal=True, key="g_game_type")
+                             horizontal=True, key=_gt_key, on_change=_sync_gt)
     if game_type == "Playoffs":
-        st.caption("Playoffs pool all seasons (2022-23 → 2024-25) — single-season "
-                   "samples are too small, so the Season filter is locked to the "
-                   "pooled view.")
+        st.caption("Playoffs pool all seasons (2022-23 → 2024-25); the Season filter "
+                   "is locked to the pooled view. Season & game type apply to all tabs.")
     else:
         st.caption("Season and game type apply across all tabs.")
     return season, game_type
@@ -3785,7 +3800,6 @@ def main() -> None:
         _css += ".vega-embed details,.vega-embed .vega-actions{display:none !important;}"
     st.markdown(f"<style>{_css}</style>", unsafe_allow_html=True)
     render_header()
-    season_label, game_type = render_global_filters()
     st.caption("ℹ️ A **blank cell** anywhere on this page means that player or goalie "
                "fell below the metric's qualifying **sample-size** minimum for that "
                "scope — it's “not enough data”, not zero. **(UR)** beside a value means "
@@ -3794,18 +3808,21 @@ def main() -> None:
                "its top-right corner → **Save as PNG** (exports it exactly as shown).")
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
 
+    # The Season + Game-type filter now lives at the top of each tab (rendered by
+    # render_scoped_filters), grouped with that tab's own filters but kept in sync
+    # across tabs — rather than a standalone row above the tabs.
     (player_list_tab, goalie_list_tab,
      trade_tab, teams_tab, refs_tab, meth_tab) = st.tabs(TAB_LABELS)
     with player_list_tab:
-        render_players(season_label, game_type)
+        render_players()
     with goalie_list_tab:
-        render_goalies(season_label, game_type)
+        render_goalies()
     with trade_tab:
-        render_trade_analyzer(season_label, game_type)
+        render_trade_analyzer()
     with teams_tab:
-        render_teams(season_label, game_type)
+        render_teams()
     with refs_tab:
-        render_referees(season_label, game_type)
+        render_referees()
     with meth_tab:
         render_methodology()
 
