@@ -1769,6 +1769,42 @@ def _qg_line_chart_compare(players: dict) -> None:
                 brand_width=_w * _n + 24 * (_n - 1) + 55)
 
 
+def _zone_line_chart_compare(players: dict) -> None:
+    """Side-by-side Zone Impact (NZI/DZI/OZI, 0-10) line charts, one panel per
+    player. players: {name: trend}. Mirrors the QG line comparison."""
+    import altair as alt
+    zcols = ["NZI", "DZI", "OZI"]
+    parts = []
+    for name, tr in players.items():
+        cols = [c for c in zcols if c in tr.columns and tr[c].notna().any()]
+        if not cols:
+            continue
+        long = (tr[["Season"] + cols].melt("Season", var_name="Metric",
+                value_name="value").dropna(subset=["value"]))
+        long["Player"] = name
+        parts.append(long)
+    if not parts:
+        return
+    d = pd.concat(parts, ignore_index=True)
+    ys = [c for c in zcols if c in set(d["Metric"])]
+    _n = max(1, len(players))
+    _w = int(max(200, 1040 / _n))
+    st.caption("Zone Impact 0–10 over time, per player — **NZI** / **DZI** / **OZI**.")
+    base = alt.Chart(d).mark_line(point=True, strokeWidth=2).encode(
+        x=alt.X("Season:N", title=None, axis=alt.Axis(labelAngle=-30)),
+        y=alt.Y("value:Q", title=None),
+        color=alt.Color("Metric:N", sort=ys, legend=alt.Legend(
+            orient="bottom", title=None, symbolType="stroke", symbolStrokeWidth=2.5),
+            scale=alt.Scale(domain=ys,
+                            range=[_CHART_COLORS.get(c, _CHART_SECOND) for c in ys])),
+        tooltip=["Player:N", "Season:N", "Metric:N", alt.Tooltip("value:Q", format=".2f")]
+        ).properties(width=_w, height=280)
+    chart = base.facet(column=alt.Column("Player:N", title=None,
+                       header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
+    _show_chart(chart, dl_name="Trade-Zone-line",
+                brand_width=_w * _n + 24 * (_n - 1) + 55)
+
+
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                            team=None, season_label=None) -> None:
     """Per-season trend table + auto-showing line charts for one player.
@@ -2100,11 +2136,13 @@ def render_players(season_label: str, game_type: str) -> None:
     # Quality Games shows by default; the user can toggle other families on/off.
     st.session_state.setdefault("players_display_seg", ["Quality Games"])
     with fcol:
-        display_fams = st.segmented_control(
+        # Pills (not segmented_control): they wrap onto multiple lines and are more
+        # reliable to tap on mobile than a connected button group.
+        display_fams = st.pills(
             "**Display a Metric Family**", list(PLAYER_FAMILY_COLS),
             selection_mode="multi", key="players_display_seg",
-            help="Click a metric group to show its columns (Net Front Impact, "
-                 "Zone Impact, Quality Games). Click again to hide it.") or []
+            help="Tap a metric group to show its columns (Net Front Impact, "
+                 "Zone Impact, Quality Games). Tap again to hide it.") or []
     with tcol:
         team_opts = ["All"] + _all_teams
         # Picking a team exits any drill-in and clears the player search (the two
@@ -3414,6 +3452,7 @@ def render_trade_analyzer(season_label: str, game_type: str) -> None:
     if _trends:
         _set_dl_title(" vs ".join(_trends.keys()))
         _qg_line_chart_compare(_trends)
+        _zone_line_chart_compare(_trends)
 
 
 # ---------------------------------------------------------------------------
