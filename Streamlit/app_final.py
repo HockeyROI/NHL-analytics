@@ -1856,9 +1856,11 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         st.caption(title)
         long = (trend[["Season"] + ys].melt("Season", var_name="Metric",
                 value_name="value").dropna(subset=["value"]))
+        # zero=False: zoom the y-axis to the data range instead of forcing a 0
+        # baseline (these metrics sit well away from 0, so 0 just wastes space).
         ch = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
             x=alt.X("Season:N", title=None),
-            y=alt.Y("value:Q", title=None),
+            y=alt.Y("value:Q", title=None, scale=alt.Scale(zero=False)),
             color=alt.Color("Metric:N", sort=ys, legend=alt.Legend(
                 orient="bottom", title=None, symbolType="stroke", symbolStrokeWidth=2.5),
                 scale=alt.Scale(domain=ys,
