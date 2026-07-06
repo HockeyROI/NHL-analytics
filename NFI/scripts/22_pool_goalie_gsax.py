@@ -78,7 +78,9 @@ def main() -> None:
 
         games_sum  = int(g_sorted["games"].fillna(0).sum())
         faced_sum  = float(g_sorted["total_faced"].fillna(0).sum())
+        goals_sum  = float(g_sorted["total_goals"].fillna(0).sum())
         gsax_sum   = float(g_sorted["GSAx"].fillna(0).sum())
+        save_pct   = (faced_sum - goals_sum) / faced_sum if faced_sum > 0 else float("nan")
 
         # Pooled TOI: prefer player_toi.csv. Fall back to back-deriving from
         # per-season rows (TOI_min_row = GSAx_row / GSAx_per60_row * 60).
@@ -107,8 +109,10 @@ def main() -> None:
             "team":         modal_team,
             "games":        games_sum,
             "total_faced":  faced_sum,
+            "total_goals":  goals_sum,
             "GSAx":         round(gsax_sum, 2),
             "GSAx_per60":   round(gsax_per60, 3) if pd.notna(gsax_per60) else np.nan,
+            "NFI_save_pct": round(save_pct, 4) if pd.notna(save_pct) else np.nan,
             "es_toi_min":   round(pooled_toi_min, 2) if pd.notna(pooled_toi_min) else np.nan,
             "n_seasons":    int(g_sorted["season"].nunique()),
         })
@@ -124,8 +128,8 @@ def main() -> None:
 
     # ---------------- Save ----------------
     keep_cols = ["goalie_id", "goalie_name", "team", "n_seasons",
-                 "games", "total_faced", "es_toi_min",
-                 "GSAx", "GSAx_per60", "qualified"]
+                 "games", "total_faced", "total_goals", "es_toi_min",
+                 "GSAx", "GSAx_per60", "NFI_save_pct", "qualified"]
     pooled[keep_cols].to_csv(OUT_FP, index=False)
     print(f"\nWrote {OUT_FP} — shape {pooled.shape}")
 

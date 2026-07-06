@@ -115,6 +115,14 @@ def main() -> None:
         wide["xG"] = (wide["faced_CNFI"] * rate_faced["CNFI"]
                        + wide["faced_MNFI"] * rate_faced["MNFI"])
         wide["GSAx"] = (wide["xG"] - wide["total_goals"]).round(2)
+        # Raw (unadjusted) save% on the NFI danger-zone shot set — a
+        # complement to GSAx, not a replacement. GSAx already accounts for
+        # shot difficulty within CNFI/MNFI; this doesn't.
+        wide["NFI_save_pct"] = np.where(
+            wide["total_faced"] > 0,
+            (wide["total_faced"] - wide["total_goals"]) / wide["total_faced"],
+            np.nan,
+        ).round(4)
 
         # ------ games + primary team per goalie (from shots_tagged) ------
         # Defending team for each shot: home if shooter is away, else away.
@@ -176,8 +184,8 @@ def main() -> None:
         wide["season"] = int(season)
 
         keep = ["goalie_id", "goalie_name", "season",
-                "GSAx", "GSAx_per60",
-                "total_faced", "games", "team", "qualified"]
+                "GSAx", "GSAx_per60", "NFI_save_pct",
+                "total_faced", "total_goals", "games", "team", "qualified"]
         season_frames.append(wide[keep].copy())
         print(f"  season {season}: {len(wide)} goalies, "
               f"{int(wide['qualified'].sum())} qualified (>= {MIN_SHOTS} shots)")

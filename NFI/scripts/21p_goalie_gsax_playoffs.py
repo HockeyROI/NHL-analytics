@@ -63,6 +63,11 @@ def _season_block(ss, rate_faced, name_map, reg_toi, reg_faced, label):
         return None
     wide["xG"] = wide["faced_CNFI"] * rate_faced["CNFI"] + wide["faced_MNFI"] * rate_faced["MNFI"]
     wide["GSAx"] = (wide["xG"] - wide["total_goals"]).round(2)
+    wide["NFI_save_pct"] = np.where(
+        wide["total_faced"] > 0,
+        (wide["total_faced"] - wide["total_goals"]) / wide["total_faced"],
+        np.nan,
+    ).round(4)
 
     ffull = f.copy()
     ffull["defending_team"] = np.where(
@@ -85,7 +90,7 @@ def _season_block(ss, rate_faced, name_map, reg_toi, reg_faced, label):
     wide["goalie_name"] = wide["goalie_id"].astype("Int64").map(name_map).fillna("")
     wide["season"] = label
     return wide[["goalie_id", "goalie_name", "season", "GSAx", "GSAx_per60",
-                 "total_faced", "games", "team"]].copy()
+                 "NFI_save_pct", "total_faced", "total_goals", "games", "team"]].copy()
 
 
 def main():

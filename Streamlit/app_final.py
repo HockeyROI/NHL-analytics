@@ -3060,12 +3060,16 @@ def _pool_goalie_seasons(seasons: tuple) -> tuple:
                      .set_index("goalie_id")["team"])
         g = (b.groupby(["goalie_id", "goalie_name"])
                .agg(GP_nfi=("games", "sum"), total_faced=("total_faced", "sum"),
-                    _gsax=("GSAx", "sum"), _toi=("_toi", "sum")).reset_index())
+                    _gsax=("GSAx", "sum"), _toi=("_toi", "sum"),
+                    _goals=("total_goals", "sum")).reset_index())
         g["NFIG60"] = np.where(g["_toi"] > 0, g["_gsax"] / g["_toi"] * 60.0, np.nan).round(3)
+        g["NFISV"] = np.where(g["total_faced"] > 0,
+                              (g["total_faced"] - g["_goals"]) / g["total_faced"],
+                              np.nan).round(4)
         g["team"] = g["goalie_id"].map(last_team)
         g["qual_gsax"] = g["total_faced"] >= 100 * n_seasons
         nfi = g[["goalie_id", "goalie_name", "team", "GP_nfi", "total_faced",
-                 "NFIG60", "qual_gsax"]]
+                 "NFIG60", "NFISV", "qual_gsax"]]
     q0 = load_qnfs_by_season()
     qn = pd.DataFrame()
     if not q0.empty:
@@ -3115,8 +3119,8 @@ def render_goalies() -> None:
         nfi, qn, qs = _pool_goalie_seasons(tuple(int(s) for s in POOLED_2YR_SEASONS))
     elif playoffs:
         n = load_goalie_nfi_playoffs()
-        nfi = (n[["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60"]]
-               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60"})
+        nfi = (n[[c for c in ["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "NFI_save_pct"] if c in n.columns]]
+               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60", "NFI_save_pct": "NFISV"})
                if not n.empty else pd.DataFrame())
         q = load_qnfs_playoffs()
         qn = (q[["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi"]]
@@ -3126,8 +3130,8 @@ def render_goalies() -> None:
               .rename(columns={"GP": "GP_qs"}) if not s.empty else pd.DataFrame())
     elif is_pooled:
         n = load_goalie_nfi()
-        nfi = (n[[c for c in ["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "qualified"] if c in n.columns]]
-               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60", "qualified": "qual_gsax"})
+        nfi = (n[[c for c in ["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "NFI_save_pct", "qualified"] if c in n.columns]]
+               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60", "NFI_save_pct": "NFISV", "qualified": "qual_gsax"})
                if not n.empty else pd.DataFrame())
         q = load_qnfs_pooled()  # keep EVERY goalie; qualification gates ranking only
         qn = (q[[c for c in ["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi", "qualified"] if c in q.columns]]
@@ -3138,8 +3142,8 @@ def render_goalies() -> None:
     else:
         sk = GOALIE_SEASON_INT.get(season_label)
         bs = load_goalie_nfi_by_season()
-        nfi = (bs[bs["season"] == sk][[c for c in ["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "qualified"] if c in bs.columns]]
-               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60", "qualified": "qual_gsax"})
+        nfi = (bs[bs["season"] == sk][[c for c in ["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "NFI_save_pct", "qualified"] if c in bs.columns]]
+               .rename(columns={"games": "GP_nfi", "GSAx_per60": "NFIG60", "NFI_save_pct": "NFISV", "qualified": "qual_gsax"})
                if (not bs.empty and sk) else pd.DataFrame())
         q0 = load_qnfs_by_season()
         qn = (q0[q0["season"] == sk][[c for c in ["goalie_id", "goalie_name", "GP", "QNFS_pct", "QNFS_lo", "QNFS_hi", "qualified"] if c in q0.columns]]
@@ -3255,7 +3259,7 @@ def render_goalies() -> None:
         return f"({r['QNFS_lo']:.1f}–{r['QNFS_hi']:.1f})"
     base["QNFS 95% CI"] = base.apply(_qnfs_ci, axis=1)
     _gren = {
-        "NFIG60": "NFI-GSAx/60", "QNFS_pct": "QNFS%",
+        "NFIG60": "NFI-GSAx/60", "NFISV": "NFI SV%", "QNFS_pct": "QNFS%",
         "QS_GSAx_pct": "GQG%", "QS_GSAx_lo": "GQG (95% lower)",
     }
     base = base.rename(columns=_gren)
@@ -3266,12 +3270,14 @@ def render_goalies() -> None:
     base = base.sort_values(["_qual_any", "NFI-GSAx/60"], ascending=[False, False],
                             na_position="last").reset_index(drop=True)
 
-    cols = ["Goalie", "Team", "GP", "NFI-GSAx/60", "QNFS%", "GQG%"]
+    cols = ["Goalie", "Team", "GP", "NFI-GSAx/60", "NFI SV%", "QNFS%", "GQG%"]
     disp = base[[c for c in cols if c in base.columns]].copy()
 
     fmt = {}
     if "NFI-GSAx/60" in disp:
         fmt["NFI-GSAx/60"] = lambda x: "—" if pd.isna(x) else f"{x:+.3f}"
+    if "NFI SV%" in disp:
+        fmt["NFI SV%"] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
     for c in ("QNFS%", "GQG%", "GQG (95% lower)"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
@@ -3279,7 +3285,10 @@ def render_goalies() -> None:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
     # Each metric ranked only over goalies qualified for THAT metric (others UR).
-    _metric_qual = {"NFI-GSAx/60": "qual_gsax", "QNFS%": "qual_qn", "GQG%": "qual_qs"}
+    # NFI SV% shares NFI-GSAx's qualifying cohort — same CNFI+MNFI shots-faced
+    # denominator, just an unadjusted rate instead of an xG-relative one.
+    _metric_qual = {"NFI-GSAx/60": "qual_gsax", "NFI SV%": "qual_gsax",
+                     "QNFS%": "qual_qn", "GQG%": "qual_qs"}
     for _m, _qc in _metric_qual.items():
         if _m not in disp.columns or _qc not in base.columns:
             continue
@@ -3301,6 +3310,9 @@ def render_goalies() -> None:
     st.caption("**GQG (Goalie Quality Games)** = the Quality-Start idea computed on "
                "**GSAx**, not raw save% — the share of a goalie's games where their "
                "all-shot GSAx ≥ 0 (beat expected on a danger/xG-weighted basis).")
+    st.caption("**NFI SV%** = raw (unadjusted) save% on the net-front danger-zone shot "
+               "set only (CNFI+MNFI shots faced) — a sanity-check stat, not shot-quality "
+               "adjusted like NFI-GSAx.")
     _sort_hint()
     st.caption("Click a row to open that goalie's detail (collapses the list).")
     _ggen = st.session_state.get("_gl_tbl_gen", 0)
