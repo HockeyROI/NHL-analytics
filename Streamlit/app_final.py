@@ -954,6 +954,44 @@ def _as_rates(scope_key: str) -> pd.DataFrame:
     return agg[["player_id", "NFI_A_rate", "NFI_S_rate"]]
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def _load_xg_game(playoffs: bool = False) -> pd.DataFrame:
+    """Per-game on-ice xG For/Against + on-ice TOI, from the MoneyPuck-derived
+    per_player_game file (regular or playoffs)."""
+    fn = "per_player_game_playoffs.csv" if playoffs else "per_player_game.csv"
+    fp = REPO_ROOT / "Quality_Games" / "output" / fn
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp, usecols=["player_id", "season", "xG_for", "xG_ag", "TOI_on_sec"])
+    df["season"] = df["season"].astype(str)
+    return df
+
+
+def _xg_onice_rates(scope_key: str, playoffs: bool = False) -> pd.DataFrame:
+    """On-ice xGF/60 and xGA/60 per player for one scope (MoneyPuck style), by
+    ratio-of-sums: sum xG-for, xG-against and on-ice TOI across the scope's seasons,
+    then rate = xG / TOI * 3600. scope_key: 'pooled', 'pooled_2yr', or a season."""
+    df = _load_xg_game(playoffs)
+    if df.empty:
+        return pd.DataFrame()
+    if playoffs:
+        sub = df
+    elif scope_key == "pooled":
+        sub = df[df["season"].isin([str(s) for s in POOLED_SEASONS])]
+    elif scope_key == "pooled_2yr":
+        sub = df[df["season"].isin([str(s) for s in POOLED_2YR_SEASONS])]
+    else:
+        sub = df[df["season"] == str(scope_key)]
+    if sub.empty:
+        return pd.DataFrame()
+    g = sub.groupby("player_id").agg(_xgf=("xG_for", "sum"), _xga=("xG_ag", "sum"),
+                                     _toi=("TOI_on_sec", "sum")).reset_index()
+    ok = g["_toi"] > 0
+    g["xGF/60"] = np.where(ok, g["_xgf"] / g["_toi"] * 3600.0, np.nan)
+    g["xGA/60"] = np.where(ok, g["_xga"] / g["_toi"] * 3600.0, np.nan)
+    return g[["player_id", "xGF/60", "xGA/60"]]
+
+
 # --- In-tab profiles (Gate F): per-season trends ----------------------------
 PROFILE_SEASONS = ["20222023", "20232024", "20242025", "20252026"]  # 4yr, excl 2021-22
 SEASON_DISPLAY = {"20222023": "2022-23", "20232024": "2023-24",
@@ -1994,6 +2032,9 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         as_df = load_as_counts_playoffs()
         if not as_df.empty:
             base = base.merge(as_df, on="player_id", how="left")
+        xg = _xg_onice_rates("pooled", playoffs=True)
+        if not xg.empty and not base.empty:
+            base = base.merge(xg, on="player_id", how="left")
         return base, True
 
     nfi = load_nfi_player()
@@ -2040,6 +2081,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     as_df = _as_rates(key)
     if not as_df.empty and not base.empty:
         base = base.merge(as_df, on="player_id", how="left")
+    # On-ice xGF/60 and xGA/60 (MoneyPuck-style), same ratio-of-sums scoping.
+    xg = _xg_onice_rates(key)
+    if not xg.empty and not base.empty:
+        base = base.merge(xg, on="player_id", how="left")
     return base, is_pooled
 
 
@@ -2047,7 +2092,8 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
 # (display names, post-rename). Identity columns (Player/Pos/Team/GP/TOI) always
 # show.
 PLAYER_FAMILY_COLS = {
-    "Quality Games": ["xG-QG%", "RelxG-QG%", "RelxG%", "NFI-QG%", "RelNFI-QG%"],
+    "Quality Games": ["xG-QG%", "RelxG-QG%", "RelxG%", "xGF/60", "xGA/60",
+                      "NFI-QG%", "RelNFI-QG%"],
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
     "Zone Impact": ["NZI", "DZI", "OZI"],
@@ -2240,7 +2286,8 @@ def render_players() -> None:
     # NFI-A/60 / NFI-S/60 are RAW per-60 rates; RelNFI-A% / RelNFI-S% are the
     # relative (vs own-team) versions — both coexist, placed side by side.
     cols = ["Player", "Pos", "Team", "GP", "TOI",
-            "xG-QG%", "RelxG-QG%", "RelxG%", "NFI-QG%", "RelNFI-QG%",
+            "xG-QG%", "RelxG-QG%", "RelxG%", "xGF/60", "xGA/60",
+            "NFI-QG%", "RelNFI-QG%",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "NZI", "DZI", "OZI"]
     # Zone now populates for single seasons too (per-season files), so it is no
@@ -2264,6 +2311,9 @@ def render_players() -> None:
     for c in ("NFI-A/60", "NFI-S/60"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    for c in ("xGF/60", "xGA/60"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
     for c in ("NZI", "DZI", "OZI"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
@@ -2275,7 +2325,9 @@ def render_players() -> None:
 
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
                     "NFI-S/60", "NZI", "DZI", "OZI",
-                    "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%"]
+                    "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
+                    "xGF/60", "xGA/60"]
+    _lower = {"NFI-S/60", "xGA/60"}   # lower value = better (rank ascending)
     # Second bracket number = within-team rank. With a team selected, rank within
     # that team; otherwise within each player's own (most-recent) team. Computed
     # per-row over the qualified cohort and keyed to the displayed rows by id.
@@ -2288,7 +2340,7 @@ def render_players() -> None:
             if col not in _tc.columns:
                 continue
             tr = pd.to_numeric(_tc[col], errors="coerce").rank(
-                ascending=(col == "NFI-S/60"), method="min")
+                ascending=(col in _lower), method="min")
             p2t = dict(zip(_tc["player_id"], tr))
             _team_rank_idx[col] = {i: int(p2t[p]) for i, p in _df_pid.items()
                                    if pd.notna(p2t.get(p))}
@@ -2300,12 +2352,12 @@ def render_players() -> None:
                 if col not in rank_cohort.columns:
                     continue
                 tr = pd.to_numeric(rank_cohort[col], errors="coerce").groupby(
-                    _coh_team).rank(ascending=(col == "NFI-S/60"), method="min")
+                    _coh_team).rank(ascending=(col in _lower), method="min")
                 p2t = dict(zip(rank_cohort["player_id"], tr))
                 _team_rank_idx[col] = {i: int(p2t[p]) for i, p in _df_pid.items()
                                        if pd.notna(p2t.get(p))}
     _pl_qual = pd.to_numeric(disp["TOI"], errors="coerce").fillna(0) >= rank_floor
-    _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better={"NFI-S/60"},
+    _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better=_lower,
                  mark_unranked=True, qualified=_pl_qual, team_rank_idx=_team_rank_idx)
     _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
                      "D": "defense"}[pos]
