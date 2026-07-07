@@ -894,19 +894,20 @@ def _qg_pooled(qg: pd.DataFrame) -> pd.DataFrame:
         g["RelxG_QG_pct"] = np.where(g["_rxq"] > 0, g["_rxc"] / g["_rxq"], np.nan)
         g["RelNFI_QG_pct"] = np.where(g["_rnq"] > 0, g["_rnc"] / g["_rnq"], np.nan)
         out_cols += ["RelxG_QG_pct", "RelNFI_QG_pct"]
-    # RelxG_pct — TOI-weighted mean of per-season values (no count denominator),
-    # mirroring _aggregate_nfi_pooled's pooling of RelNFI_pct.
-    if {"RelxG_pct", "TOI_total_sec"}.issubset(qg.columns):
-        t = qg[["player_id", "RelxG_pct", "TOI_total_sec"]].copy()
-        t["RelxG_pct"] = pd.to_numeric(t["RelxG_pct"], errors="coerce")
-        t["w"] = pd.to_numeric(t["TOI_total_sec"], errors="coerce")
-        t = t[t["RelxG_pct"].notna() & (t["w"] > 0)]
-        t["_num"] = t["RelxG_pct"] * t["w"]
-        rx = t.groupby("player_id").agg(_num=("_num", "sum"),
-                                        _den=("w", "sum")).reset_index()
-        rx["RelxG_pct"] = np.where(rx["_den"] > 0, rx["_num"] / rx["_den"], np.nan)
-        g = g.merge(rx[["player_id", "RelxG_pct"]], on="player_id", how="left")
-        out_cols.append("RelxG_pct")
+    # RelxG_pct / RelxG_F_pct / RelxG_A_pct — TOI-weighted means of per-season
+    # values (no count denominator), mirroring _aggregate_nfi_pooled's RelNFI_pct.
+    for _rc in ("RelxG_pct", "RelxG_F_pct", "RelxG_A_pct"):
+        if {_rc, "TOI_total_sec"}.issubset(qg.columns):
+            t = qg[["player_id", _rc, "TOI_total_sec"]].copy()
+            t[_rc] = pd.to_numeric(t[_rc], errors="coerce")
+            t["w"] = pd.to_numeric(t["TOI_total_sec"], errors="coerce")
+            t = t[t[_rc].notna() & (t["w"] > 0)]
+            t["_num"] = t[_rc] * t["w"]
+            rx = t.groupby("player_id").agg(_num=("_num", "sum"),
+                                            _den=("w", "sum")).reset_index()
+            rx[_rc] = np.where(rx["_den"] > 0, rx["_num"] / rx["_den"], np.nan)
+            g = g.merge(rx[["player_id", _rc]], on="player_id", how="left")
+            out_cols.append(_rc)
     return g[out_cols]
 
 
@@ -2037,7 +2038,8 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         qg = load_qg_player_playoffs()
         if not qg.empty:
             qcols = ["player_id", "GP", "qualifying_GP", "xG_QG_pct", "NFI_QG_pct",
-                     "RelNFI_QG_pct", "RelxG_QG_pct", "RelxG_pct"]
+                     "RelNFI_QG_pct", "RelxG_QG_pct", "RelxG_pct",
+                     "RelxG_F_pct", "RelxG_A_pct"]
             base = base.merge(qg[[c for c in qcols if c in qg.columns]],
                               on="player_id", how="left")
         zone = load_zone_playoffs()
@@ -2081,6 +2083,7 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
             qcols = ["player_id", "season", "GP", "qualifying_GP",
                      "xG_QG_pct", "NFI_QG_pct",
                      "RelNFI_QG_pct", "RelxG_QG_pct", "RelxG_pct",
+                     "RelxG_F_pct", "RelxG_A_pct",
                      "teams_in_season"]  # for multi-team display + filter
             base = base.merge(qg[[c for c in qcols if c in qg.columns]],
                               on=["player_id", "season"], how="left")
@@ -2107,8 +2110,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
 # (display names, post-rename). Identity columns (Player/Pos/Team/GP/TOI) always
 # show.
 PLAYER_FAMILY_COLS = {
-    "Quality Games": ["xG-QG%", "RelxG-QG%", "RelxG%", "xGF/60", "xGA/60",
-                      "NFI-QG%", "RelNFI-QG%"],
+    # Quality Games = the "-QG%" metrics only (share of games that were "quality").
+    "Quality Games": ["xG-QG%", "RelxG-QG%", "NFI-QG%", "RelNFI-QG%"],
+    # xG = the raw + relative expected-goals rate metrics (split out of QG).
+    "xG": ["xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%"],
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
     "Zone Impact": ["NZI", "DZI", "OZI"],
@@ -2292,7 +2297,7 @@ def render_players() -> None:
         "NFI_A_rate": "NFI-A/60", "NFI_S_rate": "NFI-S/60",
         "xG_QG_pct": "xG-QG%", "NFI_QG_pct": "NFI-QG%",
         "RelNFI_QG_pct": "RelNFI-QG%", "RelxG_QG_pct": "RelxG-QG%",
-        "RelxG_pct": "RelxG%",
+        "RelxG_pct": "RelxG%", "RelxG_F_pct": "RelxG-F%", "RelxG_A_pct": "RelxG-A%",
     }
     df = df.rename(columns=_ren)
     rank_cohort = rank_cohort.rename(columns=_ren)
@@ -2301,8 +2306,8 @@ def render_players() -> None:
     # NFI-A/60 / NFI-S/60 are RAW per-60 rates; RelNFI-A% / RelNFI-S% are the
     # relative (vs own-team) versions — both coexist, placed side by side.
     cols = ["Player", "Pos", "Team", "GP", "TOI",
-            "xG-QG%", "RelxG-QG%", "RelxG%", "xGF/60", "xGA/60",
-            "NFI-QG%", "RelNFI-QG%",
+            "xG-QG%", "RelxG-QG%", "NFI-QG%", "RelNFI-QG%",
+            "xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "NZI", "DZI", "OZI"]
     # Zone now populates for single seasons too (per-season files), so it is no
@@ -2320,7 +2325,7 @@ def render_players() -> None:
     for c in ("NFI%", "xG-QG%", "NFI-QG%", "RelNFI-QG%", "RelxG-QG%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
-    for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%"):
+    for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%", "RelxG-F%", "RelxG-A%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
     for c in ("NFI-A/60", "NFI-S/60"):
@@ -2341,8 +2346,9 @@ def render_players() -> None:
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
                     "NFI-S/60", "NZI", "DZI", "OZI",
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
-                    "xGF/60", "xGA/60"]
-    _lower = {"NFI-S/60", "xGA/60"}   # lower value = better (rank ascending)
+                    "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%"]
+    # lower value = better (rank ascending): shots/xG against
+    _lower = {"NFI-S/60", "xGA/60", "RelxG-A%"}
     # Second bracket number = within-team rank. With a team selected, rank within
     # that team; otherwise within each player's own (most-recent) team. Computed
     # per-row over the qualified cohort and keyed to the displayed rows by id.
