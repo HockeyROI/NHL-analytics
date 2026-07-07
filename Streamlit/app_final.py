@@ -157,7 +157,7 @@ _CHART_COLORS = {
     "NZI": _CHART_PRIMARY, "DZI": _CHART_SECOND, "OZI": _CHART_THIRD,
     "NFI-QG%": _CHART_PRIMARY, "xG-QG%": _CHART_SECOND,
     "RelNFI-QG%": _CHART_PRIMARY, "RelxG-QG%": _CHART_SECOND, "RelxG%": _CHART_PRIMARY,
-    "NFI-GSAx/60": _CHART_PRIMARY, "QNFS%": _CHART_PRIMARY, "GQG%": _CHART_SECOND,
+    "NFI-GSAx/60": _CHART_PRIMARY, "QNFS%": _CHART_PRIMARY, "QGx%": _CHART_SECOND,
 }
 
 
@@ -659,13 +659,17 @@ def render_methodology() -> None:
         )
         + _meth_framework(
             "Goalies",
-            "GSAx-based, three lenses: <b>NFI-GSAx</b> (net-front goals saved above expected), "
+            "Two families. GSAx-based: <b>NFI-GSAx</b> (net-front goals saved above expected), "
             "<b>QNFS%</b> (consistency of beating expected on net-front shots), and "
-            "<b>GQG</b> — Goalie Quality Games, the Quality-Start idea computed on GSAx "
-            "(share of games with all-shot GSAx ≥ 0) rather than raw save%. <b>NFI SV%</b> is "
-            "the one raw-save% exception — an unadjusted save% on NFI-GSAx's own net-front shot "
-            "set, shown alongside it as a sanity check, not a replacement. Qualifying "
-            "floors differ by metric, so the cohorts differ — by design.",
+            "<b>QGx</b> (share of games with all-shot GSAx ≥ 0 — goals-saved-above-expected, "
+            "as a game rate; formerly GQG). <b>NFI SV%</b> is the one raw-save% exception in that "
+            "family — an unadjusted save% on NFI-GSAx's own net-front shot set, a sanity check, "
+            "not a replacement. Save%-based: <b>QG%s / QG%b</b> — a traditional Quality Start, "
+            "but graded against two population-specific baselines (top-32-GP \"starter\" tier and "
+            "next-32-GP \"backup\" tier save%, recomputed every season) instead of one fixed "
+            "league-average line. Toggle which baseline a goalie is measured against; toggle the "
+            "shot scope (5v5 / all situations) separately. Qualifying floors differ by metric, so "
+            "the cohorts differ — by design.",
         )
         + _meth_framework(
             "Zone Impact",
@@ -686,13 +690,22 @@ def render_methodology() -> None:
         <div style="border:2px solid {PALETTE['orange']}; background:{PALETTE['panel']};
              border-radius:6px; padding:1rem 1.25rem; margin:1.25rem 0; max-width:62rem;">
           <div style="color:{PALETTE['orange']}; font-weight:700; margin-bottom:0.3rem;">
-            A note on GQG vs. &ldquo;Quality Starts&rdquo;</div>
+            A note on QGx / QNFS% vs. QG%s / QG%b vs. &ldquo;Quality Starts&rdquo;</div>
           <div style="color:{PALETTE['text']}; font-size:0.94rem; line-height:1.5;">
-            <b>GQG</b> (Goalie Quality Games, formerly QS-GSAx) is <b>not</b> Robert Vollman's
-            Quality Starts (~2009, defined on save% vs league average). In GQG a quality game is
-            <b>per-game GSAx &ge; 0</b> — the goalie beat expected on a danger / xG-weighted basis,
-            not on raw save%. <b>QNFS%</b> is the same idea on net-front shots only. Don't map
-            GQG to Vollman's metric, or QNFS% and GQG to each other.
+            Robert Vollman's Quality Starts (~2009) flags a game where save% beats a single
+            <b>league-average save%</b> line. <b>QGx</b> (formerly GQG, formerly QS-GSAx) and
+            <b>QNFS%</b> are <b>not</b> that — a quality game there is <b>per-game GSAx &ge; 0</b>,
+            the goalie beating expected on a danger / xG-weighted basis, not on raw save%
+            (QNFS% on net-front shots only, QGx on all shots). Don't map either to Vollman's
+            metric, or map them to each other.<br><br>
+            <b>QG%s / QG%b ARE save%-based</b>, in the spirit of Vollman — but instead of one
+            fixed league-average line, they use two baselines recomputed every season: the
+            volume-weighted save% of that season's top-32-GP &ldquo;starter&rdquo; tier (QG%s)
+            and next-32-GP &ldquo;backup&rdquo; tier (QG%b). A backup graded against a
+            workhorse #1's bar is set up to fail — QG%s asks &ldquo;does this goalie perform
+            like a starter?&rdquo; and QG%b asks &ldquo;would this goalie be a good backup?&rdquo;
+            Toggle which baseline a goalie is measured against (default: starter) and which shot
+            scope (5v5 / all situations) — QGx and QNFS% stay 5v5-only regardless of that toggle.
           </div>
         </div>
         """,
@@ -2776,7 +2789,7 @@ def render_teams() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Goalies tab — NFI-GSAx + QNFS% + GQG (union of qualified cohorts)
+# Goalies tab — NFI-GSAx + QNFS% + QGx (union of qualified cohorts)
 # ---------------------------------------------------------------------------
 GOALIE_SEASON_INT = {"2025-26": 20252026, "2024-25": 20242025,
                      "2023-24": 20232024, "2022-23": 20222023}
@@ -2815,6 +2828,28 @@ def load_qs_by_season() -> pd.DataFrame:
     return df
 
 
+# QG%s / QG%b — tiered save%-based Quality Games. Built in two shot scopes;
+# suffix "" = 5v5 ES regulation, "_allsit" = all situations. Playoffs not yet
+# built for this metric (see compute_qg_tiered.py).
+QG_SCOPE_SUFFIX = {"5v5": "", "All situations": "_allsit"}
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qg_tiered_pooled(scope_suffix: str) -> pd.DataFrame:
+    fp = _QC / f"qg_savepct_2022-2026{scope_suffix}.csv"
+    return pd.read_csv(fp) if fp.exists() else pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qg_tiered_by_season(scope_suffix: str) -> pd.DataFrame:
+    fp = _QC / f"qg_savepct_per_season_2022-2026{scope_suffix}.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(int)
+    return df
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_goalie_nfi_playoffs() -> pd.DataFrame:
     fp = REPO_ROOT / "NFI" / "output" / "goalie_nfi_gsax_by_season_playoffs.csv"
@@ -2846,7 +2881,7 @@ def load_qs_playoffs() -> pd.DataFrame:
 
 
 def _goalie_trend(gid: int) -> pd.DataFrame:
-    """Per-season (2022-23..2025-26) NFI-GSAx/60, QNFS%, GQG% for one
+    """Per-season (2022-23..2025-26) NFI-GSAx/60, QNFS%, QGx% for one
     goalie_id, outer-merged on season. Season normalized to INT before merging
     (all three by-season loaders cast to int) to avoid silent empty merges. The
     NFI-GSAx file includes a 2021-22 row; it's dropped here."""
@@ -2864,7 +2899,7 @@ def _goalie_trend(gid: int) -> pd.DataFrame:
     s = load_qs_by_season()
     if not s.empty:
         parts.append(s[s["goalie_id"] == gid][["season", "QS_GSAx_pct"]]
-                     .rename(columns={"QS_GSAx_pct": "GQG%"}))
+                     .rename(columns={"QS_GSAx_pct": "QGx%"}))
     parts = [p for p in parts if not p.empty]
     if not parts:
         return pd.DataFrame()
@@ -2901,7 +2936,7 @@ def _goalie_season_ranks(gid: int) -> dict:
     for loader, src, disp_c, floor_col, floor in (
         (load_goalie_nfi_by_season, "GSAx_per60", "NFI-GSAx/60", "total_faced", 100),
         (load_qnfs_by_season, "QNFS_pct", "QNFS%", "GP", 25),
-        (load_qs_by_season, "QS_GSAx_pct", "GQG%", "GP", 25),
+        (load_qs_by_season, "QS_GSAx_pct", "QGx%", "GP", 25),
     ):
         df = loader()
         if df.empty or src not in df.columns:
@@ -2936,12 +2971,12 @@ def _goalie_profile_table(gid: int) -> tuple[pd.DataFrame, pd.DataFrame, list[st
     trend = _goalie_trend(gid)
     if trend.empty:
         return pd.DataFrame(), trend, []
-    metric_cols = [c for c in ("NFI-GSAx/60", "QNFS%", "GQG%")
+    metric_cols = [c for c in ("NFI-GSAx/60", "QNFS%", "QGx%")
                    if c in trend.columns]
     has_gp = "GP" in trend.columns and trend["GP"].notna().any()
     ranks = _goalie_season_ranks(gid)
     _b = {"NFI-GSAx/60": lambda v: f"{v:+.3f}",
-          "QNFS%": lambda v: f"{v:.1f}%", "GQG%": lambda v: f"{v:.1f}%"}
+          "QNFS%": lambda v: f"{v:.1f}%", "QGx%": lambda v: f"{v:.1f}%"}
     rows = []
     for _, r in trend.iterrows():
         ssn = int(r["season"])
@@ -2962,7 +2997,7 @@ def _goalie_profile_table(gid: int) -> tuple[pd.DataFrame, pd.DataFrame, list[st
     # seasons (ranked within the 2yr pool).
     _n2, _q2, _s2 = _pool_goalie_seasons((20242025, 20252026))
     _src2 = {"NFI-GSAx/60": (_n2, "NFIG60"), "QNFS%": (_q2, "QNFS_pct"),
-             "GQG%": (_s2, "QS_GSAx_pct")}
+             "QGx%": (_s2, "QS_GSAx_pct")}
     _v2 = {}
     for c, (fr, col) in _src2.items():
         rr = fr[fr["goalie_id"] == gid] if not fr.empty else fr
@@ -2997,7 +3032,7 @@ def _render_goalie_profile(gid: int) -> None:
     _show_df(disp, width="stretch", hide_index=True)
 
     # CHOICE: split into 2 small multiples. NFI-GSAx/60 is a per-60 rate (~±0.3);
-    # QNFS%/GQG% are percentages (~0–100). On a single shared axis the rate
+    # QNFS%/QGx% are percentages (~0–100). On a single shared axis the rate
     # collapses to a flat line near zero, so the rate gets its own chart and the
     # two percentages share one.
     import altair as alt
@@ -3022,11 +3057,11 @@ def _render_goalie_profile(gid: int) -> None:
         _show_chart(ch, dl_name=title.split(" (")[0].replace(" ", "-"))
 
     _gchart("NFI-GSAx per 60", ["NFI-GSAx/60"])
-    # QNFS%/GQG% consistency: zoom the y-axis to 30-70% (expand only if a value
+    # QNFS%/QGx% consistency: zoom the y-axis to 30-70% (expand only if a value
     # falls outside that band, so nothing is clipped).
-    _cons_vals = pd.concat([trend[c] for c in ("QNFS%", "GQG%")
+    _cons_vals = pd.concat([trend[c] for c in ("QNFS%", "QGx%")
                             if c in trend.columns], ignore_index=True)
-    _gchart("Consistency % (QNFS%, GQG%)", ["QNFS%", "GQG%"],
+    _gchart("Consistency % (QNFS%, QGx%)", ["QNFS%", "QGx%"],
             ydomain=_qg_axis_domain(_cons_vals.tolist()))
 
 
@@ -3048,7 +3083,7 @@ def _pool_goalie_seasons(seasons: tuple) -> tuple:
     computed over the combined sample — e.g. quality-games / GP across ~164 games,
     GSAx / pooled-TOI). Returns (nfi, qn, qs) shaped like the other goalie
     branches, with per-metric `qualified` flags (NFI-GSAx ≥100·n net-front shots;
-    QNFS/GQG: any single season with ≥25 GP)."""
+    QNFS/QGx: any single season with ≥25 GP)."""
     sset = set(seasons)
     n_seasons = len(seasons)
     bs = load_goalie_nfi_by_season()
@@ -3099,6 +3134,29 @@ def _pool_goalie_seasons(seasons: tuple) -> tuple:
     return nfi, qn, qs
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def _pool_qg_tiered_seasons(seasons: tuple, scope_suffix: str) -> pd.DataFrame:
+    """Faithful denominator-based pool of the QG%s/QG%b by-season file across
+    `seasons` (same sum-then-recompute pattern as _pool_goalie_seasons): sums
+    QGs_games/QGb_games/GP across the pooled seasons, then recomputes the
+    rates + Wilson bounds over the combined sample."""
+    b0 = load_qg_tiered_by_season(scope_suffix)
+    if b0.empty:
+        return pd.DataFrame()
+    sset = set(seasons)
+    b = b0[b0["season"].isin(sset)]
+    if b.empty:
+        return pd.DataFrame()
+    g = (b.groupby(["goalie_id", "goalie_name"])
+           .agg(GP_qg=("GP", "sum"), _qs=("QGs_games", "sum"), _qb=("QGb_games", "sum"),
+                _maxgp=("GP", "max")).reset_index())
+    g["QG_pct_s"] = g["_qs"] / g["GP_qg"] * 100
+    g["QG_pct_b"] = g["_qb"] / g["GP_qg"] * 100
+    g["QG_pct_s_lo"] = g.apply(lambda r: _wilson(r["_qs"], r["GP_qg"], True) * 100, axis=1)
+    g["qual_qg"] = g["_maxgp"] >= 25
+    return g[["goalie_id", "goalie_name", "GP_qg", "QG_pct_s", "QG_pct_b", "QG_pct_s_lo", "qual_qg"]]
+
+
 def render_goalies() -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Goalie List</h2>",
@@ -3113,12 +3171,40 @@ def render_goalies() -> None:
         st.caption("Playoff view — all playoff games (2022-23 → 2024-25) pooled. "
                    "Small playoff samples: all goalies are ranked (no qualifying floor).")
 
+    # QG%s / QG%b toggles — baseline (starter vs. backup) and shot scope
+    # (5v5 vs. all situations). These apply ONLY to QG%s/QG%b; QNFS% and QGx
+    # stay 5v5-only regardless of the scope pick, and QG%s/QG%b aren't built
+    # for playoffs yet.
+    st.session_state.setdefault("goalies_qg_baseline", "Starter (QG%s)")
+    st.session_state.setdefault("goalies_qg_scope", "5v5")
+    if not playoffs:
+        qgc1, qgc2 = st.columns([1.4, 1.4])
+        with qgc1:
+            qg_baseline_label = st.radio(
+                "QG%s/QG%b baseline", ["Starter (QG%s)", "Backup (QG%b)"],
+                horizontal=True, key="goalies_qg_baseline",
+                help="Which population's baseline save% to measure every goalie against.")
+        with qgc2:
+            qg_scope_label = st.radio(
+                "QG%s/QG%b shot scope", list(QG_SCOPE_SUFFIX.keys()),
+                horizontal=True, key="goalies_qg_scope",
+                help="Shot scope for QG%s/QG%b only — QNFS% and QGx are always 5v5.")
+        st.caption("Baseline/scope toggles apply only to **QG%s / QG%b** — "
+                   "**QNFS% and QGx stay 5v5-only** regardless of the scope pick.")
+    else:
+        qg_baseline_label = st.session_state["goalies_qg_baseline"]
+        qg_scope_label = st.session_state["goalies_qg_scope"]
+        st.caption("QG%s/QG%b are not yet built for playoffs.")
+    qg_starter = qg_baseline_label.startswith("Starter")
+    qg_scope_suffix = QG_SCOPE_SUFFIX[qg_scope_label]
+
     is_2yr = (not playoffs) and SEASON_KEY.get(season_label) == "pooled_2yr"
     is_pooled = (not playoffs) and SEASON_KEY.get(season_label, "pooled") == "pooled"
     if is_2yr:
         # Faithful denominator-based pool of 2024-25 + 2025-26 (counts summed,
         # rates recomputed over the combined ~164-game sample).
         nfi, qn, qs = _pool_goalie_seasons(tuple(int(s) for s in POOLED_2YR_SEASONS))
+        qgt = _pool_qg_tiered_seasons(tuple(int(s) for s in POOLED_2YR_SEASONS), qg_scope_suffix)
     elif playoffs:
         n = load_goalie_nfi_playoffs()
         nfi = (n[[c for c in ["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "NFI_save_pct"] if c in n.columns]]
@@ -3130,6 +3216,7 @@ def render_goalies() -> None:
         s = load_qs_playoffs()
         qs = (s[["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo"]]
               .rename(columns={"GP": "GP_qs"}) if not s.empty else pd.DataFrame())
+        qgt = pd.DataFrame()   # not yet built for playoffs
     elif is_pooled:
         n = load_goalie_nfi()
         nfi = (n[[c for c in ["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "NFI_save_pct", "qualified"] if c in n.columns]]
@@ -3141,6 +3228,9 @@ def render_goalies() -> None:
         s = load_qs_pooled()
         qs = (s[[c for c in ["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo", "qualified"] if c in s.columns]]
               .rename(columns={"GP": "GP_qs", "qualified": "qual_qs"}) if not s.empty else pd.DataFrame())
+        t = load_qg_tiered_pooled(qg_scope_suffix)  # keep EVERY goalie; qualification gates ranking only
+        qgt = (t[[c for c in ["goalie_id", "goalie_name", "GP", "QG_pct_s", "QG_pct_b", "qualified"] if c in t.columns]]
+               .rename(columns={"GP": "GP_qg", "qualified": "qual_qg"}) if not t.empty else pd.DataFrame())
     else:
         sk = GOALIE_SEASON_INT.get(season_label)
         bs = load_goalie_nfi_by_season()
@@ -3153,8 +3243,11 @@ def render_goalies() -> None:
         s0 = load_qs_by_season()
         qs = (s0[s0["season"] == sk][[c for c in ["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo", "qualified"] if c in s0.columns]]
               .rename(columns={"GP": "GP_qs", "qualified": "qual_qs"}) if (not s0.empty and sk) else pd.DataFrame())
+        t0 = load_qg_tiered_by_season(qg_scope_suffix)
+        qgt = (t0[t0["season"] == sk][[c for c in ["goalie_id", "goalie_name", "GP", "QG_pct_s", "QG_pct_b", "qualified"] if c in t0.columns]]
+               .rename(columns={"GP": "GP_qg", "qualified": "qual_qg"}) if (not t0.empty and sk) else pd.DataFrame())
 
-    frames = [f for f in (nfi, qn, qs) if not f.empty]
+    frames = [f for f in (nfi, qn, qs, qgt) if not f.empty]
     if not frames:
         st.info("No goalie data available for this view.")
         return
@@ -3170,7 +3263,7 @@ def render_goalies() -> None:
         base = base.merge(r, on="goalie_id", how="outer")
 
     base["Goalie"] = base["goalie_id"].map(name_map)
-    gp_cols = [c for c in ("GP_nfi", "GP_qn", "GP_qs") if c in base.columns]
+    gp_cols = [c for c in ("GP_nfi", "GP_qn", "GP_qs", "GP_qg") if c in base.columns]
     base["GP"] = base[gp_cols].bfill(axis=1).iloc[:, 0] if gp_cols else np.nan
     base["Team"] = base["team"] if "team" in base.columns else np.nan
     # Per-metric qualification. PREFER the producer's `qualified` flag when the
@@ -3180,7 +3273,8 @@ def render_goalies() -> None:
     # no floor → rank everyone.
     _gsax_floor = 300 if is_pooled else (200 if is_2yr else 100)
     _fallback = {"qual_gsax": ("total_faced", _gsax_floor),
-                 "qual_qn": ("GP_qn", 25), "qual_qs": ("GP_qs", 25)}
+                 "qual_qn": ("GP_qn", 25), "qual_qs": ("GP_qs", 25),
+                 "qual_qg": ("GP_qg", 25)}
     for _qc, (_col, _flr) in _fallback.items():
         if playoffs:
             base[_qc] = True
@@ -3262,17 +3356,30 @@ def render_goalies() -> None:
     base["QNFS 95% CI"] = base.apply(_qnfs_ci, axis=1)
     _gren = {
         "NFIG60": "NFI-GSAx/60", "NFISV": "NFI SV%", "QNFS_pct": "QNFS%",
-        "QS_GSAx_pct": "GQG%", "QS_GSAx_lo": "GQG (95% lower)",
+        "QS_GSAx_pct": "QGx%", "QS_GSAx_lo": "QGx (95% lower)",
     }
     base = base.rename(columns=_gren)
     rank_pool = rank_pool.rename(columns=_gren)
+
+    # QG%s / QG%b: both are always in the data (computed for every goalie
+    # against both baselines); the toggle just picks which ONE is displayed,
+    # under a header naming exactly which baseline is active.
+    _qg_active, _qg_other = ("QG_pct_s", "QG_pct_b") if qg_starter else ("QG_pct_b", "QG_pct_s")
+    _qg_label = "QG%s" if qg_starter else "QG%b"
+    for _df in (base, rank_pool):
+        if _qg_active in _df.columns:
+            _df.rename(columns={_qg_active: _qg_label}, inplace=True)
+        if _qg_other in _df.columns:
+            _df.drop(columns=[_qg_other], inplace=True)
+
     # Goalies qualified for any metric lead (sorted by NFI-GSAx/60); pure-noise
     # small samples sink to the bottom rather than topping the leaderboard.
-    base["_qual_any"] = base[["qual_gsax", "qual_qn", "qual_qs"]].any(axis=1)
+    _qual_cols = [c for c in ("qual_gsax", "qual_qn", "qual_qs", "qual_qg") if c in base.columns]
+    base["_qual_any"] = base[_qual_cols].any(axis=1)
     base = base.sort_values(["_qual_any", "NFI-GSAx/60"], ascending=[False, False],
                             na_position="last").reset_index(drop=True)
 
-    cols = ["Goalie", "Team", "GP", "NFI-GSAx/60", "NFI SV%", "QNFS%", "GQG%"]
+    cols = ["Goalie", "Team", "GP", "NFI-GSAx/60", "NFI SV%", "QNFS%", "QGx%", _qg_label]
     disp = base[[c for c in cols if c in base.columns]].copy()
 
     fmt = {}
@@ -3280,7 +3387,7 @@ def render_goalies() -> None:
         fmt["NFI-GSAx/60"] = lambda x: "—" if pd.isna(x) else f"{x:+.3f}"
     if "NFI SV%" in disp:
         fmt["NFI SV%"] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
-    for c in ("QNFS%", "GQG%", "GQG (95% lower)"):
+    for c in ("QNFS%", "QGx%", "QGx (95% lower)", _qg_label):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
     if "GP" in disp:
@@ -3290,7 +3397,7 @@ def render_goalies() -> None:
     # NFI SV% shares NFI-GSAx's qualifying cohort — same CNFI+MNFI shots-faced
     # denominator, just an unadjusted rate instead of an xG-relative one.
     _metric_qual = {"NFI-GSAx/60": "qual_gsax", "NFI SV%": "qual_gsax",
-                     "QNFS%": "qual_qn", "GQG%": "qual_qs"}
+                     "QNFS%": "qual_qn", "QGx%": "qual_qs", _qg_label: "qual_qg"}
     for _m, _qc in _metric_qual.items():
         if _m not in disp.columns or _qc not in base.columns:
             continue
@@ -3303,18 +3410,31 @@ def render_goalies() -> None:
     if goalie_team != "All":
         st.caption(f"Each metric shows **(league rank / {goalie_team} rank)**. Every "
                    f"goalie is listed; a metric is ranked only if the goalie clears its "
-                   f"bar — **NFI-GSAx** ≥ {_shot_floor}, **QNFS / GQG** ≥ 25 GP — else "
-                   f"**(UR)** = unranked.")
+                   f"bar — **NFI-GSAx** ≥ {_shot_floor}, **QNFS / QGx / {_qg_label}** ≥ 25 GP "
+                   f"— else **(UR)** = unranked.")
     else:
         st.caption(f"Each metric shows its **(rank)**. Every goalie is listed; a metric "
                    f"is ranked only if the goalie clears its bar — **NFI-GSAx** "
-                   f"≥ {_shot_floor}, **QNFS / GQG** ≥ 25 GP — else **(UR)** = unranked.")
-    st.caption("**GQG (Goalie Quality Games)** = the Quality-Start idea computed on "
-               "**GSAx**, not raw save% — the share of a goalie's games where their "
-               "all-shot GSAx ≥ 0 (beat expected on a danger/xG-weighted basis).")
+                   f"≥ {_shot_floor}, **QNFS / QGx / {_qg_label}** ≥ 25 GP — else "
+                   f"**(UR)** = unranked.")
+    st.caption("**QGx** = goals-saved-above-expected, as a game rate (formerly GQG) — "
+               "the share of a goalie's games where their all-shot GSAx ≥ 0 (beat "
+               "expected on a danger/xG-weighted basis), not raw save%.")
     st.caption("**NFI SV%** = raw (unadjusted) save% on the net-front danger-zone shot "
                "set only (CNFI+MNFI shots faced) — a sanity-check stat, not shot-quality "
                "adjusted like NFI-GSAx.")
+    if not playoffs:
+        _bar_txt = ("that season's" if not (is_pooled or is_2yr)
+                    else f"each season's ({'2-season pool' if is_2yr else '4-season pool'})")
+        st.caption(
+            f"**{_qg_label}** = share of games where per-game save% ({qg_scope_label} shots "
+            f"on goal) cleared {_bar_txt} **{'starter' if qg_starter else 'backup'}-tier** "
+            f"baseline — the volume-weighted save% of that season's top-32-GP (starter) or "
+            f"next-32-GP (backup) goalies. A traditional Quality Start, but against a "
+            f"population-specific bar recomputed every season instead of one fixed "
+            f"league-average line. Toggle above switches baseline/scope; the leaderboard "
+            f"always shows the currently-selected one."
+        )
     _sort_hint()
     st.caption("Click a row to open that goalie's detail (collapses the list).")
     _ggen = st.session_state.get("_gl_tbl_gen", 0)
@@ -3332,7 +3452,8 @@ def render_goalies() -> None:
             "Pooled across all playoff games (2022-23 → 2024-25). Every goalie with "
             "playoff data is shown and ranked — no qualifying floor is applied to the "
             "small playoff samples. Per-game metric definitions (QNFS ≥3 net-front "
-            "shots/game; GQG ≥10 shots/game) are retained.</p>",
+            "shots/game; QGx ≥10 shots/game) are retained. QG%s/QG%b are not yet built "
+            "for playoffs.</p>",
             unsafe_allow_html=True,
         )
     else:
@@ -3343,7 +3464,8 @@ def render_goalies() -> None:
             "when the goalie clears its qualifying minimum — otherwise the cell "
             "reads (UR), unranked. Floors differ by metric: NFI-GSAx ≥300 net-front "
             "shots pooled / ≥100 per season; QNFS% ≥25 GP/season (≥3 net-front "
-            "shots/game); GQG ≥25 GP/season (≥10 shots/game). The regenerated data "
+            "shots/game); QGx ≥25 GP/season (≥10 shots/game); QG%s/QG%b ≥25 GP/season "
+            "(≥10 shots/game). The regenerated data "
             "files carry a <code>qualified</code> flag per metric for downstream "
             "analysis.</p>",
             unsafe_allow_html=True,
@@ -3385,7 +3507,7 @@ def _render_goalie_playoff_summary(gid: int) -> None:
     items = [
         ("NFI-GSAx/60", fmt(pick(n, "GSAx_per60"), "gsax")),
         ("QNFS%", fmt(pick(q, "QNFS_pct"), "pct")),
-        ("GQG%", fmt(pick(s, "QS_GSAx_pct"), "pct")),
+        ("QGx%", fmt(pick(s, "QS_GSAx_pct"), "pct")),
         ("Games (GSAx)", fmt(pick(n, "games"), "int")),
         ("Shots faced", fmt(pick(n, "total_faced"), "int")),
     ]

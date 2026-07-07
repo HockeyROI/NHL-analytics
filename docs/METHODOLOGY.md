@@ -2,7 +2,7 @@
 
 This document describes the analytical decisions underlying the HockeyROI frameworks, the reasoning behind each choice, and the verification work that supports them. It is the canonical reference for the project's methodology and is updated when methodology changes; data files reflect the methodology version stamped below.
 
-**Methodology version:** July 6, 2026 — added **NFI SV%**, a raw (unadjusted) save percentage on the same CNFI ∪ MNFI shots-faced denominator as NFI-GSAx, reported alongside it as a sanity-check stat (not shot-quality adjusted). Same source files as NFI-GSAx; no new qualifying floor. Builds on June 23, 2026 — renamed the goalie metric **QS-GSAx → GQG** (Goalie Quality Games): name only, same construction (per-game all-shot GSAx ≥ 0); underlying `qs_gsax` files / `QS_GSAx_*` columns are unchanged. Builds on June 19, 2026 — added season-level RelxG per-60 rate differential columns (`RelxG_F_pct`, `RelxG_A_pct`, `RelxG_pct`) to `per_player_season.csv` and `per_player_season_team.csv`, mirroring the NFI pipeline's existing `RelNFI_F_pct`/`_A`/`_pct` methodology; same date added Playoff Quality Game build (parallel `_playoffs`-suffixed outputs covering 22-23 through 24-25 with same methodology as regular-season QG, including RelNFI-QG and RelxG-QG); builds on the June 18 addition of Relative Quality Game metrics as parallel team-relative columns; June 12 Goalie Metrics (NFI-GSAx, QNFS%, GQG) with Vollman Quality Starts disambiguation; the June 7 update covered the NFI-QG half-credit tie handling and documented TZI2 as exploratory single-game tooling (not part of the public framework), building on the May 20, 2026 audit + bug fix, the May 2026 audit, and the May 3, 2026 zone-adjustment factor swap.
+**Methodology version:** July 6, 2026 (b) — added **QG%s / QG%b**, a tiered save%-based Quality Start metric: each season, goalies are ranked league-wide by GP into a top-32 "starter" tier and next-32 "backup" tier, and a volume-weighted baseline save% is computed for each tier; QG%s / QG%b are the share of a goalie's games where per-game save% clears the starter / backup baseline respectively, computed for every goalie against both baselines (a Streamlit toggle picks which one displays, default starter). Built in two shot scopes — 5v5 ES regulation and all situations — with a Streamlit toggle between them; QNFS%/QGx remain 5v5-only for now. Same date, renamed the goalie metric **GQG → QGx** (name only — same construction, per-game all-shot GSAx ≥ 0; underlying `qs_gsax` files / `QS_GSAx_*` columns unchanged) to free up "Quality Games" language for the new save%-based family and to read as "goals-saved-above-expected, expressed as a game rate." Builds on July 6, 2026 (a) — added **NFI SV%**, a raw (unadjusted) save percentage on the same CNFI ∪ MNFI shots-faced denominator as NFI-GSAx, reported alongside it as a sanity-check stat (not shot-quality adjusted). Same source files as NFI-GSAx; no new qualifying floor. Builds on June 23, 2026 — renamed the goalie metric **QS-GSAx → GQG** (Goalie Quality Games): name only, same construction (per-game all-shot GSAx ≥ 0); underlying `qs_gsax` files / `QS_GSAx_*` columns are unchanged. Builds on June 19, 2026 — added season-level RelxG per-60 rate differential columns (`RelxG_F_pct`, `RelxG_A_pct`, `RelxG_pct`) to `per_player_season.csv` and `per_player_season_team.csv`, mirroring the NFI pipeline's existing `RelNFI_F_pct`/`_A`/`_pct` methodology; same date added Playoff Quality Game build (parallel `_playoffs`-suffixed outputs covering 22-23 through 24-25 with same methodology as regular-season QG, including RelNFI-QG and RelxG-QG); builds on the June 18 addition of Relative Quality Game metrics as parallel team-relative columns; June 12 Goalie Metrics (NFI-GSAx, QNFS%, GQG) with Vollman Quality Starts disambiguation; the June 7 update covered the NFI-QG half-credit tie handling and documented TZI2 as exploratory single-game tooling (not part of the public framework), building on the May 20, 2026 audit + bug fix, the May 2026 audit, and the May 3, 2026 zone-adjustment factor swap.
 **Data snapshot reflected in this document:** values current as of the version stamp date. Counts and player-level values shift as games are added to the dataset.
 
 ---
@@ -434,21 +434,20 @@ Player-level TZI2 will not be published until a public methodology introduction 
 
 ---
 
-## Goalie Metrics: NFI-GSAx, NFI SV%, QNFS%, GQG
+## Goalie Metrics: NFI-GSAx, NFI SV%, QNFS%, QGx, QG%s / QG%b
 
-### Disambiguation: GQG vs. conventional Quality Starts
+### Disambiguation: QGx / QNFS% vs. QG%s / QG%b vs. conventional Quality Starts
 
-Read this before mapping any of these metrics to a conventional goalie-consistency measure. Robert Vollman's Quality Starts metric (~2009) is binary on **save percentage**: a quality start is a game where the goalie's save% exceeds league-average save% (with a small adjustment for high-shot-volume games). Anyone in hockey analytics who hears "Quality Starts" will map to that definition. HockeyROI's goalie consistency metrics — **GQG** (Goalie Quality Games; formerly QS-GSAx) and **QNFS%** — are constructed differently on three dimensions:
+Read this before mapping any of these metrics to a conventional goalie-consistency measure. Robert Vollman's Quality Starts metric (~2009) is binary on **save percentage**: a quality start is a game where the goalie's save% exceeds league-average save% (with a small adjustment for high-shot-volume games). Anyone in hockey analytics who hears "Quality Starts" will map to that definition. HockeyROI has **four** goalie consistency metrics, and they split into two families on exactly the dimension Vollman's definition turns on — save% vs. expected-goals:
 
-1. **Threshold.** Per-game GSAx ≥ 0 — the goalie beat their expected on a danger- or xG-weighted basis — **not** save% > league average.
-2. **Two parallel definitions** (QNFS% and GQG), not one.
-3. **Different shot scopes.** QNFS% uses net-front (CNFI ∪ MNFI) shots only; GQG uses all shots faced.
+- **QGx and QNFS% are GSAx-based, not save%-based.** A quality game is per-game GSAx ≥ 0 — the goalie beat expected on a danger- or xG-weighted basis — **not** save% > league average. QNFS% uses net-front (CNFI ∪ MNFI) shots only; QGx uses all shots faced. Neither is Vollman Quality Starts under a different name — the earlier rename (QS-GSAx → QGx, via GQG) deliberately drops the "Quality Start" label to avoid exactly this confusion. Do not conflate either with Vollman's metric.
+- **QG%s / QG%b ARE save%-based, in the spirit of Vollman** — but they replace his single, fixed league-average line with two population-specific baselines recomputed every season (see below). This is the metric to reach for if you want something recognizable as a traditional Quality Start; QGx/QNFS% are not that.
 
-GQG and QNFS% are not Vollman Quality Starts under a different name — the GQG rename (from QS-GSAx) deliberately drops the "Quality Start" label to avoid exactly this confusion. Do not conflate them.
+Don't map QGx or QNFS% to Vollman's metric, or treat any of the four as interchangeable with each other — each is built on a different threshold, shot scope, or baseline population.
 
 ### NFI-GSAx
 
-**What it measures:** per-(goalie, season) goals-saved-above-expected on **CNFI ∪ MNFI shots only**. The expectation baseline is an **internal per-season, per-zone league goal rate** — within each season the league's goals-per-shot-faced is computed separately for the CNFI and MNFI zones, and each goalie's expected goals is `faced_CNFI × rate_CNFI + faced_MNFI × rate_MNFI`. GSAx is that expectation minus goals allowed on net-front shots. (This is a HockeyROI-internal model, **not** the MoneyPuck xGoal model — MoneyPuck is used only by GQG, below.) The faced denominator is save-based — shots-on-goal and goals (missed shots excluded), distinct from QNFS%'s Fenwick base. Per-60 normalization allocates each goalie's pooled even-strength TOI across seasons in proportion to the share of their career net-front faced shots that fell in each season (shifts data is not season-keyed, so exposure is apportioned by faced-shot share).
+**What it measures:** per-(goalie, season) goals-saved-above-expected on **CNFI ∪ MNFI shots only**. The expectation baseline is an **internal per-season, per-zone league goal rate** — within each season the league's goals-per-shot-faced is computed separately for the CNFI and MNFI zones, and each goalie's expected goals is `faced_CNFI × rate_CNFI + faced_MNFI × rate_MNFI`. GSAx is that expectation minus goals allowed on net-front shots. (This is a HockeyROI-internal model, **not** the MoneyPuck xGoal model — the xGoal model is used only by QGx, below. QG%s/QG%b also read from MoneyPuck's shot log, but only the raw shot/goal outcome, not the xGoal column, since save%-based metrics don't need a shot-quality model.) The faced denominator is save-based — shots-on-goal and goals (missed shots excluded), distinct from QNFS%'s Fenwick base. Per-60 normalization allocates each goalie's pooled even-strength TOI across seasons in proportion to the share of their career net-front faced shots that fell in each season (shifts data is not season-keyed, so exposure is apportioned by faced-shot share).
 
 **Why net-front only:** NFI's structural insight is that the immediate net-front and high slot are where shot location actually predicts conversion. Restricting GSAx to those shots puts the goalie metric on the same spatial basis as the player- and team-level NFI framework — they are commensurable in a way that all-shot GSAx and NFI% are not.
 
@@ -456,7 +455,7 @@ GQG and QNFS% are not Vollman Quality Starts under a different name — the GQG 
 
 **Confidence intervals:** none are currently reported. NFI-GSAx per-60 is a rate count over a fixed exposure window; were CIs to be added they would use the Poisson (Garwood) interval, per the rate-vs-proportion rule established in the May 20, 2026 audit (see `docs/AUDIT_2026-05-20.md`). The present outputs carry point estimates only.
 
-**Source:** `NFI/scripts/21_goalie_gsax_by_season.py` → `NFI/Output/goalie_nfi_gsax_by_season.csv` (per-season, 354 goalie-seasons) and `NFI/Output/goalie_nfi_gsax_pooled_v2.csv` (pooled, 84 goalies). The pooled file currently spans five seasons (2021-22 → 2025-26), one more than QNFS%/GQG.
+**Source:** `NFI/scripts/21_goalie_gsax_by_season.py` → `NFI/Output/goalie_nfi_gsax_by_season.csv` (per-season, 354 goalie-seasons) and `NFI/Output/goalie_nfi_gsax_pooled_v2.csv` (pooled, 84 goalies). The pooled file currently spans five seasons (2021-22 → 2025-26), one more than QNFS%/QGx.
 
 ### NFI SV%
 
@@ -478,31 +477,53 @@ GQG and QNFS% are not Vollman Quality Starts under a different name — the GQG 
 
 **Source:** `NFI/goalie_consistency/scripts/compute_qnfs.py` and `compute_qnfs_per_season.py`; outputs `NFI/goalie_consistency/output/qnfs_2022-2026.csv` (146 goalies, of which 82 qualified) and `qnfs_per_season_2022-2026.csv` (294 goalie-seasons). Window: four seasons, 2022-23 → 2025-26.
 
-### GQG: Goalie Quality Games (GSAx-based)
+### QGx: Goalie Quality Games (GSAx-based)
 
-**Name:** GQG (Goalie Quality Games) was previously labeled **QS-GSAx**. It is the Quality-Start idea computed on **GSAx** (per-game GSAx ≥ 0) rather than on raw save% — same metric, renamed June 23, 2026. The underlying data columns/files keep their `qs_gsax` / `QS_GSAx_*` names.
+**Name:** QGx was previously labeled **GQG** (Goalie Quality Games), and before that **QS-GSAx**. It is the Quality-Start idea computed on **GSAx** (per-game GSAx ≥ 0) rather than on raw save% — same metric both times, renamed June 23, 2026 (QS-GSAx → GQG) and again July 6, 2026 (GQG → QGx, to read as "goals-saved-above-expected, as a game rate" and to free up "Quality Games" language for QG%s/QG%b below). The underlying data columns/files keep their `qs_gsax` / `QS_GSAx_*` names throughout.
 
 **What it measures:** the share of a goalie's 5v5 ES regulation appearances in which their per-game **all-shot** GSAx ≥ 0. Same binary-indicator + season-rate construction as QNFS%, but on all shots faced rather than net-front only, and using the **MoneyPuck xGoal model** for the per-shot expectation (per-game GSAx = Σ xGoal − Σ goals). Wilson 95% confidence intervals; reported with both the point estimate and a Wilson lower-bound rank.
 
 **Qualifying:** minimum 10 shots faced per game; minimum 25 qualifying games per season.
 
-**Why GQG exists alongside QNFS%:** the two measure related but non-identical things. Spearman ρ between the two metrics' Wilson lower bounds (QS_GSAx_lo vs QNFS_lo) across the n = 80 qualified-goalie overlap is 0.810 — they rank goalies similarly, but ~34% of rank variance is unshared (1 − 0.810² = 0.344). Net-front-only QNFS% penalizes failures on the highest-leverage shots more sharply; all-shot GQG captures a goalie's full expected-vs-actual ledger. Reporting both keeps the framework honest about which shot scope drives which result.
+**Why QGx exists alongside QNFS%:** the two measure related but non-identical things. Spearman ρ between the two metrics' Wilson lower bounds (QS_GSAx_lo vs QNFS_lo) across the n = 80 qualified-goalie overlap is 0.810 — they rank goalies similarly, but ~34% of rank variance is unshared (1 − 0.810² = 0.344). Net-front-only QNFS% penalizes failures on the highest-leverage shots more sharply; all-shot QGx captures a goalie's full expected-vs-actual ledger. Reporting both keeps the framework honest about which shot scope drives which result.
 
 **Source:** `NFI/goalie_consistency/scripts/compute_qs_gsax.py`; outputs `NFI/goalie_consistency/output/qs_gsax_2022-2026.csv` (81 goalies) and `qs_gsax_per_season_2022-2026.csv` (210 goalie-seasons). Window: four seasons, 2022-23 → 2025-26.
 
+### QG%s / QG%b: Tiered Save%-Based Quality Starts
+
+**Why this exists:** the standard "Quality Start" (Vollman, ~2009) grades every goalie against one league-average save% line. Two problems: the line moves every season (recent 5v5 league save% has drifted from ~91.8% in 2022-23 down to ~90.9% in 2025-26; all-situations from ~90.1% down to ~89.0%), and a single line blends two very different jobs — a goalie who starts 60+ games and a true backup starting 15-20 face different workloads and, empirically, save at different clips. Grading a backup against a workhorse #1's bar sets them up to fail. QG%s / QG%b fix both problems: two baselines, recomputed fresh every season.
+
+**Tiering (per season, per shot scope):** rank every goalie who logged ≥1 qualifying game that season by GP, descending (ties broken by season shots faced, then goalie_id). The top 32 by GP are that season's **starter** tier; the next 32 are the **backup** tier; the rest are unused "depth." Tier assignment is a ranking exercise only — it does not gate which goalies QG%s/QG%b are computed for (see next point).
+
+**Baselines:** for each tier, baseline save% = **total saves ÷ total shots-on-goal faced** across every goalie in that tier that season — a volume-weighted league save%, not an unweighted average of goalies' individual save%s. This matches how "league-average save%" is conventionally computed.
+
+**The metric:** QG%s = share of a goalie's qualifying games where per-game save% ≥ that season's **starter** baseline. QG%b = share of a goalie's qualifying games where per-game save% ≥ that season's **backup** baseline. Both are computed for **every** goalie regardless of which tier they themselves fall in — a struggling starter's QG%b answers "would this goalie be a good backup?", and a hot backup's QG%s answers "is this goalie performing like a starter?" The Streamlit toggle only changes which of the two is displayed (default: starter); both are always in the data.
+
+**Per-game save%:** saves ÷ shots-on-goal (SHOT + GOAL events), explicitly **excluding missed shots** — a missed shot never reaches the goalie, so including it in the faced denominator inflates save% (this was caught and fixed during development: including misses pushed 5v5 baselines from a realistic ~91% to an inflated ~94%). This is why QG%s/QG%b use a different shot-set convention than QGx/QNFS%, which correctly use the full Fenwick set since the xG model prices shot quality in.
+
+**Shot scope — built twice, with a toggle:**
+- **5v5 ES regulation** — matches the scope used elsewhere in the goalie consistency pipeline (QNFS%, QGx). 5v5 save% runs materially higher than all-situations (5v5 excludes PK shots-against, which are higher-danger), so 5v5 baselines read ~90.9%–91.8% across the four seasons.
+- **All situations** (5v5 + PP + PK), regulation — matches the conventional meaning of "league-average save%" most people have in mind (recent seasons ~89.0%–90.9%). This is the scope closest to Vollman's original definition.
+
+Streamlit carries a shot-scope toggle for QG%s/QG%b specifically, next to the Season/Game-type filter on the Goalies tab. **QNFS% and QGx are 5v5-only and are not affected by this toggle** — a note is shown on the Goalies tab to that effect.
+
+**Qualifying:** minimum 10 shots faced per game (same floor as QGx); minimum 25 qualifying games per season for a goalie-season to be "qualified" for ranking (same floor as QNFS%/QGx). No half-credit ties (`>=` rule); the tie rate against either baseline is ~0% in practice since 10+ shot-count denominators rarely land on the exact same fraction as a volume-weighted league baseline.
+
+**Source:** `NFI/goalie_consistency/scripts/compute_qg_tiered.py`; outputs per scope (suffix `""` for 5v5, `"_allsit"` for all situations): `qg_tier_baselines_by_season{suffix}.csv` (season × tier baselines), `qg_savepct_per_season_2022-2026{suffix}.csv` (per goalie-season), `qg_savepct_2022-2026{suffix}.csv` (pooled 4-season, 145 goalies, 78 qualified in both scopes). Window: four seasons, 2022-23 → 2025-26. Playoffs are not yet built for this metric.
+
 ### Cohort overlap note
 
-The goalie metrics qualify at different thresholds and on different shot bases and season spans, so they produce different cohort sizes: NFI-GSAx pooled has 84 goalies (five seasons), QNFS% has 146 in-file with 82 qualified (four seasons), GQG pooled has 81 (four seasons). NFI SV% is the one exception — it shares NFI-GSAx's cohort and floors exactly (same source files, same denominator), so its cohort size always matches NFI-GSAx's. A goalie may appear in one metric and not another because the qualifying floors differ — this is by design, not a bug. A goalie with a thin net-front shot diet but high total volume may qualify for GQG and NFI-GSAx but not for QNFS%; an infrequent appearance-maker may qualify for none. Where the same goalie appears in multiple metrics, the metrics are commensurable *for that goalie* — bearing in mind the net-front (QNFS%, NFI-GSAx) vs all-shot (GQG) scope difference and the internal-rate (QNFS%, NFI-GSAx) vs MoneyPuck (GQG) expectation model.
+The goalie metrics qualify at different thresholds and on different shot bases and season spans, so they produce different cohort sizes: NFI-GSAx pooled has 84 goalies (five seasons), QNFS% has 146 in-file with 82 qualified (four seasons), QGx pooled has 81 (four seasons), QG%s/QG%b pooled has 145 in-file with 78 qualified (four seasons, either shot scope). NFI SV% is the one exception — it shares NFI-GSAx's cohort and floors exactly (same source files, same denominator), so its cohort size always matches NFI-GSAx's. A goalie may appear in one metric and not another because the qualifying floors differ — this is by design, not a bug. A goalie with a thin net-front shot diet but high total volume may qualify for QGx and NFI-GSAx but not for QNFS%; an infrequent appearance-maker may qualify for none. Where the same goalie appears in multiple metrics, the metrics are commensurable *for that goalie* — bearing in mind the net-front (QNFS%, NFI-GSAx) vs all-shot (QGx, QG%s/QG%b) scope difference and the internal-rate (QNFS%, NFI-GSAx) vs MoneyPuck (QGx, QG%s/QG%b) expectation model.
 
 ### Confidence interval note
 
-QNFS% and GQG are proportions; Wilson 95% CIs are the correct tool and are reported for both. NFI-GSAx per-60 is a rate count over a fixed exposure; per the May 20, 2026 audit migration (see `docs/AUDIT_2026-05-20.md`), Poisson CIs are the correct tool for rate metrics — but NFI-GSAx currently reports point estimates only, so no CI is emitted today. This follows the same Wilson-vs-Poisson rule the player-level framework uses.
+QNFS%, QGx, and QG%s/QG%b are all proportions; Wilson 95% CIs are the correct tool and are reported for all three. NFI-GSAx per-60 is a rate count over a fixed exposure; per the May 20, 2026 audit migration (see `docs/AUDIT_2026-05-20.md`), Poisson CIs are the correct tool for rate metrics — but NFI-GSAx currently reports point estimates only, so no CI is emitted today. This follows the same Wilson-vs-Poisson rule the player-level framework uses.
 
 ### Locked spot-check values
 
-Pooled values for eight reference starters, as of the methodology version stamp at the top of this document. All eight qualify in all three cohorts. QNFS% and GQG% are percentages; NFI-GSAx is GSAx per 60 ES minutes. Values shift as games are added.
+Pooled values for eight reference starters, as of the methodology version stamp at the top of this document. All eight qualify in all three cohorts. QNFS% and QGx% are percentages; NFI-GSAx is GSAx per 60 ES minutes. Values shift as games are added.
 
-| Goalie (team) | QNFS% | GQG% | NFI-GSAx /60 |
+| Goalie (team) | QNFS% | QGx% | NFI-GSAx /60 |
 |---|---|---|---|
 | Connor Hellebuyck (WPG) | 63.37 | 63.37 | 0.162 |
 | Igor Shesterkin (NYR) | 62.22 | 60.89 | 0.226 |
@@ -513,7 +534,27 @@ Pooled values for eight reference starters, as of the methodology version stamp 
 | Jacob Markström (CGY) | 49.75 | 51.02 | 0.008 |
 | Adin Hill (VGK) | 52.63 | 50.38 | −0.081 |
 
-The cohort-overlap NaN convention (show the row with NaN where a goalie qualifies for only some metrics) applies to goalies outside this eight — e.g. one clearing GQG's and NFI-GSAx's floors but under QNFS%'s 25-GP-in-a-season gate. If your pipeline output for the same data snapshot differs from these values by more than rounding (±0.01 for the percentages, ±0.005 for per-60), something is wrong with your reproduction.
+The cohort-overlap NaN convention (show the row with NaN where a goalie qualifies for only some metrics) applies to goalies outside this eight — e.g. one clearing QGx's and NFI-GSAx's floors but under QNFS%'s 25-GP-in-a-season gate. If your pipeline output for the same data snapshot differs from these values by more than rounding (±0.01 for the percentages, ±0.005 for per-60), something is wrong with your reproduction.
+
+Pooled QG%s / QG%b values for six reference starters, both shot scopes (values are percentages):
+
+| Goalie | QG%s (5v5) | QG%b (5v5) | QG%s (all-sit) | QG%b (all-sit) |
+|---|---|---|---|---|
+| Connor Hellebuyck | 65.02 | 67.90 | 60.91 | 66.26 |
+| Jeremy Swayman | 64.17 | 66.31 | 60.32 | 62.43 |
+| Ilya Sorokin | 62.01 | 62.88 | 57.14 | 61.04 |
+| Logan Thompson | 58.89 | 61.11 | 60.22 | 63.54 |
+| Igor Shesterkin | 58.11 | 60.81 | 58.04 | 60.71 |
+| John Gibson | 55.06 | 58.43 | 47.28 | 51.09 |
+
+Season baselines underlying these values (volume-weighted tier save%, `qg_tier_baselines_by_season{suffix}.csv`):
+
+| Season | Starter (5v5) | Backup (5v5) | Starter (all-sit) | Backup (all-sit) |
+|---|---|---|---|---|
+| 2022-23 | 91.85% | 91.10% | 90.93% | 90.26% |
+| 2023-24 | 91.74% | 91.39% | 90.85% | 90.31% |
+| 2024-25 | 91.39% | 90.84% | 90.44% | 89.77% |
+| 2025-26 | 90.89% | 90.24% | 89.89% | 89.42% |
 
 ---
 
