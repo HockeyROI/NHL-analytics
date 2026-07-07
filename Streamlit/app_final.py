@@ -1652,6 +1652,15 @@ def _qg_axis_domain(values) -> list:
     return [min(30, int(np.floor(min(vv))) - 2), max(70, int(np.ceil(max(vv))) + 2)]
 
 
+def _rel_axis_domain(values, floor: int = 6) -> list:
+    """Symmetric-around-0 domain for signed relative-% charts (so 0 stays centred
+    and different players' charts share a comparable spread). At least ±floor,
+    expanding only to fit an outlier."""
+    vv = [abs(v) for v in values if pd.notna(v)]
+    m = max([floor] + [int(np.ceil(x)) + 1 for x in vv]) if vv else floor
+    return [-m, m]
+
+
 def _player_qg_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
     """The 5 bar metrics (0-100) for one player at a season label or the 2yr row."""
     if label == "2yr avg (24-26)":
@@ -1927,7 +1936,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
     _qg_bar_chart(_player_qg_vals(pid, trend, _yr), _yr)
     st.caption("↕ Click a different year (or the 2yr row) above to change the bars.")
 
-    def _chart(title: str, cols: list[str]) -> None:
+    def _chart(title: str, cols: list[str], ydomain=None) -> None:
         import altair as alt
         ys = [c for c in cols if c in trend.columns and trend[c].notna().any()]
         if not ys:
@@ -1935,11 +1944,12 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         st.caption(title)
         long = (trend[["Season"] + ys].melt("Season", var_name="Metric",
                 value_name="value").dropna(subset=["value"]))
-        # zero=False: zoom the y-axis to the data range instead of forcing a 0
-        # baseline (these metrics sit well away from 0, so 0 just wastes space).
+        # ydomain (when given) fixes a comparable spread; otherwise zoom to the
+        # data range (zero=False) rather than forcing a wasteful 0 baseline.
+        _ysc = alt.Scale(domain=ydomain) if ydomain else alt.Scale(zero=False)
         ch = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
             x=alt.X("Season:N", title=None),
-            y=alt.Y("value:Q", title=None, scale=alt.Scale(zero=False)),
+            y=alt.Y("value:Q", title=None, scale=_ysc),
             color=alt.Color("Metric:N", sort=ys, legend=alt.Legend(
                 orient="bottom", title=None, symbolType="stroke", symbolStrokeWidth=2.5),
                 scale=alt.Scale(domain=ys,
@@ -1954,15 +1964,21 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
     # flattens.
     if "Quality Games" in _show_fams:
         _qg_combined_line(trend)
+    # Symmetric ±spread for the signed relative-% charts so 0 stays centred and
+    # the spread is comparable across players.
+    _rel_cols = ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%", "RelxG-F%", "RelxG-A%"]
+    _rel_dom = _rel_axis_domain(
+        pd.concat([trend[c] for c in _rel_cols if c in trend.columns],
+                  ignore_index=True).tolist() if any(c in trend.columns for c in _rel_cols) else [])
     if "xG" in _show_fams:
         _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])
         _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
-               ["RelxG%", "RelxG-F%", "RelxG-A%"])
+               ["RelxG%", "RelxG-F%", "RelxG-A%"], ydomain=_rel_dom)
     if "Net Front Impact" in _show_fams:
         _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
-               ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
+               ["RelNFI%", "RelNFI-A%", "RelNFI-S%"], ydomain=_rel_dom)
     if "Zone Impact" in _show_fams:
-        _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
+        _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"], ydomain=[0, 10])
     if "Net Front Impact" in _show_fams:
         _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
         _chart("NFI% (net-front share)", ["NFI%"])
