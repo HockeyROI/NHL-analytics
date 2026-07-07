@@ -1677,20 +1677,22 @@ def _default_qg_year(season_label, seasons) -> str:
     return _non2[-1] if _non2 else (seasons[-1] if seasons else None)
 
 
-def _qg_bar_chart(vals: dict, label: str) -> None:
-    """Diverging bar of NFI% + the four Quality-Games percentages vs a 50%
-    baseline (50% = league-median consistency: bar up when above, down when
-    below). vals maps display-metric → value on a 0-100 scale."""
+def _qg_bar_chart(vals: dict, label: str, caption: str = None,
+                  dl_prefix: str = "QG-bars") -> None:
+    """Diverging bar of metric %s vs a 50% baseline (50% = league-median: bar up
+    when above, down when below). vals maps display-metric → value on a 0-100
+    scale. caption overrides the default (player NFI%+QG) caption; dl_prefix names
+    the download file."""
     import altair as alt
     rows = [{"Metric": m, "value": float(v), "base": 50.0, "color": _bar_color(v)}
             for m, v in vals.items() if pd.notna(v)]
     if not rows:
-        st.caption("No NFI% / Quality-Games values for this selection.")
+        st.caption("No values for this selection.")
         return
     d = pd.DataFrame(rows)
     _dom = _qg_axis_domain([r["value"] for r in rows])
-    st.caption(f"**{label}** — NFI% + Quality-Games % vs the **50% baseline** "
-               "(bar up = above 50%, down = below; darker = further from 50%).")
+    st.caption(caption or (f"**{label}** — NFI% + Quality-Games % vs the **50% "
+               "baseline** (bar up = above 50%, down = below; darker = further from 50%)."))
     # Colour the 2nd and 4th category labels orange, the rest blue.
     _orange_lbls = "[" + ",".join(f"'{rows[i]['Metric']}'"
                                   for i in (1, 3) if i < len(rows)) + "]"
@@ -1706,7 +1708,7 @@ def _qg_bar_chart(vals: dict, label: str) -> None:
         tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
-    _show_chart(bars + rule, dl_name=f"QG-bars-{label}")
+    _show_chart(bars + rule, dl_name=f"{dl_prefix}-{label}")
 
 
 def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
@@ -3098,6 +3100,40 @@ def _goalie_profile_table(gid: int, qg_scope_suffix: str = "", qg_starter: bool 
     return pd.DataFrame(rows, columns=_lead + metric_cols), trend, metric_cols
 
 
+def _goalie_dual_line(trend: pd.DataFrame, qg_label: str) -> None:
+    """Combined goalie chart: NFI-GSAx/60 rate on the LEFT y-axis, the consistency
+    percentages (QNFG%, QG%, QG%s-or-b) on the RIGHT y-axis — two aligned graphs in
+    one, sharing the Season x-axis."""
+    import altair as alt
+    _pcts = [c for c in ("QNFG%", "QG%", qg_label)
+             if c in trend.columns and trend[c].notna().any()]
+    if "NFI-GSAx/60" not in trend.columns or not _pcts:
+        return
+    _rate_color = _CHART_THIRD                                   # blue rate + left axis
+    _pct_range = [_CHART_PRIMARY, _CHART_SECOND, _CHART_FOURTH][:len(_pcts)]
+    st.caption("Combined — **NFI-GSAx/60** (rate, left axis, blue) vs the consistency "
+               "**%s** (right axis). Two graphs on one chart, shared seasons.")
+    _x = alt.X("Season:N", title=None)
+    left = alt.Chart(trend).mark_line(point=True, strokeWidth=2.5,
+                                      color=_rate_color).encode(
+        x=_x,
+        y=alt.Y("NFI-GSAx/60:Q", scale=alt.Scale(zero=False),
+                axis=alt.Axis(title="NFI-GSAx/60", titleColor=_rate_color, orient="left")),
+        tooltip=["Season:N", alt.Tooltip("NFI-GSAx/60:Q", format=".3f")])
+    long = (trend[["Season"] + _pcts].melt("Season", var_name="Metric",
+            value_name="value").dropna(subset=["value"]))
+    right = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
+        x=_x,
+        y=alt.Y("value:Q", scale=alt.Scale(domain=_qg_axis_domain(long["value"].tolist())),
+                axis=alt.Axis(title="Consistency %", orient="right")),
+        color=alt.Color("Metric:N", sort=_pcts, legend=alt.Legend(
+            orient="bottom", title=None, symbolType="stroke", symbolStrokeWidth=2.5),
+            scale=alt.Scale(domain=_pcts, range=_pct_range)),
+        tooltip=["Season:N", "Metric:N", alt.Tooltip("value:Q", format=".1f")])
+    chart = alt.layer(left, right).resolve_scale(y="independent").properties(height=340)
+    _show_chart(chart, dl_name="Goalie-combined")
+
+
 def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) -> None:
     """Per-season trend table + line charts for one goalie."""
     qg_label = "QG%s" if qg_starter else "QG%b"
@@ -3135,19 +3171,30 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
             ).properties(height=300)
         _show_chart(ch, dl_name=title.split(" (")[0].replace(" ", "-"))
 
-    _gchart("NFI-GSAx per 60", ["NFI-GSAx/60"], trend)
+    # (1) One-year bar: consistency %s for the latest season with data, vs 50%.
+    _cons_cols = [c for c in ("QNFG%", "QG%", qg_label) if c in trend.columns]
+    if _cons_cols:
+        _t = trend.dropna(subset=_cons_cols, how="all")
+        if not _t.empty:
+            _last = _t.iloc[-1]
+            _bar_vals = {c: float(_last[c]) for c in _cons_cols if pd.notna(_last[c])}
+            if _bar_vals:
+                _qg_bar_chart(
+                    _bar_vals, str(_last["Season"]),
+                    caption=(f"**{_last['Season']}** — consistency %s vs the **50% "
+                             "baseline** (bar up = above 50%, darker = further from 50%)."),
+                    dl_prefix="Goalie-bars")
 
+    # (2) Year-over-year combined chart: NFI-GSAx/60 (left axis) + consistency %s
+    # (right axis) — two graphs on one, dual y-axis.
+    _goalie_dual_line(trend, qg_label)
+
+    # (3) NFI SV% — a raw save% band (~85-95%), its own chart so it doesn't squash
+    # the consistency axis.
     if "NFI SV%" in trend.columns:
         _sv = trend[["Season", "NFI SV%"]].copy()
         _sv["NFI SV%"] = _sv["NFI SV%"] * 100
         _gchart("NFI SV%", ["NFI SV%"], _sv)
-
-    # Consistency %: zoom the y-axis to 30-70% (expand only if a value falls
-    # outside that band, so nothing is clipped).
-    _cons_cols = [c for c in ("QNFG%", "QG%", qg_label) if c in trend.columns]
-    _cons_vals = pd.concat([trend[c] for c in _cons_cols], ignore_index=True)
-    _gchart(f"Consistency % (QNFG%, QG%, {qg_label})", _cons_cols, trend,
-            ydomain=_qg_axis_domain(_cons_vals.tolist()))
 
 
 def _wilson(k: float, n: float, lower: bool = True, z: float = 1.96) -> float:
