@@ -1,4 +1,4 @@
-"""HockeyROI — NHL Zone Time + Net Front Impact Metrics Explorer."""
+"""HockeyROI — NHL Impact Analytics (Net-Front Impact, Zone, xG, Quality Games, Goalie GSAx)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -421,7 +421,7 @@ def render_header() -> None:
           <div class="hockeyroi-brand"><span class="hockey">HOCKEY</span><span class="roi">ROI</span></div>
           <div style="color:#2E7DC4; font-size:0.9rem; padding-bottom:0.45rem;">How these metrics work → <strong>Methodology</strong> tab (far right)</div>
         </div>
-        <div class="tagline">NHL Net-Front Impact, Zone Impact, Quality Games &amp; Quality Starts (GSAx)</div>
+        <div class="tagline">NHL Impact Analytics — Net-Front Impact, Zone Impact, xG &amp; Quality Games, for skaters and goalies</div>
         <div style="color:#888888; font-size:0.85rem; margin-top:0.15rem;">
           <a href="https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md" style="color:#2E7DC4;">Methodology on GitHub</a>
         </div>
@@ -652,11 +652,19 @@ def render_methodology() -> None:
             "ties. <b>Relative QG</b> (<b>RelNFI-QG%</b>, <b>RelxG-QG%</b>) runs the same per-game "
             "median test on the player's <i>team-relative</i> danger share (on-ice vs off-ice), so "
             "it credits beating the bar after isolating individual contribution from team strength "
-            "— the QG analog of RelNFI%. <b>RelxG%</b> is the underlying season-level relative xG "
-            "rate itself (relative xG per 60, on-ice − off-ice), the xG counterpart to RelNFI%. "
-            "RelxG is built from MoneyPuck's raw shot data with HockeyROI's own qualifying filter, "
-            "so it can differ from MoneyPuck's published relative-xG columns — different "
-            "filters/aggregation, not a question of accuracy.",
+            "— the QG analog of RelNFI%.",
+        )
+        + _meth_framework(
+            "xG — Expected Goals",
+            "On-ice expected goals, MoneyPuck-style, split into For and Against. <b>xGF/60</b> and "
+            "<b>xGA/60</b> are the raw on-ice expected goals for / against per 60 while the player "
+            "is on the ice. <b>RelxG%</b> is the season-level <i>relative</i> xG rate (on-ice − "
+            "off-ice per 60) — the xG counterpart to RelNFI% — and <b>RelxG-F%</b> / <b>RelxG-A%</b> "
+            "split that relative rate into its For and Against halves. All are built from MoneyPuck's "
+            "raw shot data with HockeyROI's own qualifying filter, so they can differ from "
+            "MoneyPuck's published columns — different filters/aggregation, not a question of "
+            "accuracy. (Split out of Quality Games: QG is the per-game consistency %; xG is the "
+            "underlying rate.)",
         )
         + _meth_framework(
             "Teams",
@@ -4137,7 +4145,7 @@ def render_scoped_filters(scope: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 def main() -> None:
     st.set_page_config(
-        page_title="HockeyROI — NHL Net-Front Impact, Zone Impact, Quality Games & Quality Starts (GSAx)",
+        page_title="HockeyROI — NHL Impact Analytics",
         page_icon="🏒",
         layout="wide",
         initial_sidebar_state="collapsed",
