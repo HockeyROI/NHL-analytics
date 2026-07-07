@@ -150,6 +150,7 @@ PALETTE = {
 _CHART_PRIMARY = PALETTE["orange"]       # #FF6B35
 _CHART_SECOND = PALETTE["lightblue"]     # #4AB3E8 light blue
 _CHART_THIRD = PALETTE["blue"]           # #2E7DC4 brand blue (reads blue, not black)
+_CHART_FOURTH = "#7E57C2"                # purple — 4th line on 4-series charts
 _CHART_COLORS = {
     "NFI%": _CHART_PRIMARY,
     "RelNFI%": _CHART_PRIMARY, "RelNFI-A%": _CHART_SECOND, "RelNFI-S%": _CHART_THIRD,
@@ -158,6 +159,11 @@ _CHART_COLORS = {
     "NFI-QG%": _CHART_PRIMARY, "xG-QG%": _CHART_SECOND,
     "RelNFI-QG%": _CHART_PRIMARY, "RelxG-QG%": _CHART_SECOND, "RelxG%": _CHART_PRIMARY,
     "NFI-GSAx/60": _CHART_PRIMARY, "QNFG%": _CHART_PRIMARY, "QG%": _CHART_SECOND,
+    # xG family
+    "xGF/60": _CHART_PRIMARY, "xGA/60": _CHART_SECOND,
+    "RelxG-F%": _CHART_PRIMARY, "RelxG-A%": _CHART_SECOND,
+    # goalie extras (NFI SV% = purple; QG%s/QG%b = blue/third)
+    "NFI SV%": _CHART_FOURTH, "QG%s": _CHART_THIRD, "QG%b": _CHART_THIRD,
 }
 
 
@@ -1115,11 +1121,28 @@ def _player_trend(pid: int) -> pd.DataFrame:
         q["season"] = q["season"].astype(str)
         q = q[q["season"].isin(PROFILE_SEASONS)]
         keep = ["season"] + [c for c in ("GP", "NFI_QG_pct", "xG_QG_pct",
-                "RelNFI_QG_pct", "RelxG_QG_pct", "RelxG_pct") if c in q.columns]
+                "RelNFI_QG_pct", "RelxG_QG_pct", "RelxG_pct",
+                "RelxG_F_pct", "RelxG_A_pct") if c in q.columns]
         q = q[keep].rename(columns={"NFI_QG_pct": "NFI-QG%", "xG_QG_pct": "xG-QG%",
                 "RelNFI_QG_pct": "RelNFI-QG%", "RelxG_QG_pct": "RelxG-QG%",
-                "RelxG_pct": "RelxG%"})
+                "RelxG_pct": "RelxG%", "RelxG_F_pct": "RelxG-F%",
+                "RelxG_A_pct": "RelxG-A%"})
         trend = trend.merge(q, on="season", how="outer")
+
+    # On-ice xGF/60 and xGA/60 (MoneyPuck-style) per season.
+    xgame = _load_xg_game()
+    if not xgame.empty:
+        xa = xgame[(xgame["player_id"] == pid)
+                   & (xgame["season"].isin(PROFILE_SEASONS))].copy()
+        if not xa.empty:
+            xg = xa.groupby("season").agg(_xgf=("xG_for", "sum"),
+                                          _xga=("xG_ag", "sum"),
+                                          _toi=("TOI_on_sec", "sum")).reset_index()
+            _ok = xg["_toi"] > 0
+            xg["xGF/60"] = np.where(_ok, xg["_xgf"] / xg["_toi"] * 3600.0, np.nan)
+            xg["xGA/60"] = np.where(_ok, xg["_xga"] / xg["_toi"] * 3600.0, np.nan)
+            trend = trend.merge(xg[["season", "xGF/60", "xGA/60"]],
+                                on="season", how="outer")
 
     trend = trend[trend["season"].isin(PROFILE_SEASONS)].copy()
     # The raw per-60s (NFI-A/60, NFI-S/60) come from an UNfloored count file, so a
@@ -1929,6 +1952,10 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
     # flattens.
     if "Quality Games" in _show_fams:
         _qg_combined_line(trend)
+    if "xG" in _show_fams:
+        _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])
+        _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
+               ["RelxG%", "RelxG-F%", "RelxG-A%"])
     if "Net Front Impact" in _show_fams:
         _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
                ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
@@ -1937,8 +1964,6 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
     if "Net Front Impact" in _show_fams:
         _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
         _chart("NFI% (net-front share)", ["NFI%"])
-    if "Quality Games" in _show_fams:
-        _chart("Relative xG per 60 (RelxG%)", ["RelxG%"])
 
 
 # ===========================================================================
