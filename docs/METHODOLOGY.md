@@ -2,7 +2,7 @@
 
 This document describes the analytical decisions underlying the HockeyROI frameworks, the reasoning behind each choice, and the verification work that supports them. It is the canonical reference for the project's methodology and is updated when methodology changes; data files reflect the methodology version stamped below.
 
-**Methodology version:** June 23, 2026 — renamed the goalie metric **QS-GSAx → GQG** (Goalie Quality Games): name only, same construction (per-game all-shot GSAx ≥ 0); underlying `qs_gsax` files / `QS_GSAx_*` columns are unchanged. Builds on June 19, 2026 — added season-level RelxG per-60 rate differential columns (`RelxG_F_pct`, `RelxG_A_pct`, `RelxG_pct`) to `per_player_season.csv` and `per_player_season_team.csv`, mirroring the NFI pipeline's existing `RelNFI_F_pct`/`_A`/`_pct` methodology; same date added Playoff Quality Game build (parallel `_playoffs`-suffixed outputs covering 22-23 through 24-25 with same methodology as regular-season QG, including RelNFI-QG and RelxG-QG); builds on the June 18 addition of Relative Quality Game metrics as parallel team-relative columns; June 12 Goalie Metrics (NFI-GSAx, QNFS%, GQG) with Vollman Quality Starts disambiguation; the June 7 update covered the NFI-QG half-credit tie handling and documented TZI2 as exploratory single-game tooling (not part of the public framework), building on the May 20, 2026 audit + bug fix, the May 2026 audit, and the May 3, 2026 zone-adjustment factor swap.
+**Methodology version:** July 6, 2026 — added **NFI SV%**, a raw (unadjusted) save percentage on the same CNFI ∪ MNFI shots-faced denominator as NFI-GSAx, reported alongside it as a sanity-check stat (not shot-quality adjusted). Same source files as NFI-GSAx; no new qualifying floor. Builds on June 23, 2026 — renamed the goalie metric **QS-GSAx → GQG** (Goalie Quality Games): name only, same construction (per-game all-shot GSAx ≥ 0); underlying `qs_gsax` files / `QS_GSAx_*` columns are unchanged. Builds on June 19, 2026 — added season-level RelxG per-60 rate differential columns (`RelxG_F_pct`, `RelxG_A_pct`, `RelxG_pct`) to `per_player_season.csv` and `per_player_season_team.csv`, mirroring the NFI pipeline's existing `RelNFI_F_pct`/`_A`/`_pct` methodology; same date added Playoff Quality Game build (parallel `_playoffs`-suffixed outputs covering 22-23 through 24-25 with same methodology as regular-season QG, including RelNFI-QG and RelxG-QG); builds on the June 18 addition of Relative Quality Game metrics as parallel team-relative columns; June 12 Goalie Metrics (NFI-GSAx, QNFS%, GQG) with Vollman Quality Starts disambiguation; the June 7 update covered the NFI-QG half-credit tie handling and documented TZI2 as exploratory single-game tooling (not part of the public framework), building on the May 20, 2026 audit + bug fix, the May 2026 audit, and the May 3, 2026 zone-adjustment factor swap.
 **Data snapshot reflected in this document:** values current as of the version stamp date. Counts and player-level values shift as games are added to the dataset.
 
 ---
@@ -434,7 +434,7 @@ Player-level TZI2 will not be published until a public methodology introduction 
 
 ---
 
-## Goalie Metrics: NFI-GSAx, QNFS%, GQG
+## Goalie Metrics: NFI-GSAx, NFI SV%, QNFS%, GQG
 
 ### Disambiguation: GQG vs. conventional Quality Starts
 
@@ -457,6 +457,16 @@ GQG and QNFS% are not Vollman Quality Starts under a different name — the GQG 
 **Confidence intervals:** none are currently reported. NFI-GSAx per-60 is a rate count over a fixed exposure window; were CIs to be added they would use the Poisson (Garwood) interval, per the rate-vs-proportion rule established in the May 20, 2026 audit (see `docs/AUDIT_2026-05-20.md`). The present outputs carry point estimates only.
 
 **Source:** `NFI/scripts/21_goalie_gsax_by_season.py` → `NFI/Output/goalie_nfi_gsax_by_season.csv` (per-season, 354 goalie-seasons) and `NFI/Output/goalie_nfi_gsax_pooled_v2.csv` (pooled, 84 goalies). The pooled file currently spans five seasons (2021-22 → 2025-26), one more than QNFS%/GQG.
+
+### NFI SV%
+
+**What it measures:** raw (unadjusted) save percentage on the same **CNFI ∪ MNFI shots-faced** set as NFI-GSAx — `(total_faced − total_goals) / total_faced` per goalie-season (and pooled/playoff equivalents). It is computed from the same `total_faced`/`total_goals` counts that feed NFI-GSAx, not a separate build.
+
+**Why it exists:** NFI-GSAx is expectation-adjusted (goals saved relative to the league's per-zone scoring rate); NFI SV% is not — it does not account for shot difficulty within the CNFI/MNFI zones. It exists as a sanity-check/complement to NFI-GSAx, not a replacement, and is **not** the save% referenced in the Vollman Quality Starts disambiguation above (that's all-shot save%; NFI SV% is net-front-only).
+
+**Qualifying:** same cohort and floors as NFI-GSAx (≥100 net-front shots faced per season; ≥300 pooled) — there is no separate qualifying rule.
+
+**Source:** same producers and output files as NFI-GSAx (`21_goalie_gsax_by_season.py`, `21p_goalie_gsax_playoffs.py`, `22_pool_goalie_gsax.py`); column `NFI_save_pct` (fraction, 0–1) alongside `total_goals` in each output file.
 
 ### QNFS%: Quality Net-Front Save percentage
 
@@ -482,7 +492,7 @@ GQG and QNFS% are not Vollman Quality Starts under a different name — the GQG 
 
 ### Cohort overlap note
 
-The three goalie metrics qualify at different thresholds and on different shot bases and season spans, so they produce different cohort sizes: NFI-GSAx pooled has 84 goalies (five seasons), QNFS% has 146 in-file with 82 qualified (four seasons), GQG pooled has 81 (four seasons). A goalie may appear in one metric and not another because the qualifying floors differ — this is by design, not a bug. A goalie with a thin net-front shot diet but high total volume may qualify for GQG and NFI-GSAx but not for QNFS%; an infrequent appearance-maker may qualify for none. Where the same goalie appears in multiple metrics, the metrics are commensurable *for that goalie* — bearing in mind the net-front (QNFS%, NFI-GSAx) vs all-shot (GQG) scope difference and the internal-rate (QNFS%, NFI-GSAx) vs MoneyPuck (GQG) expectation model.
+The goalie metrics qualify at different thresholds and on different shot bases and season spans, so they produce different cohort sizes: NFI-GSAx pooled has 84 goalies (five seasons), QNFS% has 146 in-file with 82 qualified (four seasons), GQG pooled has 81 (four seasons). NFI SV% is the one exception — it shares NFI-GSAx's cohort and floors exactly (same source files, same denominator), so its cohort size always matches NFI-GSAx's. A goalie may appear in one metric and not another because the qualifying floors differ — this is by design, not a bug. A goalie with a thin net-front shot diet but high total volume may qualify for GQG and NFI-GSAx but not for QNFS%; an infrequent appearance-maker may qualify for none. Where the same goalie appears in multiple metrics, the metrics are commensurable *for that goalie* — bearing in mind the net-front (QNFS%, NFI-GSAx) vs all-shot (GQG) scope difference and the internal-rate (QNFS%, NFI-GSAx) vs MoneyPuck (GQG) expectation model.
 
 ### Confidence interval note
 

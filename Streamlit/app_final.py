@@ -662,7 +662,9 @@ def render_methodology() -> None:
             "GSAx-based, three lenses: <b>NFI-GSAx</b> (net-front goals saved above expected), "
             "<b>QNFS%</b> (consistency of beating expected on net-front shots), and "
             "<b>GQG</b> — Goalie Quality Games, the Quality-Start idea computed on GSAx "
-            "(share of games with all-shot GSAx ≥ 0) rather than raw save%. Qualifying "
+            "(share of games with all-shot GSAx ≥ 0) rather than raw save%. <b>NFI SV%</b> is "
+            "the one raw-save% exception — an unadjusted save% on NFI-GSAx's own net-front shot "
+            "set, shown alongside it as a sanity check, not a replacement. Qualifying "
             "floors differ by metric, so the cohorts differ — by design.",
         )
         + _meth_framework(
