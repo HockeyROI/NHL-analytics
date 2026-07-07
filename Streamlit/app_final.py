@@ -2176,23 +2176,23 @@ def render_players() -> None:
     # the sub-floor players; slide it down to reveal them (shown as UR), up to
     # trim further. The slider never changes the ranking denominator.
     rank_floor = 300 if playoffs else (2000 if is_pooled else 500)
-    c1, c2, c3 = st.columns([1.0, 1.3, 1.5])
+    c1, c2, c3 = st.columns([1.5, 1.0, 1.3])
     with c1:
-        pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
-    with c2:
-        if playoffs:
-            min_toi = st.slider("Min ES TOI (min)", 0, 1500, rank_floor, 25,
-                                key="players_toi_playoffs")
-        else:
-            toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
-            min_toi = st.slider("Min ES TOI (min)", 0, 7500, rank_floor, 50, key=toi_key)
-    with c3:
         player_sel = st.selectbox(
             "Search a player", _pid_list, index=None,
             placeholder="",
             format_func=lambda i: _plabel.get(i, str(i)), key="players_search",
             on_change=lambda: st.session_state.update(players_team="All"),
             help="Pick a player to see their season-by-season detail on this page.")
+    with c2:
+        pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
+    with c3:
+        if playoffs:
+            min_toi = st.slider("Min ES TOI (min)", 0, 1500, rank_floor, 25,
+                                key="players_toi_playoffs")
+        else:
+            toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
+            min_toi = st.slider("Min ES TOI (min)", 0, 7500, rank_floor, 50, key=toi_key)
 
     # Metric-family toggles first, then the Team filter. Families start with none
     # selected (only the identity columns show); click a family to display it.
@@ -2834,6 +2834,20 @@ def load_qs_by_season() -> pd.DataFrame:
 QG_SCOPE_SUFFIX = {"5v5": "", "All situations": "_allsit"}
 
 
+def _qg_toggle_state() -> tuple[bool, str, str]:
+    """Shared QG%s/QG%b baseline + shot-scope toggle state (set by the widgets
+    in render_goalies, read here so the drill-in / Trade Analyzer respect
+    whatever the user picked on the Goalies tab in this same run — same
+    shared-session-state pattern as the global Season/Game-type filters).
+    Returns (qg_starter, qg_scope_suffix, qg_label)."""
+    baseline_label = st.session_state.get("goalies_qg_baseline", "Starter (QG%s)")
+    scope_label = st.session_state.get("goalies_qg_scope", "5v5")
+    qg_starter = baseline_label.startswith("Starter")
+    qg_scope_suffix = QG_SCOPE_SUFFIX.get(scope_label, "")
+    qg_label = "QG%s" if qg_starter else "QG%b"
+    return qg_starter, qg_scope_suffix, qg_label
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_qg_tiered_pooled(scope_suffix: str) -> pd.DataFrame:
     fp = _QC / f"qg_savepct_2022-2026{scope_suffix}.csv"
@@ -2880,18 +2894,35 @@ def load_qs_playoffs() -> pd.DataFrame:
     return df[df["season"] == PLAYOFF_SCOPE].copy()
 
 
-def _goalie_trend(gid: int) -> pd.DataFrame:
-    """Per-season (2022-23..2025-26) NFI-GSAx/60, QNFS%, QGx% for one
-    goalie_id, outer-merged on season. Season normalized to INT before merging
-    (all three by-season loaders cast to int) to avoid silent empty merges. The
-    NFI-GSAx file includes a 2021-22 row; it's dropped here."""
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qg_tiered_playoffs(scope_suffix: str) -> pd.DataFrame:
+    """Pooled all_playoffs QG%s/QG%b — each playoff game judged against ITS
+    season's regular-season starter/backup baseline (see
+    compute_qg_tiered_playoffs.py); no fresh playoff-only tier split."""
+    fp = _QC / f"qg_savepct_playoffs{scope_suffix}.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    return df[df["season"] == PLAYOFF_SCOPE].copy()
+
+
+def _goalie_trend(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) -> pd.DataFrame:
+    """Per-season (2022-23..2025-26) NFI-GSAx/60, NFI SV%, QNFS%, QGx%, and
+    QG%s-or-QG%b (per the shared toggle) for one goalie_id, outer-merged on
+    season. Season normalized to INT before merging (all loaders cast to int)
+    to avoid silent empty merges. The NFI-GSAx file includes a 2021-22 row;
+    it's dropped here. QG%s/QG%b column is always labeled "QG%s" or "QG%b"
+    (never both) to match the leaderboard's single-column toggle behavior."""
     gid = int(gid)
     seasons_int = [20222023, 20232024, 20242025, 20252026]
+    qg_col = "QG_pct_s" if qg_starter else "QG_pct_b"
+    qg_label = "QG%s" if qg_starter else "QG%b"
     parts = []
     n = load_goalie_nfi_by_season()
     if not n.empty:
-        parts.append(n[n["goalie_id"] == gid][["season", "GSAx_per60"]]
-                     .rename(columns={"GSAx_per60": "NFI-GSAx/60"}))
+        parts.append(n[n["goalie_id"] == gid][["season", "GSAx_per60", "NFI_save_pct"]]
+                     .rename(columns={"GSAx_per60": "NFI-GSAx/60", "NFI_save_pct": "NFI SV%"}))
     q = load_qnfs_by_season()
     if not q.empty:
         parts.append(q[q["goalie_id"] == gid][["season", "QNFS_pct"]]
@@ -2900,6 +2931,10 @@ def _goalie_trend(gid: int) -> pd.DataFrame:
     if not s.empty:
         parts.append(s[s["goalie_id"] == gid][["season", "QS_GSAx_pct"]]
                      .rename(columns={"QS_GSAx_pct": "QGx%"}))
+    t = load_qg_tiered_by_season(qg_scope_suffix)
+    if not t.empty and qg_col in t.columns:
+        parts.append(t[t["goalie_id"] == gid][["season", qg_col]]
+                     .rename(columns={qg_col: qg_label}))
     parts = [p for p in parts if not p.empty]
     if not parts:
         return pd.DataFrame()
@@ -2911,9 +2946,9 @@ def _goalie_trend(gid: int) -> pd.DataFrame:
     base = base[base["season"].isin(seasons_int)].copy()
     base["Season"] = (base["season"].astype(str).map(SEASON_DISPLAY)
                       .fillna(base["season"].astype(str)))
-    # Games played per season (prefer NFI 'games', fall back to QNFS/QS 'GP').
+    # Games played per season (prefer NFI 'games', fall back to QNFS/QS/QG 'GP').
     _gp = {}
-    for _df, _c in ((n, "games"), (q, "GP"), (s, "GP")):
+    for _df, _c in ((n, "games"), (q, "GP"), (s, "GP"), (t, "GP")):
         if _df.empty or _c not in _df.columns:
             continue
         for _, _rr in _df[_df["goalie_id"] == gid].iterrows():
@@ -2924,7 +2959,7 @@ def _goalie_trend(gid: int) -> pd.DataFrame:
     return base.sort_values("season").reset_index(drop=True)
 
 
-def _goalie_season_ranks(gid: int) -> dict:
+def _goalie_season_ranks(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) -> dict:
     """Per-season LEAGUE rank of each metric among the QUALIFIED goalies that
     season (#1 = best) — the same cohort the leaderboard ranks over, so the drill-in
     rank matches the list. A goalie below the metric's qualifying floor gets no rank
@@ -2932,11 +2967,15 @@ def _goalie_season_ranks(gid: int) -> dict:
     gid = int(gid)
     out = {}
     seasons_int = [20222023, 20232024, 20242025, 20252026]
+    qg_col = "QG_pct_s" if qg_starter else "QG_pct_b"
+    qg_label = "QG%s" if qg_starter else "QG%b"
     # per metric: (loader, value col, display col, fallback floor col, floor)
     for loader, src, disp_c, floor_col, floor in (
         (load_goalie_nfi_by_season, "GSAx_per60", "NFI-GSAx/60", "total_faced", 100),
+        (load_goalie_nfi_by_season, "NFI_save_pct", "NFI SV%", "total_faced", 100),
         (load_qnfs_by_season, "QNFS_pct", "QNFS%", "GP", 25),
         (load_qs_by_season, "QS_GSAx_pct", "QGx%", "GP", 25),
+        (lambda: load_qg_tiered_by_season(qg_scope_suffix), qg_col, qg_label, "GP", 25),
     ):
         df = loader()
         if df.empty or src not in df.columns:
@@ -2964,19 +3003,23 @@ def _goalie_season_ranks(gid: int) -> dict:
     return out
 
 
-def _goalie_profile_table(gid: int) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+def _goalie_profile_table(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True
+                          ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     """Rank-annotated per-season goalie trend + a '2yr avg (24-26)' pooled row.
     Returns (display_df, trend, metric_cols). Shared by the goalie detail and the
-    Trade Analyzer's goalie mode."""
-    trend = _goalie_trend(gid)
+    Trade Analyzer's goalie mode. qg_scope_suffix/qg_starter select which ONE of
+    QG%s/QG%b shows (matches the leaderboard's toggle — no starter/backup split)."""
+    qg_label = "QG%s" if qg_starter else "QG%b"
+    trend = _goalie_trend(gid, qg_scope_suffix, qg_starter)
     if trend.empty:
         return pd.DataFrame(), trend, []
-    metric_cols = [c for c in ("NFI-GSAx/60", "QNFS%", "QGx%")
+    metric_cols = [c for c in ("NFI-GSAx/60", "NFI SV%", "QNFS%", "QGx%", qg_label)
                    if c in trend.columns]
     has_gp = "GP" in trend.columns and trend["GP"].notna().any()
-    ranks = _goalie_season_ranks(gid)
-    _b = {"NFI-GSAx/60": lambda v: f"{v:+.3f}",
-          "QNFS%": lambda v: f"{v:.1f}%", "QGx%": lambda v: f"{v:.1f}%"}
+    ranks = _goalie_season_ranks(gid, qg_scope_suffix, qg_starter)
+    _b = {"NFI-GSAx/60": lambda v: f"{v:+.3f}", "NFI SV%": lambda v: f"{v * 100:.1f}%",
+          "QNFS%": lambda v: f"{v:.1f}%", "QGx%": lambda v: f"{v:.1f}%",
+          qg_label: lambda v: f"{v:.1f}%"}
     rows = []
     for _, r in trend.iterrows():
         ssn = int(r["season"])
@@ -2996,11 +3039,14 @@ def _goalie_profile_table(gid: int) -> tuple[pd.DataFrame, pd.DataFrame, list[st
     # Append a "2yr avg (24-26)" row — denominator-based pool of the last two
     # seasons (ranked within the 2yr pool).
     _n2, _q2, _s2 = _pool_goalie_seasons((20242025, 20252026))
-    _src2 = {"NFI-GSAx/60": (_n2, "NFIG60"), "QNFS%": (_q2, "QNFS_pct"),
-             "QGx%": (_s2, "QS_GSAx_pct")}
+    _g2 = _pool_qg_tiered_seasons((20242025, 20252026), qg_scope_suffix)
+    _qg_pool_col = "QG_pct_s" if qg_starter else "QG_pct_b"
+    _src2 = {"NFI-GSAx/60": (_n2, "NFIG60"), "NFI SV%": (_n2, "NFISV"),
+             "QNFS%": (_q2, "QNFS_pct"), "QGx%": (_s2, "QS_GSAx_pct"),
+             qg_label: (_g2, _qg_pool_col)}
     _v2 = {}
     for c, (fr, col) in _src2.items():
-        rr = fr[fr["goalie_id"] == gid] if not fr.empty else fr
+        rr = fr[fr["goalie_id"] == gid] if (not fr.empty and col in fr.columns) else pd.DataFrame()
         _v2[c] = rr[col].iloc[0] if len(rr) else np.nan
     if any(pd.notna(v) for v in _v2.values()):
         row = {"Season": "2yr avg (24-26)"}
@@ -3021,9 +3067,10 @@ def _goalie_profile_table(gid: int) -> tuple[pd.DataFrame, pd.DataFrame, list[st
     return pd.DataFrame(rows, columns=_lead + metric_cols), trend, metric_cols
 
 
-def _render_goalie_profile(gid: int) -> None:
+def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) -> None:
     """Per-season trend table + line charts for one goalie."""
-    disp, trend, metric_cols = _goalie_profile_table(gid)
+    qg_label = "QG%s" if qg_starter else "QG%b"
+    disp, trend, metric_cols = _goalie_profile_table(gid, qg_scope_suffix, qg_starter)
     if disp.empty:
         st.info("No per-season data available for this goalie.")
         return
@@ -3031,18 +3078,19 @@ def _render_goalie_profile(gid: int) -> None:
                "that season (2yr row ranks within the 2-season pool).")
     _show_df(disp, width="stretch", hide_index=True)
 
-    # CHOICE: split into 2 small multiples. NFI-GSAx/60 is a per-60 rate (~±0.3);
-    # QNFS%/QGx% are percentages (~0–100). On a single shared axis the rate
-    # collapses to a flat line near zero, so the rate gets its own chart and the
-    # two percentages share one.
+    # CHOICE: 3 small multiples. NFI-GSAx/60 is a per-60 rate (~±0.3); NFI SV%
+    # is a raw save% (~85-95%) — a very different band from the "beat expected
+    # X% of the time" consistency rates (~30-70%), so it gets its own chart
+    # rather than squashing the consistency chart's zoomed axis. QNFS%/QGx%/
+    # QG%s-or-b are all "beat a bar X% of the time" rates and share one chart.
     import altair as alt
 
-    def _gchart(title, ys, ydomain=None):
-        ys = [c for c in ys if c in trend.columns and trend[c].notna().any()]
+    def _gchart(title, ys, frame, ydomain=None):
+        ys = [c for c in ys if c in frame.columns and frame[c].notna().any()]
         if not ys:
             return
         st.caption(title)
-        long = (trend[["Season"] + ys].melt("Season", var_name="Metric",
+        long = (frame[["Season"] + ys].melt("Season", var_name="Metric",
                 value_name="value").dropna(subset=["value"]))
         _yscale = alt.Scale(domain=ydomain) if ydomain else alt.Undefined
         ch = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
@@ -3056,12 +3104,18 @@ def _render_goalie_profile(gid: int) -> None:
             ).properties(height=300)
         _show_chart(ch, dl_name=title.split(" (")[0].replace(" ", "-"))
 
-    _gchart("NFI-GSAx per 60", ["NFI-GSAx/60"])
-    # QNFS%/QGx% consistency: zoom the y-axis to 30-70% (expand only if a value
-    # falls outside that band, so nothing is clipped).
-    _cons_vals = pd.concat([trend[c] for c in ("QNFS%", "QGx%")
-                            if c in trend.columns], ignore_index=True)
-    _gchart("Consistency % (QNFS%, QGx%)", ["QNFS%", "QGx%"],
+    _gchart("NFI-GSAx per 60", ["NFI-GSAx/60"], trend)
+
+    if "NFI SV%" in trend.columns:
+        _sv = trend[["Season", "NFI SV%"]].copy()
+        _sv["NFI SV%"] = _sv["NFI SV%"] * 100
+        _gchart("NFI SV%", ["NFI SV%"], _sv)
+
+    # Consistency %: zoom the y-axis to 30-70% (expand only if a value falls
+    # outside that band, so nothing is clipped).
+    _cons_cols = [c for c in ("QNFS%", "QGx%", qg_label) if c in trend.columns]
+    _cons_vals = pd.concat([trend[c] for c in _cons_cols], ignore_index=True)
+    _gchart(f"Consistency % (QNFS%, QGx%, {qg_label})", _cons_cols, trend,
             ydomain=_qg_axis_domain(_cons_vals.tolist()))
 
 
@@ -3174,27 +3228,30 @@ def render_goalies() -> None:
     # QG%s / QG%b toggles — baseline (starter vs. backup) and shot scope
     # (5v5 vs. all situations). These apply ONLY to QG%s/QG%b; QNFS% and QGx
     # stay 5v5-only regardless of the scope pick, and QG%s/QG%b aren't built
-    # for playoffs yet.
+    # for playoffs, each playoff game is judged against that season's
+    # REGULAR-SEASON baseline (see compute_qg_tiered_playoffs.py) — playoff
+    # rosters are too starter-skewed for a fresh playoff-only tier split.
     st.session_state.setdefault("goalies_qg_baseline", "Starter (QG%s)")
     st.session_state.setdefault("goalies_qg_scope", "5v5")
-    if not playoffs:
-        qgc1, qgc2 = st.columns([1.4, 1.4])
-        with qgc1:
-            qg_baseline_label = st.radio(
-                "QG%s/QG%b baseline", ["Starter (QG%s)", "Backup (QG%b)"],
-                horizontal=True, key="goalies_qg_baseline",
-                help="Which population's baseline save% to measure every goalie against.")
-        with qgc2:
-            qg_scope_label = st.radio(
-                "QG%s/QG%b shot scope", list(QG_SCOPE_SUFFIX.keys()),
-                horizontal=True, key="goalies_qg_scope",
-                help="Shot scope for QG%s/QG%b only — QNFS% and QGx are always 5v5.")
+    qgc1, qgc2 = st.columns([1.4, 1.4])
+    with qgc1:
+        qg_baseline_label = st.radio(
+            "QG%s/QG%b baseline", ["Starter (QG%s)", "Backup (QG%b)"],
+            horizontal=True, key="goalies_qg_baseline",
+            help="Which population's baseline save% to measure every goalie against.")
+    with qgc2:
+        qg_scope_label = st.radio(
+            "QG%s/QG%b shot scope", list(QG_SCOPE_SUFFIX.keys()),
+            horizontal=True, key="goalies_qg_scope",
+            help="Shot scope for QG%s/QG%b only — QNFS% and QGx are always 5v5.")
+    if playoffs:
+        st.caption("Baseline/scope toggles apply only to **QG%s / QG%b** — "
+                   "**QNFS% and QGx stay 5v5-only** regardless of the scope pick. "
+                   "Each playoff game is graded against **that season's regular-season "
+                   "baseline** (no separate playoff-only tier split).")
+    else:
         st.caption("Baseline/scope toggles apply only to **QG%s / QG%b** — "
                    "**QNFS% and QGx stay 5v5-only** regardless of the scope pick.")
-    else:
-        qg_baseline_label = st.session_state["goalies_qg_baseline"]
-        qg_scope_label = st.session_state["goalies_qg_scope"]
-        st.caption("QG%s/QG%b are not yet built for playoffs.")
     qg_starter = qg_baseline_label.startswith("Starter")
     qg_scope_suffix = QG_SCOPE_SUFFIX[qg_scope_label]
 
@@ -3216,7 +3273,9 @@ def render_goalies() -> None:
         s = load_qs_playoffs()
         qs = (s[["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo"]]
               .rename(columns={"GP": "GP_qs"}) if not s.empty else pd.DataFrame())
-        qgt = pd.DataFrame()   # not yet built for playoffs
+        t = load_qg_tiered_playoffs(qg_scope_suffix)
+        qgt = (t[["goalie_id", "goalie_name", "GP", "QG_pct_s", "QG_pct_b"]]
+              .rename(columns={"GP": "GP_qg"}) if not t.empty else pd.DataFrame())
     elif is_pooled:
         n = load_goalie_nfi()
         nfi = (n[[c for c in ["goalie_id", "goalie_name", "team", "games", "total_faced", "GSAx_per60", "NFI_save_pct", "qualified"] if c in n.columns]]
@@ -3284,8 +3343,15 @@ def render_goalies() -> None:
             base[_qc] = base.get(_col, pd.Series(np.nan, index=base.index)).fillna(0) >= _flr
     _gid_of = dict(zip(base["Goalie"], base["goalie_id"]))   # name → id for drill-in
 
-    c1, c2, c3 = st.columns([1.3, 2.0, 1.0])
+    c1, c2, c3 = st.columns([2.0, 1.3, 1.0])
     with c1:
+        _gnames = sorted(base["Goalie"].dropna().unique().tolist())
+        goalie_pick = st.selectbox(
+            "Find a goalie", _gnames, index=None, placeholder="",
+            key="goalies_name_pick",
+            on_change=lambda: st.session_state.update(goalies_team="All"),
+            help="Type to search by name; pick one to see their detail (trend + charts).")
+    with c2:
         # Min Shots Faced FILTERS the list (hides small-sample goalies by default);
         # ranking is gated separately by each metric's qualified flag.
         if playoffs:
@@ -3297,19 +3363,13 @@ def render_goalies() -> None:
         else:
             _shdef, _shkey, _shmax = 150, "goalies_minshots_season", 3000
         min_shots = st.slider("Min Shots Faced", 0, _shmax, _shdef, 50, key=_shkey)
-    with c2:
-        _gnames = sorted(base["Goalie"].dropna().unique().tolist())
-        goalie_pick = st.selectbox(
-            "Find a goalie", ["All goalies"] + _gnames, key="goalies_name_pick",
-            on_change=lambda: st.session_state.update(goalies_team="All"),
-            help="Type to search by name; pick one to see their detail (trend + charts).")
     with c3:
         _gteam_opts = ["All"] + sorted(base["Team"].dropna().unique().tolist())
         # Picking a team exits any drill-in and clears the goalie search (mutually
         # exclusive views).
         goalie_team = st.selectbox(
             "Team", _gteam_opts, key="goalies_team",
-            on_change=lambda: st.session_state.update(_gl_drill=None, goalies_name_pick="All goalies"))
+            on_change=lambda: st.session_state.update(_gl_drill=None, goalies_name_pick=None))
 
     # Drill-in (via "Find a goalie" OR a clicked row) — either collapses the
     # leaderboard to just that goalie's detail.
@@ -3317,16 +3377,16 @@ def render_goalies() -> None:
         _set_dl_title(label)                     # name downloaded charts
         st.markdown(f"### {label}")
         if playoffs:
-            _render_goalie_playoff_summary(int(gid))
+            _render_goalie_playoff_summary(int(gid), qg_scope_suffix, qg_starter)
         else:
-            _render_goalie_profile(int(gid))
+            _render_goalie_profile(int(gid), qg_scope_suffix, qg_starter)
 
-    if goalie_pick != "All goalies":
+    if goalie_pick is not None:
         st.session_state["_gl_drill"] = None     # an explicit search overrides a click
         gid = _gid_of.get(goalie_pick)
         if gid is not None and pd.notna(gid):
             st.button("← Back to leaderboard", key="gl_back_search",
-                      on_click=lambda: st.session_state.update(goalies_name_pick="All goalies"))
+                      on_click=lambda: st.session_state.update(goalies_name_pick=None))
             _goalie_drill(int(gid), goalie_pick)
         return
     _gl_drill = st.session_state.get("_gl_drill")
@@ -3452,8 +3512,9 @@ def render_goalies() -> None:
             "Pooled across all playoff games (2022-23 → 2024-25). Every goalie with "
             "playoff data is shown and ranked — no qualifying floor is applied to the "
             "small playoff samples. Per-game metric definitions (QNFS ≥3 net-front "
-            "shots/game; QGx ≥10 shots/game) are retained. QG%s/QG%b are not yet built "
-            "for playoffs.</p>",
+            "shots/game; QGx ≥10 shots/game; QG%s/QG%b ≥10 shots/game) are retained. "
+            "QG%s/QG%b grade each playoff game against that season's regular-season "
+            "baseline, not a fresh playoff-only tier split.</p>",
             unsafe_allow_html=True,
         )
     else:
@@ -3482,9 +3543,12 @@ def render_goalies() -> None:
             st.rerun()
 
 
-def _render_goalie_playoff_summary(gid: int) -> None:
+def _render_goalie_playoff_summary(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) -> None:
     """Pooled all-playoffs metric summary for one goalie (playoff Detail view)."""
+    qg_label = "QG%s" if qg_starter else "QG%b"
+    qg_col = "QG_pct_s" if qg_starter else "QG_pct_b"
     n, q, s = load_goalie_nfi_playoffs(), load_qnfs_playoffs(), load_qs_playoffs()
+    g = load_qg_tiered_playoffs(qg_scope_suffix)
 
     def pick(df, col):
         if df.empty or col not in df.columns:
@@ -3502,12 +3566,16 @@ def _render_goalie_playoff_summary(gid: int) -> None:
             return f"{v:+.3f}"
         if kind == "pct":
             return f"{v:.1f}%"
+        if kind == "sv":
+            return f"{v * 100:.1f}%"
         return f"{int(v):,}"
 
     items = [
         ("NFI-GSAx/60", fmt(pick(n, "GSAx_per60"), "gsax")),
+        ("NFI SV%", fmt(pick(n, "NFI_save_pct"), "sv")),
         ("QNFS%", fmt(pick(q, "QNFS_pct"), "pct")),
         ("QGx%", fmt(pick(s, "QS_GSAx_pct"), "pct")),
+        (qg_label, fmt(pick(g, qg_col), "pct")),
         ("Games (GSAx)", fmt(pick(n, "games"), "int")),
         ("Shots faced", fmt(pick(n, "total_faced"), "int")),
     ]
@@ -3544,15 +3612,16 @@ def _render_trade_goalies(playoffs: bool) -> None:
     if not sel:
         st.caption(f"Pick up to {TRADE_MAX_PLAYERS} goalies to compare.")
         return
+    qg_starter, qg_scope_suffix, _ = _qg_toggle_state()
     if playoffs:
         for gid in sel:
-            _render_goalie_playoff_summary(int(gid))
+            _render_goalie_playoff_summary(int(gid), qg_scope_suffix, qg_starter)
         return
     st.caption("Each value shows its **(rank)** — league rank among all goalies "
                "that season (2yr row ranks within the 2-season pool).")
     for gid in sel:
         st.markdown(f"**{names.get(int(gid), str(gid))}**")
-        disp, _, _ = _goalie_profile_table(int(gid))
+        disp, _, _ = _goalie_profile_table(int(gid), qg_scope_suffix, qg_starter)
         if disp.empty:
             st.info("No per-season data available for this goalie.")
         else:

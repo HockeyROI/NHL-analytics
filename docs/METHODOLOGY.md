@@ -509,7 +509,9 @@ Streamlit carries a shot-scope toggle for QG%s/QG%b specifically, next to the Se
 
 **Qualifying:** minimum 10 shots faced per game (same floor as QGx); minimum 25 qualifying games per season for a goalie-season to be "qualified" for ranking (same floor as QNFS%/QGx). No half-credit ties (`>=` rule); the tie rate against either baseline is ~0% in practice since 10+ shot-count denominators rarely land on the exact same fraction as a volume-weighted league baseline.
 
-**Source:** `NFI/goalie_consistency/scripts/compute_qg_tiered.py`; outputs per scope (suffix `""` for 5v5, `"_allsit"` for all situations): `qg_tier_baselines_by_season{suffix}.csv` (season × tier baselines), `qg_savepct_per_season_2022-2026{suffix}.csv` (per goalie-season), `qg_savepct_2022-2026{suffix}.csv` (pooled 4-season, 145 goalies, 78 qualified in both scopes). Window: four seasons, 2022-23 → 2025-26. Playoffs are not yet built for this metric.
+**Source:** `NFI/goalie_consistency/scripts/compute_qg_tiered.py`; outputs per scope (suffix `""` for 5v5, `"_allsit"` for all situations): `qg_tier_baselines_by_season{suffix}.csv` (season × tier baselines), `qg_savepct_per_season_2022-2026{suffix}.csv` (per goalie-season), `qg_savepct_2022-2026{suffix}.csv` (pooled 4-season, 145 goalies, 78 qualified in both scopes). Window: four seasons, 2022-23 → 2025-26.
+
+**Playoffs:** built via `compute_qg_tiered_playoffs.py` → `qg_savepct_playoffs{suffix}.csv` (per playoff season plus an `all_playoffs` pooled row, matching the rest of the playoff pipeline's convention — no goalie-level qualifying floor). Playoff games do **not** get a fresh playoff-only starter/backup tier split — playoff rosters are too starter-skewed for a stable top-32/next-32 GP ranking on a playoff-only sample (a true backup often plays 0-2 games). Instead, each playoff game is graded against **that season's regular-season baseline** (read from `qg_tier_baselines_by_season{suffix}.csv`), pooled the same way as the regular-season pooled table (each game judged by its own season's baseline, then summed).
 
 ### Cohort overlap note
 
