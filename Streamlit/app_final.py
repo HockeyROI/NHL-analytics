@@ -610,7 +610,7 @@ GITHUB_METHODOLOGY_URL = (
     "https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md"
 )
 TAB_LABELS = ["Player List", "Goalie List",
-              "Trade Analyzer", "Teams", "Referees", "EDGE", "Methodology"]
+              "Trade Analyzer", "Teams", "Referees", "Methodology"]
 
 
 def _meth_framework(name: str, body: str) -> str:
@@ -1034,15 +1034,58 @@ def _pdo_rate(scope_key: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def load_edge_stats(playoffs: bool = False) -> pd.DataFrame:
-    """NHL EDGE per-player tracking stats — descriptive, source-separate from
-    my zone metrics. See edge/README.md for scrape methodology and the
-    basis-mismatch caveat vs TZI/NZI/DZI/OZI."""
-    fn = "edge_skater_stats_playoffs.csv" if playoffs else "edge_skater_stats.csv"
-    fp = EDGE_DIR / fn
+def load_edge_player_season() -> pd.DataFrame:
+    """NHL EDGE per-player-season tracking stats, regular season only —
+    descriptive, source-separate from my zone metrics. See edge/README.md
+    for scrape methodology and the basis-mismatch caveat vs TZI/NZI/DZI/OZI."""
+    fp = EDGE_DIR / "edge_skater_stats.csv"
     if not fp.exists():
         return pd.DataFrame()
-    return pd.read_csv(fp, dtype={"season": str, "player_id": str})
+    df = pd.read_csv(fp, dtype={"season": str})
+    df["player_id"] = df["player_id"].astype("Int64")
+    return df
+
+
+_EDGE_COLS = ["oz_time_pct", "oz_time_pct_percentile",
+              "oz_time_pct_ev", "oz_time_pct_ev_percentile",
+              "nz_time_pct", "nz_time_pct_percentile",
+              "dz_time_pct", "dz_time_pct_percentile",
+              "top_skating_speed_mph", "top_skating_speed_percentile",
+              "speed_bursts_over_20mph", "speed_bursts_over_20mph_percentile",
+              "distance_skated_miles", "distance_skated_percentile"]
+
+
+def _edge_rate(scope_key: str) -> pd.DataFrame:
+    """EDGE tracking columns for one scope. Single seasons return that
+    season's row as-is (value + NHL's own percentile). Pooled/2yr views
+    return a games_played-weighted average across the player's available
+    EDGE seasons, INCLUDING the percentile columns — NHL doesn't expose
+    enough to recompute a true multi-season percentile, so a pooled
+    percentile here is a descriptive approximation, not NHL's own number.
+    Regular season only (matches the scrape; no playoff EDGE wiring here)."""
+    g = load_edge_player_season()
+    if g.empty:
+        return pd.DataFrame()
+    if scope_key == "pooled":
+        sub = g[g["season"].isin(POOLED_SEASONS)].copy()
+    elif scope_key == "pooled_2yr":
+        sub = g[g["season"].isin(POOLED_2YR_SEASONS)].copy()
+    else:
+        sub = g[g["season"] == scope_key].copy()
+    if sub.empty:
+        return pd.DataFrame()
+    if scope_key not in ("pooled", "pooled_2yr"):
+        return sub[["player_id"] + _EDGE_COLS].drop_duplicates("player_id")
+    sub["_w"] = sub["games_played"].clip(lower=1)
+    for c in _EDGE_COLS:
+        sub[f"_wx_{c}"] = sub[c] * sub["_w"]
+    agg = sub.groupby("player_id").agg(
+        **{f"_wsum_{c}": (f"_wx_{c}", "sum") for c in _EDGE_COLS},
+        _wtot=("_w", "sum"),
+    ).reset_index()
+    for c in _EDGE_COLS:
+        agg[c] = np.where(agg["_wtot"] > 0, agg[f"_wsum_{c}"] / agg["_wtot"], np.nan)
+    return agg[["player_id"] + _EDGE_COLS]
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -2357,6 +2400,11 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     pdo = _pdo_rate(key)
     if not pdo.empty and not base.empty:
         base = base.merge(pdo, on="player_id", how="left")
+    # NHL EDGE tracking columns — a separate metric family, different basis
+    # than NZI/DZI/OZI (see edge/README.md). Regular season only.
+    edge = _edge_rate(key)
+    if not edge.empty and not base.empty:
+        base = base.merge(edge, on="player_id", how="left")
     # Quality-Games For/Against (xG-QG-F/A%, NFI-QG-F/A%), ratio-of-sums pooling.
     qgfa = _qg_fa_rates(key)
     if not qgfa.empty and not base.empty:
@@ -2376,6 +2424,13 @@ PLAYER_FAMILY_COLS = {
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
     "Zone Impact": ["DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI"],
+    # NHL EDGE tracking — a separate basis than NZI/DZI/OZI (player-position,
+    # all-situations/EV tracking vs strict 5v5 faceoff-started PBP). See
+    # edge/README.md.
+    "EDGE": ["EDGE OZ%", "EDGE OZ %ile", "EDGE OZ% (EV)", "EDGE OZ %ile (EV)",
+             "EDGE NZ%", "EDGE NZ %ile", "EDGE DZ%", "EDGE DZ %ile",
+             "EDGE Top Speed", "EDGE Speed %ile", "EDGE Bursts 20+", "EDGE Bursts %ile",
+             "EDGE Distance (mi)", "EDGE Distance %ile"],
 }
 
 
@@ -2471,6 +2526,21 @@ def render_players() -> None:
             selection_mode="multi", key="players_display_seg",
             help="Tap a metric group to show its columns (Net Front Impact, "
                  "Zone Impact, Quality Games). Tap again to hide it.") or []
+    if "EDGE" in display_fams:
+        st.markdown(
+            f"<div style='background:{PALETTE['panel']}; border:1px solid {PALETTE['border']}; "
+            f"border-radius:8px; padding:0.6rem 0.9rem; margin-bottom:0.6rem;'>"
+            f"<span style='color:{PALETTE['orange']}; font-weight:700;'>EDGE columns — "
+            f"a DIFFERENT basis than my Zone metrics.</span> "
+            f"<span style='color:{PALETTE['text']};'>NHL EDGE tracking data: measured by player "
+            f"<b>position</b> (not puck position), across <b>all-situations / even-strength "
+            f"TOI</b> (not strict 5v5 faceoff-started shifts). Do not read EDGE zone-time% as "
+            f"the same metric as NZI/DZI/OZI or the D/N/O Start% columns — different data "
+            f"source, different definition. Pooled/2yr views are a games-played-weighted "
+            f"average across seasons (including the percentile columns), not NHL's own pooled "
+            f"number — regular season only.</span></div>",
+            unsafe_allow_html=True,
+        )
     with tcol:
         team_opts = ["All"] + _all_teams
         # Picking a team exits any drill-in and clears the player search (the two
@@ -2558,6 +2628,14 @@ def render_players() -> None:
         "xG_QG_pct": "xG-QG%", "NFI_QG_pct": "NFI-QG%",
         "RelNFI_QG_pct": "RelNFI-QG%", "RelxG_QG_pct": "RelxG-QG%",
         "RelxG_pct": "RelxG%", "RelxG_F_pct": "RelxG-F%", "RelxG_A_pct": "RelxG-A%",
+        "oz_time_pct": "EDGE OZ%", "oz_time_pct_percentile": "EDGE OZ %ile",
+        "oz_time_pct_ev": "EDGE OZ% (EV)", "oz_time_pct_ev_percentile": "EDGE OZ %ile (EV)",
+        "nz_time_pct": "EDGE NZ%", "nz_time_pct_percentile": "EDGE NZ %ile",
+        "dz_time_pct": "EDGE DZ%", "dz_time_pct_percentile": "EDGE DZ %ile",
+        "top_skating_speed_mph": "EDGE Top Speed", "top_skating_speed_percentile": "EDGE Speed %ile",
+        "speed_bursts_over_20mph": "EDGE Bursts 20+",
+        "speed_bursts_over_20mph_percentile": "EDGE Bursts %ile",
+        "distance_skated_miles": "EDGE Distance (mi)", "distance_skated_percentile": "EDGE Distance %ile",
     }
     df = df.rename(columns=_ren)
     rank_cohort = rank_cohort.rename(columns=_ren)
@@ -2570,7 +2648,11 @@ def render_players() -> None:
             "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
             "xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
-            "DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI"]
+            "DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI",
+            "EDGE OZ%", "EDGE OZ %ile", "EDGE OZ% (EV)", "EDGE OZ %ile (EV)",
+            "EDGE NZ%", "EDGE NZ %ile", "EDGE DZ%", "EDGE DZ %ile",
+            "EDGE Top Speed", "EDGE Speed %ile", "EDGE Bursts 20+", "EDGE Bursts %ile",
+            "EDGE Distance (mi)", "EDGE Distance %ile"]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
@@ -2604,6 +2686,19 @@ def render_players() -> None:
     for c in ("OZ Start%", "DZ Start%", "NZ Start%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
+    for c in ("EDGE OZ%", "EDGE OZ% (EV)", "EDGE NZ%", "EDGE DZ%"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x*100:.1f}%"
+    for c in ("EDGE OZ %ile", "EDGE OZ %ile (EV)", "EDGE NZ %ile", "EDGE DZ %ile",
+              "EDGE Speed %ile", "EDGE Bursts %ile", "EDGE Distance %ile"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x*100:.0f}th"
+    if "EDGE Top Speed" in disp.columns:
+        fmt["EDGE Top Speed"] = lambda x: "—" if pd.isna(x) else f"{x:.1f} mph"
+    if "EDGE Bursts 20+" in disp.columns:
+        fmt["EDGE Bursts 20+"] = lambda x: "—" if pd.isna(x) else f"{x:.0f}"
+    if "EDGE Distance (mi)" in disp.columns:
+        fmt["EDGE Distance (mi)"] = lambda x: "—" if pd.isna(x) else f"{x:.1f} mi"
     if "TOI" in disp.columns:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     for c in ("GP",):
@@ -2717,6 +2812,38 @@ def render_players() -> None:
         rule100 = alt.Chart(pd.DataFrame({"y": [100]})).mark_rule(
             color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
         _show_chart(scatter2 + rule100, dl_name="pdo-vs-xg-differential")
+
+    if "EDGE" in _shown and {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(disp.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts vs "
+                    f"Top Speed</h4>", unsafe_allow_html=True)
+        st.caption("**Source: NHL EDGE tracking** (not my PBP data) — top skating speed vs 20+ mph "
+                   "speed-burst count, current filtered player set.")
+        edge_sc = disp.dropna(subset=["EDGE Top Speed", "EDGE Bursts 20+"])
+        scatter3 = alt.Chart(edge_sc).mark_circle(size=70, opacity=0.7, color=PALETTE["orange"]).encode(
+            x=alt.X("EDGE Top Speed:Q", title="Top Speed (mph)"),
+            y=alt.Y("EDGE Bursts 20+:Q", title="Speed Bursts (20+ mph)"),
+            tooltip=["Player:N", "Team:N", alt.Tooltip("EDGE Top Speed:Q", format=".1f"),
+                     "EDGE Bursts 20+:Q"],
+        ).properties(height=380)
+        _show_chart(scatter3, dl_name="EDGE-speed-burst-vs-top-speed")
+
+    if "EDGE" in _shown and {"EDGE OZ%", "EDGE NZ%", "EDGE DZ%"}.issubset(disp.columns):
+        edge_zone_long = disp.melt(value_vars=["EDGE OZ%", "EDGE NZ%", "EDGE DZ%"],
+                                    var_name="Zone", value_name="Time%")
+        edge_zone_long["Zone"] = edge_zone_long["Zone"].str.replace("EDGE ", "", regex=False) \
+            .str.replace("%", "", regex=False)
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1.2rem;'>EDGE: Zone-Time "
+                    f"Distribution</h4>", unsafe_allow_html=True)
+        st.caption("**Source: NHL EDGE tracking** — distribution of all-situations zone-time share "
+                   "across the current filtered player set. DZ (blue) / NZ (grey) / OZ (orange).")
+        hist3 = alt.Chart(edge_zone_long.dropna()).mark_bar(opacity=0.65).encode(
+            x=alt.X("Time%:Q", bin=alt.Bin(maxbins=30), axis=alt.Axis(format="%"), title="Zone-Time Share"),
+            y=alt.Y("count():Q", title="Players", stack=None),
+            color=alt.Color("Zone:N", scale=alt.Scale(domain=["DZ", "NZ", "OZ"],
+                             range=[PALETTE["blue"], PALETTE["text_secondary"], PALETTE["orange"]]),
+                             legend=alt.Legend(title=None)),
+        ).properties(height=340)
+        _show_chart(hist3, dl_name="EDGE-zone-time-distribution")
 
     # Row click → drill into that player (collapse the list). Bump the table key
     # so the leaderboard re-renders without a stale selection when we come back.
@@ -4386,134 +4513,6 @@ def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str
     _show_df(pd.DataFrame(brows), width="stretch", hide_index=True)
 
 
-def render_edge() -> None:
-    st.markdown(
-        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>EDGE</h2>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        f"<div style='background:{PALETTE['panel']}; border:1px solid {PALETTE['border']}; "
-        f"border-radius:8px; padding:0.6rem 0.9rem; margin-bottom:0.7rem;'>"
-        f"<span style='color:{PALETTE['orange']}; font-weight:700;'>NHL EDGE tracking data — "
-        f"a DIFFERENT basis than my Zone metrics.</span> "
-        f"<span style='color:{PALETTE['text']};'>Measured by player <b>position</b> (not puck "
-        f"position), across <b>all-situations / even-strength TOI</b> (not strict 5v5 "
-        f"faceoff-started shifts). Do not read EDGE zone-time% as the same metric as "
-        f"NZI/DZI/OZI or the D/N/O Start% columns on Player List — different data source, "
-        f"different definition.</span></div>",
-        unsafe_allow_html=True,
-    )
-    _set_dl_title(None)
-
-    edge_seasons = ["2025-26", "2024-25", "2023-24", "2022-23", "2021-22"]
-    edge_season_key = {s: s[:4] + "20" + s[-2:] for s in edge_seasons}
-    c1, c2, c3 = st.columns([1.3, 1.1, 1.0])
-    with c1:
-        season_label = st.selectbox("Season", edge_seasons, key="edge_season")
-    with c2:
-        game_type = st.radio("Game type", ["Regular", "Playoffs"], horizontal=True, key="edge_game_type")
-    with c3:
-        pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="edge_pos")
-
-    df = load_edge_stats(playoffs=(game_type == "Playoffs"))
-    if df.empty:
-        st.info("EDGE data not available for this scope.")
-        return
-    df = df[df["season"] == edge_season_key[season_label]].copy()
-    df["_pos_group"] = np.where(df["position"] == "D", "D", "F")
-    if pos in ("F", "D"):
-        df = df[df["_pos_group"] == pos]
-    if df.empty:
-        st.markdown(f"<p style='color:{PALETTE['text']};'>No players match the current filters.</p>",
-                    unsafe_allow_html=True)
-        return
-
-    c4, c5 = st.columns([1.5, 1.5])
-    with c4:
-        _plabel = dict(zip(df["player_id"], df["player_name"] + " (" + df["team"] + ")"))
-        player_sel = st.selectbox("Search a player", df["player_id"].tolist(), index=None,
-                                  placeholder="", format_func=lambda i: _plabel.get(i, str(i)),
-                                  key="edge_search")
-    with c5:
-        team_opts = ["All"] + sorted(df["team"].dropna().unique().tolist())
-        team_sel = st.selectbox("Team", team_opts, key="edge_team")
-    if player_sel is not None:
-        df = df[df["player_id"] == player_sel]
-    elif team_sel != "All":
-        df = df[df["team"] == team_sel]
-
-    _ren = {
-        "player_name": "Player", "position": "Pos", "team": "Team", "games_played": "GP",
-        "oz_time_pct": "OZ Time% (All)", "oz_time_pct_percentile": "OZ %ile (All)",
-        "oz_time_pct_ev": "OZ Time% (EV)", "oz_time_pct_ev_percentile": "OZ %ile (EV)",
-        "nz_time_pct": "NZ Time%", "nz_time_pct_percentile": "NZ %ile",
-        "dz_time_pct": "DZ Time%", "dz_time_pct_percentile": "DZ %ile",
-        "top_skating_speed_mph": "Top Speed", "top_skating_speed_percentile": "Speed %ile",
-        "speed_bursts_over_20mph": "Bursts 20+", "speed_bursts_over_20mph_percentile": "Bursts %ile",
-        "distance_skated_miles": "Distance (mi)", "distance_skated_percentile": "Distance %ile",
-    }
-    disp = df.rename(columns=_ren)
-    cols = ["Player", "Pos", "Team", "GP",
-            "OZ Time% (All)", "OZ %ile (All)", "OZ Time% (EV)", "OZ %ile (EV)",
-            "NZ Time%", "NZ %ile", "DZ Time%", "DZ %ile",
-            "Top Speed", "Speed %ile", "Bursts 20+", "Bursts %ile",
-            "Distance (mi)", "Distance %ile"]
-    cols = [c for c in cols if c in disp.columns]
-    disp = disp[cols].sort_values("OZ Time% (All)", ascending=False)
-
-    fmt = {}
-    for c in ("OZ Time% (All)", "OZ Time% (EV)", "NZ Time%", "DZ Time%"):
-        if c in disp.columns:
-            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x*100:.1f}%"
-    for c in ("OZ %ile (All)", "OZ %ile (EV)", "NZ %ile", "DZ %ile", "Speed %ile",
-              "Bursts %ile", "Distance %ile"):
-        if c in disp.columns:
-            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x*100:.0f}th"
-    if "Top Speed" in disp.columns:
-        fmt["Top Speed"] = lambda x: "—" if pd.isna(x) else f"{x:.1f} mph"
-    if "Bursts 20+" in disp.columns:
-        fmt["Bursts 20+"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
-    if "Distance (mi)" in disp.columns:
-        fmt["Distance (mi)"] = lambda x: "—" if pd.isna(x) else f"{x:.1f} mi"
-    if "GP" in disp.columns:
-        fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
-
-    _sort_hint()
-    _show_df(disp.style.format(fmt, na_rep="—"), hide_index=True, width="stretch")
-    st.caption(f"{len(disp):,} players · {season_label} {game_type} · NHL EDGE player-tracking "
-               "data (source: api-web.nhle.com EDGE endpoints) · percentiles are NHL's own, "
-               "computed league-wide for that season/game-type.")
-
-    import altair as alt
-    st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Speed Bursts vs Top Speed</h4>",
-                unsafe_allow_html=True)
-    st.caption("**Source: NHL EDGE tracking** (not my PBP data) — top skating speed vs 20+ mph "
-               "speed-burst count, current filtered player set.")
-    scatter = alt.Chart(df).mark_circle(size=70, opacity=0.7, color=PALETTE["orange"]).encode(
-        x=alt.X("top_skating_speed_mph:Q", title="Top Speed (mph)"),
-        y=alt.Y("speed_bursts_over_20mph:Q", title="Speed Bursts (20+ mph)"),
-        tooltip=["player_name:N", "team:N", alt.Tooltip("top_skating_speed_mph:Q", format=".1f"),
-                 "speed_bursts_over_20mph:Q"],
-    ).properties(height=380)
-    _show_chart(scatter, dl_name="EDGE-speed-burst-vs-top-speed")
-
-    zone_long = df.melt(id_vars=["player_id"], value_vars=["oz_time_pct", "nz_time_pct", "dz_time_pct"],
-                         var_name="Zone", value_name="Time%")
-    zone_long["Zone"] = zone_long["Zone"].map({"oz_time_pct": "OZ", "nz_time_pct": "NZ", "dz_time_pct": "DZ"})
-    st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1.2rem;'>Zone-Time Distribution</h4>",
-                unsafe_allow_html=True)
-    st.caption("**Source: NHL EDGE tracking** — distribution of all-situations zone-time share "
-               "across the current filtered player set. DZ (blue) / NZ (grey) / OZ (orange).")
-    hist = alt.Chart(zone_long).mark_bar(opacity=0.65).encode(
-        x=alt.X("Time%:Q", bin=alt.Bin(maxbins=30), axis=alt.Axis(format="%"), title="Zone-Time Share"),
-        y=alt.Y("count():Q", title="Players", stack=None),
-        color=alt.Color("Zone:N", scale=alt.Scale(domain=["DZ", "NZ", "OZ"],
-                         range=[PALETTE["blue"], PALETTE["text_secondary"], PALETTE["orange"]]),
-                         legend=alt.Legend(title=None)),
-    ).properties(height=340)
-    _show_chart(hist, dl_name="EDGE-zone-time-distribution")
-
-
 def render_referees() -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Referees</h2>",
@@ -4656,7 +4655,7 @@ def main() -> None:
     # render_scoped_filters), grouped with that tab's own filters but kept in sync
     # across tabs — rather than a standalone row above the tabs.
     (player_list_tab, goalie_list_tab,
-     trade_tab, teams_tab, refs_tab, edge_tab, meth_tab) = st.tabs(TAB_LABELS)
+     trade_tab, teams_tab, refs_tab, meth_tab) = st.tabs(TAB_LABELS)
     with player_list_tab:
         render_players()
     with goalie_list_tab:
@@ -4667,8 +4666,6 @@ def main() -> None:
         render_teams()
     with refs_tab:
         render_referees()
-    with edge_tab:
-        render_edge()
     with meth_tab:
         render_methodology()
 
