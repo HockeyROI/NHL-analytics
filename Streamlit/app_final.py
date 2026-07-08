@@ -654,7 +654,12 @@ def render_methodology() -> None:
             "ties. <b>Relative QG</b> (<b>RelNFI-QG%</b>, <b>RelxG-QG%</b>) runs the same per-game "
             "median test on the player's <i>team-relative</i> danger share (on-ice vs off-ice), so "
             "it credits beating the bar after isolating individual contribution from team strength "
-            "— the QG analog of RelNFI%.",
+            "— the QG analog of RelNFI%. <b>For / Against split</b> (<b>xG-QG-F%</b>, "
+            "<b>xG-QG-A%</b>, <b>NFI-QG-F%</b>, <b>NFI-QG-A%</b>) grades a game's OFFENSE and "
+            "DEFENSE separately: the share of games where the player's on-ice For rate per 60 beat "
+            "the league position-median (F, higher = better), and where the on-ice Against rate per "
+            "60 was below it (A, lower against = better). Higher is better on all four. Available at "
+            "team level too.",
         )
         + _meth_framework(
             "xG — Expected Goals",
@@ -1022,6 +1027,95 @@ def _xg_onice_rates(scope_key: str, playoffs: bool = False) -> pd.DataFrame:
     return g[["player_id", "xGF/60", "xGA/60"]]
 
 
+# Quality-Games For/Against split (built by 03_quality_game_for_against.py): the
+# share of a player's games where OFFENSE (For) or DEFENSE (Against) was quality,
+# for xG and NFI. Display names → source count/qual_GP column stems.
+_QG_FA = {"xG-QG-F%": "xG_QG_F", "xG-QG-A%": "xG_QG_A",
+          "NFI-QG-F%": "NFI_QG_F", "NFI-QG-A%": "NFI_QG_A"}
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qg_fa_player(playoffs: bool = False) -> pd.DataFrame:
+    fn = "per_player_qg_fa_playoffs.csv" if playoffs else "per_player_qg_fa.csv"
+    fp = REPO_ROOT / "Quality_Games" / "output" / fn
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    return df
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qg_fa_team(playoffs: bool = False) -> pd.DataFrame:
+    fn = "per_team_qg_fa_playoffs.csv" if playoffs else "per_team_qg_fa.csv"
+    fp = REPO_ROOT / "Quality_Games" / "output" / fn
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp)
+    df["season"] = df["season"].astype(str)
+    df["team_abbrev"] = df["team_abbrev"].replace({"ARI": "UTA"})
+    return df
+
+
+def _qg_fa_rates(scope_key: str, playoffs: bool = False) -> pd.DataFrame:
+    """Player QG For/Against rates (0-1) for a scope, pooled by ratio-of-sums
+    (sum counts / sum qual_GP across the scope's seasons). Columns are already
+    display-named (xG-QG-F%, xG-QG-A%, NFI-QG-F%, NFI-QG-A%)."""
+    df = load_qg_fa_player(playoffs)
+    if df.empty:
+        return pd.DataFrame()
+    if playoffs:
+        sub = df[df["season"] == PLAYOFF_SCOPE] if (df["season"] == PLAYOFF_SCOPE).any() else df
+    elif scope_key == "pooled":
+        sub = df[df["season"].isin([str(s) for s in POOLED_SEASONS])]
+    elif scope_key == "pooled_2yr":
+        sub = df[df["season"].isin([str(s) for s in POOLED_2YR_SEASONS])]
+    else:
+        sub = df[df["season"] == str(scope_key)]
+    if sub.empty:
+        return pd.DataFrame()
+    agg = {}
+    for base in _QG_FA.values():
+        agg[f"{base}_count"] = (f"{base}_count", "sum")
+        agg[f"{base}_qual_GP"] = (f"{base}_qual_GP", "sum")
+    g = sub.groupby("player_id").agg(**agg).reset_index()
+    out = g[["player_id"]].copy()
+    for disp, base in _QG_FA.items():
+        q = g[f"{base}_qual_GP"]
+        out[disp] = np.where(q > 0, g[f"{base}_count"] / q, np.nan)
+    return out
+
+
+_TEAM_QG_FA = {"team_xG_QG_F_pct": "xG-QG-F%", "team_xG_QG_A_pct": "xG-QG-A%",
+               "team_NFI_QG_F_pct": "NFI-QG-F%", "team_NFI_QG_A_pct": "NFI-QG-A%"}
+
+
+def _team_qg_fa(scope_key: str) -> pd.DataFrame:
+    """Team QG For/Against rates (0-1) for a scope, TOI-weighted across the scope's
+    seasons (mirrors render_teams' xG-QG%/NFI-QG% pooling). Keyed on 'team'."""
+    df = load_qg_fa_team()
+    if df.empty:
+        return pd.DataFrame()
+    if scope_key == "pooled":
+        sub = df[df["season"].isin([str(s) for s in POOLED_SEASONS])]
+    elif scope_key == "pooled_2yr":
+        sub = df[df["season"].isin([str(s) for s in POOLED_2YR_SEASONS])]
+    else:
+        sub = df[df["season"] == str(scope_key)]
+    if sub.empty:
+        return pd.DataFrame()
+    rows = []
+    for t, g in sub.groupby("team_abbrev"):
+        w = pd.to_numeric(g["total_team_TOI_min"], errors="coerce").astype(float)
+        row = {"team": t}
+        for src, disp in _TEAM_QG_FA.items():
+            v = pd.to_numeric(g[src], errors="coerce")
+            m = v.notna() & (w > 0)
+            row[disp] = float(np.average(v[m], weights=w[m])) if m.any() else np.nan
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 # --- In-tab profiles (Gate F): per-season trends ----------------------------
 PROFILE_SEASONS = ["20222023", "20232024", "20242025", "20252026"]  # 4yr, excl 2021-22
 SEASON_DISPLAY = {"20222023": "2022-23", "20232024": "2023-24",
@@ -1136,6 +1230,17 @@ def _player_trend(pid: int) -> pd.DataFrame:
                 "RelxG_pct": "RelxG%", "RelxG_F_pct": "RelxG-F%",
                 "RelxG_A_pct": "RelxG-A%"})
         trend = trend.merge(q, on="season", how="outer")
+
+    # Quality-Games For/Against per season (xG-QG-F/A%, NFI-QG-F/A%).
+    qgfa = load_qg_fa_player()
+    if not qgfa.empty:
+        qf = qgfa[qgfa["player_id"] == pid].copy()
+        qf["season"] = qf["season"].astype(str)
+        qf = qf[qf["season"].isin(PROFILE_SEASONS)]
+        _fa_ren = {f"{b}_pct": disp for disp, b in _QG_FA.items()}
+        _fk = ["season"] + [c for c in _fa_ren if c in qf.columns]
+        if len(_fk) > 1:
+            trend = trend.merge(qf[_fk].rename(columns=_fa_ren), on="season", how="outer")
 
     # On-ice xGF/60 and xGA/60 (MoneyPuck-style) per season.
     xgame = _load_xg_game()
@@ -1329,7 +1434,8 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     share_cols = ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%"]
     rate_cols = ["NFI-A/60", "NFI-S/60"]
     zone_cols = ["NZI", "DZI", "OZI"]
-    qg_cols = ["xG-QG%", "RelxG-QG%", "NFI-QG%", "RelNFI-QG%"]
+    qg_cols = ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
+               "NFI-QG%", "NFI-QG-F%", "NFI-QG-A%", "RelNFI-QG%"]
     xg_cols = ["xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%"]
     metric_cols = [c for c in qg_cols + xg_cols + share_cols + rate_cols + zone_cols
                    if c in trend.columns]
@@ -1342,7 +1448,8 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     ranks = _player_season_ranks(pid, same_pos=same_pos)
     team_ranks = _player_season_ranks(pid, same_pos=same_pos, team=team) if team else {}
     _b = {}
-    for c in ("NFI%", "NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"):
+    for c in ("NFI%", "NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%",
+              "xG-QG-F%", "xG-QG-A%", "NFI-QG-F%", "NFI-QG-A%"):
         _b[c] = lambda v: f"{v * 100:.1f}%"
     for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%", "RelxG-F%", "RelxG-A%"):
         _b[c] = lambda v: f"{v:+.2f}"
@@ -2095,6 +2202,9 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         xg = _xg_onice_rates("pooled", playoffs=True)
         if not xg.empty and not base.empty:
             base = base.merge(xg, on="player_id", how="left")
+        qgfa = _qg_fa_rates("pooled", playoffs=True)
+        if not qgfa.empty and not base.empty:
+            base = base.merge(qgfa, on="player_id", how="left")
         return base, True
 
     nfi = load_nfi_player()
@@ -2146,6 +2256,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     xg = _xg_onice_rates(key)
     if not xg.empty and not base.empty:
         base = base.merge(xg, on="player_id", how="left")
+    # Quality-Games For/Against (xG-QG-F/A%, NFI-QG-F/A%), ratio-of-sums pooling.
+    qgfa = _qg_fa_rates(key)
+    if not qgfa.empty and not base.empty:
+        base = base.merge(qgfa, on="player_id", how="left")
     return base, is_pooled
 
 
@@ -2154,7 +2268,8 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
 # show.
 PLAYER_FAMILY_COLS = {
     # Quality Games = the "-QG%" metrics only (share of games that were "quality").
-    "Quality Games": ["xG-QG%", "RelxG-QG%", "NFI-QG%", "RelNFI-QG%"],
+    "Quality Games": ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
+                      "NFI-QG%", "NFI-QG-F%", "NFI-QG-A%", "RelNFI-QG%"],
     # xG = the raw + relative expected-goals rate metrics (split out of QG).
     "xG": ["xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%"],
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
@@ -2350,7 +2465,8 @@ def render_players() -> None:
     # NFI-A/60 / NFI-S/60 are RAW per-60 rates; RelNFI-A% / RelNFI-S% are the
     # relative (vs own-team) versions — both coexist, placed side by side.
     cols = ["Player", "Pos", "Team", "GP", "TOI",
-            "xG-QG%", "RelxG-QG%", "NFI-QG%", "RelNFI-QG%",
+            "xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
+            "NFI-QG%", "NFI-QG-F%", "NFI-QG-A%", "RelNFI-QG%",
             "xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "NZI", "DZI", "OZI"]
@@ -2366,7 +2482,8 @@ def render_players() -> None:
     disp = df[cols].copy()
 
     fmt = {}
-    for c in ("NFI%", "xG-QG%", "NFI-QG%", "RelNFI-QG%", "RelxG-QG%"):
+    for c in ("NFI%", "xG-QG%", "NFI-QG%", "RelNFI-QG%", "RelxG-QG%",
+              "xG-QG-F%", "xG-QG-A%", "NFI-QG-F%", "NFI-QG-A%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
     for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%", "RelxG-F%", "RelxG-A%"):
@@ -2390,7 +2507,8 @@ def render_players() -> None:
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
                     "NFI-S/60", "NZI", "DZI", "OZI",
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
-                    "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%"]
+                    "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
+                    "xG-QG-F%", "xG-QG-A%", "NFI-QG-F%", "NFI-QG-A%"]
     # lower value = better (rank ascending): shots/xG against
     _lower = {"NFI-S/60", "xGA/60", "RelxG-A%"}
     # Second bracket number = within-team rank. With a team selected, rank within
@@ -2706,7 +2824,8 @@ def _render_teams_playoffs(season_label: str) -> None:
     if "GP" in disp:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
-    _team_rank = ["NFI%", "Attack events", "Suppress events"] + zcols + ["xG-QG%", "NFI-QG%"]
+    _team_rank = (["NFI%", "Attack events", "Suppress events"] + zcols
+                  + ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "NFI-QG%", "NFI-QG-F%", "NFI-QG-A%"])
     _apply_ranks(disp, fmt, disp, _team_rank, lower_better={"Suppress events"})
     st.caption("Each metric shows its **(rank)** across playoff teams. "
                "Suppress events (shots against): lowest = #1.")
@@ -2780,6 +2899,11 @@ def render_teams() -> None:
         st.info("No team data for this season.")
         return
 
+    # Quality-Games For/Against at team level (TOI-weighted like xG-QG%/NFI-QG%).
+    tfa = _team_qg_fa(key)
+    if not tfa.empty:
+        team = team.merge(tfa, on="team", how="left")
+
     # Attack / Suppress events — all seasons + pools (ratio-of-sums for pools).
     a = _team_attack_suppress(key)
     if not a.empty:
@@ -2797,18 +2921,21 @@ def render_teams() -> None:
                .rename(columns={"NZI": zcols[0], "DZI": zcols[1], "OZI": zcols[2]}))
         team = team.merge(tzw, on="team", how="left")
 
-    for c in ["TOI", "xG-QG%", "NFI-QG%", "Attack events", "Suppress events"] + zcols:
+    _fa_disp = list(_TEAM_QG_FA.values())   # xG-QG-F%, xG-QG-A%, NFI-QG-F%, NFI-QG-A%
+    for c in ["TOI", "xG-QG%", "NFI-QG%", "Attack events",
+              "Suppress events"] + zcols + _fa_disp:
         if c not in team.columns:
             team[c] = np.nan
 
     team = team.rename(columns={"team": "Team"})
     team = team.sort_values("NFI%", ascending=False, na_position="last").reset_index(drop=True)
     cols = (["Team", "GP", "TOI", "NFI%", "Attack events", "Suppress events"]
-            + zcols + ["xG-QG%", "NFI-QG%"])
+            + zcols + ["xG-QG%", "xG-QG-F%", "xG-QG-A%",
+                       "NFI-QG%", "NFI-QG-F%", "NFI-QG-A%"])
     disp = team[[c for c in cols if c in team.columns]].copy()
 
     fmt = {}
-    for c in ("NFI%", "xG-QG%", "NFI-QG%"):
+    for c in ("NFI%", "xG-QG%", "NFI-QG%") + tuple(_fa_disp):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
     for c in ("Attack events", "Suppress events"):
