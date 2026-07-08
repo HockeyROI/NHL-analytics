@@ -1628,7 +1628,7 @@ def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 
         _sp, _btn = st.columns([20, 1])
         with _btn:
             st.download_button("⬇", data=png, file_name=f"{dl_name}.png",
-                               mime="image/png", key=_key, help="Save chart as PNG")
+                               mime="image/png", key=_key)
 
 
 # Diverging gradient: a light tint near the 50% midline → the FULL brand colour
@@ -1658,15 +1658,6 @@ def _qg_axis_domain(values) -> list:
     if not vv:
         return [30, 70]
     return [min(30, int(np.floor(min(vv))) - 2), max(70, int(np.ceil(max(vv))) + 2)]
-
-
-def _rel_axis_domain(values, floor: int = 6) -> list:
-    """Symmetric-around-0 domain for signed relative-% charts (so 0 stays centred
-    and different players' charts share a comparable spread). At least ±floor,
-    expanding only to fit an outlier."""
-    vv = [abs(v) for v in values if pd.notna(v)]
-    m = max([floor] + [int(np.ceil(x)) + 1 for x in vv]) if vv else floor
-    return [-m, m]
 
 
 def _player_qg_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
@@ -1807,12 +1798,14 @@ def _qg_line_encodings(series):
 
 
 def _qg_line_ydomain(values) -> list:
-    """Zoom the QG line y-axis to ~0.35-0.75 (where most players land), expanding
-    only if a value falls outside that band."""
+    """Zoom the QG line y-axis tightly to the data (with ~15% padding, min ±0.02) so
+    season-to-season movement is visible rather than flattened by a wide band."""
     vv = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
     if vv.empty:
         return [0.35, 0.75]
-    return [min(0.35, float(vv.min()) - 0.02), max(0.75, float(vv.max()) + 0.02)]
+    lo, hi = float(vv.min()), float(vv.max())
+    pad = max(0.02, (hi - lo) * 0.15)
+    return [lo - pad, hi + pad]
 
 
 def _qg_combined_line(trend: pd.DataFrame) -> None:
@@ -1970,23 +1963,19 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
     # net-front per-60, then relative xG. Each follows the family filter
     # (selected families only; none selected = all). One chart per scale so none
     # flattens.
+    # y-axes zoom to each chart's own data range (zero=False) so season-to-season
+    # movement is visible instead of being flattened by a wide fixed domain.
     if "Quality Games" in _show_fams:
         _qg_combined_line(trend)
-    # Symmetric ±spread for the signed relative-% charts so 0 stays centred and
-    # the spread is comparable across players.
-    _rel_cols = ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%", "RelxG-F%", "RelxG-A%"]
-    _rel_dom = _rel_axis_domain(
-        pd.concat([trend[c] for c in _rel_cols if c in trend.columns],
-                  ignore_index=True).tolist() if any(c in trend.columns for c in _rel_cols) else [])
     if "xG" in _show_fams:
         _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])
         _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
-               ["RelxG%", "RelxG-F%", "RelxG-A%"], ydomain=_rel_dom)
+               ["RelxG%", "RelxG-F%", "RelxG-A%"])
     if "Net Front Impact" in _show_fams:
         _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
-               ["RelNFI%", "RelNFI-A%", "RelNFI-S%"], ydomain=_rel_dom)
+               ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
     if "Zone Impact" in _show_fams:
-        _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"], ydomain=[0, 10])
+        _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
     if "Net Front Impact" in _show_fams:
         _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
         _chart("NFI% (net-front share)", ["NFI%"])
@@ -4163,8 +4152,6 @@ def main() -> None:
                "fell below the metric's qualifying **sample-size** minimum for that "
                "scope — it's “not enough data”, not zero. **(UR)** beside a value means "
                "the same: shown but unranked.")
-    st.caption("📥 **Download any chart:** hover over it and click the **⋮** menu in "
-               "its top-right corner → **Save as PNG** (exports it exactly as shown).")
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
 
     # The Season + Game-type filter now lives at the top of each tab (rendered by
