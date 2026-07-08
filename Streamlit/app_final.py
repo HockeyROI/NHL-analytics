@@ -2909,6 +2909,17 @@ def load_qg_tiered_by_season(scope_suffix: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def load_qg_starter_baseline(scope_suffix: str) -> dict:
+    """{season_str: starter-tier baseline save% (0-100)} for the SQS bar."""
+    fp = _QC / f"qg_tier_baselines_by_season{scope_suffix}.csv"
+    if not fp.exists():
+        return {}
+    df = pd.read_csv(fp)
+    df = df[df["tier"] == "starter"]
+    return {str(s): float(v) for s, v in zip(df["season"], df["baseline_save_pct"])}
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_goalie_nfi_playoffs() -> pd.DataFrame:
     fp = REPO_ROOT / "NFI" / "output" / "goalie_nfi_gsax_by_season_playoffs.csv"
     if not fp.exists():
@@ -3335,6 +3346,18 @@ def render_goalies() -> None:
                    "**QNFG% and QG stay 5v5-only** regardless.")
     qg_starter = True
     qg_scope_suffix = QG_SCOPE_SUFFIX[qg_scope_label]
+
+    # State the SQS starter baseline save% for the open season(s) + shot scope.
+    _bl = load_qg_starter_baseline(qg_scope_suffix)
+    if _bl:
+        _sk = SEASON_KEY.get(season_label, "pooled")
+        _bl_seasons = (POOLED_SEASONS if _sk in ("pooled",) or playoffs
+                       else POOLED_2YR_SEASONS if _sk == "pooled_2yr" else [_sk])
+        _bl_parts = [f"{SEASON_DISPLAY.get(s, s)} {_bl[s]:.1f}%"
+                     for s in _bl_seasons if s in _bl]
+        if _bl_parts:
+            st.caption(f"**SQS starter baseline save% ({qg_scope_label})** — a game "
+                       "clears SQS when its save% beats this line: " + " · ".join(_bl_parts))
 
     is_2yr = (not playoffs) and SEASON_KEY.get(season_label) == "pooled_2yr"
     is_pooled = (not playoffs) and SEASON_KEY.get(season_label, "pooled") == "pooled"
