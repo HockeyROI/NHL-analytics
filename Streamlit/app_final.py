@@ -1329,8 +1329,9 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     share_cols = ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%"]
     rate_cols = ["NFI-A/60", "NFI-S/60"]
     zone_cols = ["NZI", "DZI", "OZI"]
-    qg_cols = ["xG-QG%", "RelxG-QG%", "RelxG%", "NFI-QG%", "RelNFI-QG%"]
-    metric_cols = [c for c in qg_cols + share_cols + rate_cols + zone_cols
+    qg_cols = ["xG-QG%", "RelxG-QG%", "NFI-QG%", "RelNFI-QG%"]
+    xg_cols = ["xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%"]
+    metric_cols = [c for c in qg_cols + xg_cols + share_cols + rate_cols + zone_cols
                    if c in trend.columns]
     if families:   # narrow to the selected metric families
         _fam_of = {col: fam for fam, fcols in PLAYER_FAMILY_COLS.items() for col in fcols}
@@ -1343,10 +1344,12 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     _b = {}
     for c in ("NFI%", "NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"):
         _b[c] = lambda v: f"{v * 100:.1f}%"
-    for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%"):
+    for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%", "RelxG-F%", "RelxG-A%"):
         _b[c] = lambda v: f"{v:+.2f}"
     for c in ("NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI"):
         _b[c] = lambda v: f"{v:.1f}"
+    for c in ("xGF/60", "xGA/60"):
+        _b[c] = lambda v: f"{v:.2f}"
     has_team = "Team" in trend.columns
     has_gp = "GP" in trend.columns
     rows = []
