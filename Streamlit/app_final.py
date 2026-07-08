@@ -152,17 +152,19 @@ _CHART_PRIMARY = PALETTE["orange"]       # #FF6B35
 _CHART_SECOND = PALETTE["lightblue"]     # #4AB3E8 light blue
 _CHART_THIRD = PALETTE["blue"]           # #2E7DC4 brand blue (reads blue, not black)
 _CHART_FOURTH = "#7E57C2"                # purple — 4th line on 4-series charts
+# Line-chart palette by ASPECT (matches the QG line chart): overall = orange,
+# offense / For / attack = light-blue, defense / Against / suppress = blue.
 _CHART_COLORS = {
     "NFI%": _CHART_PRIMARY,
     "RelNFI%": _CHART_PRIMARY, "RelNFI-A%": _CHART_SECOND, "RelNFI-S%": _CHART_THIRD,
-    "NFI-A/60": _CHART_PRIMARY, "NFI-S/60": _CHART_SECOND,
+    "NFI-A/60": _CHART_SECOND, "NFI-S/60": _CHART_THIRD,
     "NZI": _CHART_PRIMARY, "DZI": _CHART_SECOND, "OZI": _CHART_THIRD,
     "NFI-QG%": _CHART_PRIMARY, "xG-QG%": _CHART_SECOND,
     "RelNFI-QG%": _CHART_PRIMARY, "RelxG-QG%": _CHART_SECOND, "RelxG%": _CHART_PRIMARY,
     "NFI-GSAx/60": _CHART_PRIMARY, "QNFG%": _CHART_PRIMARY, "QG%": _CHART_SECOND,
-    # xG family
-    "xGF/60": _CHART_PRIMARY, "xGA/60": _CHART_SECOND,
-    "RelxG-F%": _CHART_PRIMARY, "RelxG-A%": _CHART_SECOND,
+    # xG family — For = light-blue (offense), Against = blue (defense), overall = orange
+    "xGF/60": _CHART_SECOND, "xGA/60": _CHART_THIRD,
+    "RelxG-F%": _CHART_SECOND, "RelxG-A%": _CHART_THIRD,
     # goalie extras (NFI SV% = purple; sQS = blue/third)
     "NFI SV%": _CHART_FOURTH, "sQS": _CHART_THIRD,
     "NFI-GSAx": _CHART_PRIMARY, "MP-GSAx": _CHART_THIRD,
@@ -3476,7 +3478,9 @@ def _goalie_gsax_bar(row) -> None:
     import altair as alt
 
     def _panel(metrics, title, fmt):
-        rows = [{"Metric": m, "value": float(row[m])}
+        rows = [{"Metric": m, "value": float(row[m]),
+                 # Diverging like the bar charts: above 0 (good) = navy, below = orange.
+                 "color": _BAR_BLUE_STRONG if float(row[m]) >= 0 else _BAR_ORG_STRONG}
                 for m in metrics if m in row and pd.notna(row[m])]
         if not rows:
             return None
@@ -3485,9 +3489,7 @@ def _goalie_gsax_bar(row) -> None:
         bars = alt.Chart(d).mark_bar(size=36).encode(
             x=alt.X("Metric:N", sort=order, axis=alt.Axis(labelAngle=-20, title=None)),
             y=alt.Y("value:Q", title=title),
-            color=alt.Color("Metric:N", scale=alt.Scale(
-                domain=order, range=[_CHART_COLORS.get(m, _CHART_SECOND) for m in order]),
-                legend=None),
+            color=alt.Color("color:N", scale=None, legend=None),
             tooltip=["Metric:N", alt.Tooltip("value:Q", format=fmt)])
         zero = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
             color=_CHART_THIRD, strokeDash=[4, 4]).encode(y="y:Q")
