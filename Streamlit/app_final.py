@@ -165,6 +165,7 @@ _CHART_COLORS = {
     # goalie extras (NFI SV% = purple; SQS = blue/third)
     "NFI SV%": _CHART_FOURTH, "SQS": _CHART_THIRD,
     "NFI-GSAx": _CHART_PRIMARY, "MP-GSAx": _CHART_THIRD,
+    "MP-GSAx/60": _CHART_THIRD,
 }
 
 
@@ -3015,6 +3016,11 @@ def _goalie_trend(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) 
             if _s not in _gp and pd.notna(_rr[_c]):
                 _gp[_s] = int(_rr[_c])
     base["GP"] = base["season"].map(_gp)
+    # All-shot GSAx per 60 ≈ cumulative all-shot GSAx / GP (goalies play ~full
+    # games, so per-game ≈ per-60). NFI-GSAx/60 already comes as a true per-60.
+    if "MP-GSAx" in base.columns:
+        _gpn = pd.to_numeric(base["GP"], errors="coerce")
+        base["MP-GSAx/60"] = np.where(_gpn > 0, base["MP-GSAx"] / _gpn, np.nan)
     return base.sort_values("season").reset_index(drop=True)
 
 
@@ -3225,12 +3231,18 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
         _gchart("Consistency % over time (QNFG%, QG%, SQS)", _cons, trend,
                 ydomain=_tight_domain(_cv, min_pad=1.0))
 
-    # (3) GSAx over time — NFI-GSAx (net-front) vs MP-GSAx (all-shot / MoneyPuck).
-    _gs = [c for c in ("NFI-GSAx", "MP-GSAx") if c in trend.columns]
-    if _gs:
-        _gv = pd.concat([trend[c] for c in _gs], ignore_index=True).tolist()
-        _gchart("GSAx over time (NFI-GSAx vs MP-GSAx, cumulative)", _gs, trend,
-                ydomain=_tight_domain(_gv, min_pad=1.0))
+    # (3) GSAx over time — NFI-GSAx (net-front) vs MP-GSAx (all-shot / MoneyPuck),
+    # shown both per-60 and cumulative.
+    _gs60 = [c for c in ("NFI-GSAx/60", "MP-GSAx/60") if c in trend.columns]
+    if _gs60:
+        _v = pd.concat([trend[c] for c in _gs60], ignore_index=True).tolist()
+        _gchart("GSAx per 60 over time (NFI-GSAx/60 vs MP-GSAx/60)", _gs60, trend,
+                ydomain=_tight_domain(_v, min_pad=0.05))
+    _gsc = [c for c in ("NFI-GSAx", "MP-GSAx") if c in trend.columns]
+    if _gsc:
+        _v = pd.concat([trend[c] for c in _gsc], ignore_index=True).tolist()
+        _gchart("GSAx cumulative over time (NFI-GSAx vs MP-GSAx)", _gsc, trend,
+                ydomain=_tight_domain(_v, min_pad=1.0))
 
 
 def _wilson(k: float, n: float, lower: bool = True, z: float = 1.96) -> float:
