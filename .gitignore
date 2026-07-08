@@ -10,6 +10,9 @@ Zones/raw/
 Zones/raw/shifts/
 Zones/raw/pbp/
 
+# Raw EDGE scrape cache (~66MB, resumable — same convention as Zones/raw/)
+edge/raw/
+
 # Intermediate artefacts that compute_pqr_roc_rol.py regenerates each run
 Zones/_player_meta.json
 Zones/_zone_time.json
