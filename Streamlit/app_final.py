@@ -1931,13 +1931,23 @@ def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
 
 # Quality-Games line series: display name, colour, and dash per metric. NFI
 # family orange / xG family blue; relative versions dashed.
-_QG_LINE_ORDER = ["NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"]
+# All 8 QG metrics on one chart. COLOUR = aspect (overall / offense / defense /
+# relative); LINE STYLE = model (NFI solid, xG dashed) — so every (colour, dash)
+# pair is unique. NFI offense/defense use Attack/Suppress labels; xG uses For/Against.
+_QG_LINE_ORDER = ["NFI-QG%", "xG-QG%", "NFI-QG-A%", "xG-QG-F%",
+                  "NFI-QG-S%", "xG-QG-A%", "RelNFI-QG%", "RelxG-QG%"]
 _QG_SERIES = {"NFI-QG%": "NFI-QG%", "xG-QG%": "xG-QG%",
+              "NFI-QG-A%": "NFI-QG-A%", "xG-QG-F%": "xG-QG-F%",
+              "NFI-QG-S%": "NFI-QG-S%", "xG-QG-A%": "xG-QG-A%",
               "RelNFI-QG%": "Rel NFI-QG%", "RelxG-QG%": "Rel xG-QG%"}
-_QG_SERIES_COLOR = {"NFI-QG%": _CHART_PRIMARY, "Rel NFI-QG%": _CHART_PRIMARY,
-                    "xG-QG%": _CHART_SECOND, "Rel xG-QG%": _CHART_SECOND}
-_QG_SERIES_DASH = {"NFI-QG%": [1, 0], "xG-QG%": [1, 0],
-                   "Rel NFI-QG%": [6, 4], "Rel xG-QG%": [6, 4]}
+_QG_SERIES_COLOR = {  # by aspect
+    "NFI-QG%": _CHART_PRIMARY, "xG-QG%": _CHART_PRIMARY,          # overall — orange
+    "NFI-QG-A%": _CHART_SECOND, "xG-QG-F%": _CHART_SECOND,        # offense — light blue
+    "NFI-QG-S%": _CHART_THIRD, "xG-QG-A%": _CHART_THIRD,          # defense — blue
+    "Rel NFI-QG%": _CHART_FOURTH, "Rel xG-QG%": _CHART_FOURTH}    # relative — purple
+_QG_SERIES_DASH = {  # by model: NFI solid, xG dashed
+    "NFI-QG%": [1, 0], "NFI-QG-A%": [1, 0], "NFI-QG-S%": [1, 0], "Rel NFI-QG%": [1, 0],
+    "xG-QG%": [6, 4], "xG-QG-F%": [6, 4], "xG-QG-A%": [6, 4], "Rel xG-QG%": [6, 4]}
 
 
 def _qg_line_long(trend: pd.DataFrame):
@@ -1978,14 +1988,16 @@ def _qg_line_ydomain(values) -> list:
 
 
 def _qg_combined_line(trend: pd.DataFrame) -> None:
-    """One Quality-Games line chart with all four %: NFI family in orange, xG
-    family in blue; raw versions solid, relative (Rel*) versions dashed."""
+    """One line chart with all eight Quality-Games %: colour = aspect (overall
+    orange, offense light-blue, defense blue, relative purple); style = model
+    (NFI solid, xG dashed)."""
     import altair as alt
     long, series = _qg_line_long(trend)
     if long is None:
         return
-    st.caption("Quality Games % — **NFI** (orange) vs **xG** (blue); "
-               "raw = solid, relative (**Rel**) = **dashed**.")
+    st.caption("All Quality Games % — colour = aspect (**overall** orange, "
+               "**offense** light-blue, **defense** blue, **relative** purple); "
+               "**NFI = solid, xG = dashed**.")
     chart = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
         x=alt.X("Season:N", title=None),
         y=alt.Y("value:Q", title=None,
