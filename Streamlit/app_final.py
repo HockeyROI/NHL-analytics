@@ -3353,13 +3353,15 @@ def _goalie_profile_table(gid: int, qg_scope_suffix: str = "", qg_starter: bool 
     trend = _goalie_trend(gid, qg_scope_suffix, qg_starter)
     if trend.empty:
         return pd.DataFrame(), trend, []
-    metric_cols = [c for c in ("NFI-GSAx/60", "NFI SV%", "QNFG%", "QG%", qg_label)
-                   if c in trend.columns]
+    metric_cols = [c for c in ("NFI-GSAx", "NFI-GSAx/60", "MP-GSAx", "MP-GSAx/60",
+                   "NFI SV%", "QNFG%", "QG%", qg_label) if c in trend.columns]
     has_gp = "GP" in trend.columns and trend["GP"].notna().any()
     ranks = _goalie_season_ranks(gid, qg_scope_suffix, qg_starter)
     _b = {"NFI-GSAx/60": lambda v: f"{v:+.3f}", "NFI SV%": lambda v: f"{v * 100:.1f}%",
           "QNFG%": lambda v: f"{v:.1f}%", "QG%": lambda v: f"{v:.1f}%",
-          qg_label: lambda v: f"{v:.1f}%"}
+          qg_label: lambda v: f"{v:.1f}%",
+          "NFI-GSAx": lambda v: f"{v:+.1f}", "MP-GSAx": lambda v: f"{v:+.1f}",
+          "MP-GSAx/60": lambda v: f"{v:+.3f}"}
     rows = []
     for _, r in trend.iterrows():
         ssn = int(r["season"])
@@ -3417,41 +3419,88 @@ def _tight_domain(values, pad_frac: float = 0.12, min_pad: float = 0.5):
     return [lo - pad, hi + pad]
 
 
-def _goalie_split_bar(row, qg_label: str) -> None:
-    """One-year dual-axis bar: consistency & save %s on the LEFT panel/axis, GSAx
-    totals on the RIGHT panel/axis — two graphs in one image, the GSAx axis sitting
-    in the middle (an hconcat of two bar panels)."""
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_nfi_sv_baseline() -> dict:
+    """{season_str: league-average NFI (net-front) save% (0-1)} — shots-faced-
+    weighted mean of NFI_save_pct, the cut-off line for a goalie's NFI SV%."""
+    df = load_goalie_nfi_by_season()
+    if df.empty or "NFI_save_pct" not in df.columns:
+        return {}
+    out = {}
+    for s, g in df.groupby("season"):
+        w = pd.to_numeric(g.get("total_faced"), errors="coerce")
+        v = pd.to_numeric(g["NFI_save_pct"], errors="coerce")
+        m = v.notna() & (w > 0)
+        out[str(s)] = float(np.average(v[m], weights=w[m])) if m.any() else np.nan
+    return out
+
+
+def _goalie_consistency_bar(row, qg_label: str, sv_baseline) -> None:
+    """One-year diverging bar (like the player QG bar): QNFG%/QG%/SQS above/below
+    the 50% line, and NFI SV% above/below the season's league-average save% —
+    two blue cut-off lines. Bar colour: blue above its line, orange below."""
+    import altair as alt
+    specs = [("QNFG%", 50.0, 1.0), ("QG%", 50.0, 1.0), (qg_label, 50.0, 1.0)]
+    sv_base = sv_baseline * 100.0 if sv_baseline is not None and pd.notna(sv_baseline) else None
+    if sv_base is not None and "NFI SV%" in row and pd.notna(row["NFI SV%"]):
+        specs.append(("NFI SV%", sv_base, 100.0))
+    rows = []
+    for m, base, mul in specs:
+        if m in row and pd.notna(row[m]):
+            v = float(row[m]) * mul
+            rows.append({"Metric": m, "value": v, "base": base,
+                         "color": _bar_color(50.0 + (v - base))})   # colour by dist from its line
+    if not rows:
+        return
+    d = pd.DataFrame(rows)
+    _vals = [r["value"] for r in rows] + [r["base"] for r in rows]
+    dom = [int(np.floor(min(_vals))) - 2, int(np.ceil(max(_vals))) + 2]
+    st.caption(f"**{row['Season']}** — QNFG% / QG% / SQS vs the **50%** line; "
+               "**NFI SV%** vs the season's **league-average save%** (both cut-offs "
+               "in blue). Bar up = above the line.")
+    bars = alt.Chart(d).mark_bar(size=40).encode(
+        x=alt.X("Metric:N", sort=[r["Metric"] for r in rows],
+                axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold")),
+        y=alt.Y("base:Q", scale=alt.Scale(domain=dom), title="%"), y2="value:Q",
+        color=alt.Color("color:N", scale=None, legend=None),
+        tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f")])
+    cuts = pd.DataFrame({"y": sorted({50.0} | ({sv_base} if sv_base is not None else set()))})
+    rule = alt.Chart(cuts).mark_rule(color=_CHART_THIRD, strokeDash=[4, 4]).encode(y="y:Q")
+    _show_chart(bars + rule, dl_name=f"Goalie-consistency-{row['Season']}")
+
+
+def _goalie_gsax_bar(row) -> None:
+    """One-year GSAx diverging bar, its own chart: total (left) and per-60 (right),
+    each above/below 0 (blue cut-off). NFI-GSAx = net-front, MP-GSAx = all-shot."""
     import altair as alt
 
-    def _bar(metrics, y_title, fmt, width, mul=None):
-        rows = []
-        for m in metrics:
-            if m in row and pd.notna(row[m]):
-                v = float(row[m]) * (mul.get(m, 1) if mul else 1)
-                rows.append({"Metric": m, "value": v})
+    def _panel(metrics, title, fmt):
+        rows = [{"Metric": m, "value": float(row[m])}
+                for m in metrics if m in row and pd.notna(row[m])]
         if not rows:
             return None
         d = pd.DataFrame(rows)
         order = [r["Metric"] for r in rows]
-        return alt.Chart(d).mark_bar(size=34).encode(
-            x=alt.X("Metric:N", sort=order, axis=alt.Axis(labelAngle=-30, title=None)),
-            y=alt.Y("value:Q", title=y_title),
+        bars = alt.Chart(d).mark_bar(size=36).encode(
+            x=alt.X("Metric:N", sort=order, axis=alt.Axis(labelAngle=-20, title=None)),
+            y=alt.Y("value:Q", title=title),
             color=alt.Color("Metric:N", scale=alt.Scale(
                 domain=order, range=[_CHART_COLORS.get(m, _CHART_SECOND) for m in order]),
                 legend=None),
-            tooltip=["Metric:N", alt.Tooltip("value:Q", format=fmt)]
-        ).properties(width=width, height=300)
+            tooltip=["Metric:N", alt.Tooltip("value:Q", format=fmt)])
+        zero = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
+            color=_CHART_THIRD, strokeDash=[4, 4]).encode(y="y:Q")
+        return (bars + zero).properties(width=230, height=300)
 
-    left = _bar(["QNFG%", "QG%", qg_label, "NFI SV%"], "%", ".1f", 300,
-                mul={"NFI SV%": 100})
-    right = _bar(["NFI-GSAx", "MP-GSAx"], "GSAx (goals saved above expected)", ".2f", 150)
-    panels = [p for p in (left, right) if p is not None]
+    total = _panel(["NFI-GSAx", "MP-GSAx"], "GSAx (total)", ".2f")
+    per60 = _panel(["NFI-GSAx/60", "MP-GSAx/60"], "GSAx / 60", ".3f")
+    panels = [p for p in (total, per60) if p is not None]
     if not panels:
         return
-    st.caption(f"**{row['Season']}** — consistency & save %s (left axis) and GSAx "
-               "totals (right axis): two graphs in one, GSAx axis in the middle. "
-               "**NFI-GSAx** = net-front, **MP-GSAx** = all-shot (MoneyPuck).")
-    _show_chart(alt.hconcat(*panels, spacing=44), dl_name="Goalie-split-bar")
+    st.caption(f"**{row['Season']}** — GSAx above / below **0** (blue line): total "
+               "(left) and per-60 (right). **NFI-GSAx** = net-front, **MP-GSAx** = "
+               "all-shot (MoneyPuck).")
+    _show_chart(alt.hconcat(*panels, spacing=48), dl_name=f"Goalie-GSAx-{row['Season']}")
 
 
 def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) -> None:
@@ -3491,13 +3540,18 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
             ).properties(height=300)
         _show_chart(ch, dl_name=title.split(" (")[0].replace(" ", "-"))
 
-    # (1) One-year dual-axis split bar: consistency & save %s | GSAx totals.
-    _bar_cols = [c for c in ("QNFG%", "QG%", qg_label, "NFI SV%", "NFI-GSAx", "MP-GSAx")
-                 if c in trend.columns]
+    # (1) One-year diverging bars: consistency+SV% (vs 50% / league-avg save%) and
+    # GSAx (total + per-60, vs 0) — each on its own chart with blue cut-off lines.
+    _bar_cols = [c for c in ("QNFG%", "QG%", qg_label, "NFI SV%", "NFI-GSAx",
+                 "MP-GSAx", "NFI-GSAx/60", "MP-GSAx/60") if c in trend.columns]
     if _bar_cols:
         _bt = trend.dropna(subset=_bar_cols, how="all")
         if not _bt.empty:
-            _goalie_split_bar(_bt.iloc[-1], qg_label)
+            _row = _bt.iloc[-1]
+            _svb = (load_nfi_sv_baseline().get(str(int(_row["season"])))
+                    if pd.notna(_row.get("season")) else None)
+            _goalie_consistency_bar(_row, qg_label, _svb)
+            _goalie_gsax_bar(_row)
 
     # (2) Consistency % over time (no GSAx) — QNFG%, QG%, SQS on one axis.
     _cons = [c for c in ("QNFG%", "QG%", qg_label) if c in trend.columns]
@@ -3657,8 +3711,11 @@ def render_goalies() -> None:
         _bl_parts = [f"{SEASON_DISPLAY.get(s, s)} {_bl[s]:.1f}%"
                      for s in _bl_seasons if s in _bl]
         if _bl_parts:
-            st.caption(f"**SQS starter baseline save% ({qg_scope_label})** — a game "
-                       "clears SQS when its save% beats this line: " + " · ".join(_bl_parts))
+            st.markdown(
+                f"<div style='color:{_CHART_THIRD}; font-size:0.85rem; margin:0.1rem 0 0.4rem;'>"
+                f"<b>SQS starter baseline save% ({qg_scope_label})</b> — a game clears "
+                "SQS when its save% beats this line: " + " · ".join(_bl_parts) + "</div>",
+                unsafe_allow_html=True)
 
     is_2yr = (not playoffs) and SEASON_KEY.get(season_label) == "pooled_2yr"
     is_pooled = (not playoffs) and SEASON_KEY.get(season_label, "pooled") == "pooled"
