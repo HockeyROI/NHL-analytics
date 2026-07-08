@@ -3565,30 +3565,37 @@ def load_nfi_sv_baseline() -> dict:
     return out
 
 
+_GSAX_STARTER_N = 32   # top-N goalies by GP each season = "starter" tier (matches sQS%)
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_gsax_league_avg() -> dict:
-    """{(season_str, metric): league-average GSAx} — the baseline the goalie GSAx
-    bar diverges from (so a goalie reads above/below league average, not just >0).
+    """{(season_str, metric): STARTER-tier (top-32 GP) average GSAx} — the baseline
+    the goalie GSAx bar diverges from, so a goalie reads above/below the average
+    STARTER (not the whole league). Starter tier matches the sQS% definition.
     Metrics: NFI-GSAx, NFI-GSAx/60, MP-GSAx, MP-GSAx/60."""
     out = {}
     n = load_goalie_nfi_by_season()
-    if not n.empty:
+    if not n.empty and "games" in n.columns:
         for s, g in n.groupby("season"):
             ss = str(int(s))
-            if "GSAx" in g:                                   # total: simple mean
-                out[(ss, "NFI-GSAx")] = float(pd.to_numeric(g["GSAx"], errors="coerce").mean())
-            p60 = pd.to_numeric(g.get("GSAx_per60"), errors="coerce")   # rate: shot-weighted
-            w = pd.to_numeric(g.get("total_faced"), errors="coerce")
+            st_ = g.assign(_gp=pd.to_numeric(g["games"], errors="coerce")) \
+                   .sort_values("_gp", ascending=False).head(_GSAX_STARTER_N)
+            out[(ss, "NFI-GSAx")] = float(pd.to_numeric(st_["GSAx"], errors="coerce").mean())
+            p60 = pd.to_numeric(st_.get("GSAx_per60"), errors="coerce")
+            w = pd.to_numeric(st_.get("total_faced"), errors="coerce")
             m = p60.notna() & (w > 0)
             out[(ss, "NFI-GSAx/60")] = float(np.average(p60[m], weights=w[m])) if m.any() else np.nan
     q = load_qs_by_season()
-    if not q.empty and "GSAx_total" in q.columns:
+    if not q.empty and {"GSAx_total", "GP"}.issubset(q.columns):
         for s, g in q.groupby("season"):
             ss = str(int(s))
-            gt = pd.to_numeric(g["GSAx_total"], errors="coerce")
-            gp = pd.to_numeric(g.get("GP"), errors="coerce")
-            out[(ss, "MP-GSAx")] = float(gt.mean())                     # total: simple mean
-            m = gt.notna() & (gp > 0)                                   # rate: total / total GP
+            st_ = g.assign(_gp=pd.to_numeric(g["GP"], errors="coerce")) \
+                   .sort_values("_gp", ascending=False).head(_GSAX_STARTER_N)
+            gt = pd.to_numeric(st_["GSAx_total"], errors="coerce")
+            gp = pd.to_numeric(st_["GP"], errors="coerce")
+            out[(ss, "MP-GSAx")] = float(gt.mean())
+            m = gt.notna() & (gp > 0)
             out[(ss, "MP-GSAx/60")] = float(gt[m].sum() / gp[m].sum()) if m.any() and gp[m].sum() > 0 else np.nan
     return out
 
@@ -3629,9 +3636,9 @@ def _goalie_consistency_bar(row, qg_label: str, sv_baseline) -> None:
 
 def _goalie_gsax_bar(row) -> None:
     """One-year GSAx bar, its own chart: total (left) and per-60 (right), plotted as
-    the goalie's GSAx MINUS that season's league average — so bars go above/below the
-    league-average line (blue at 0 = league avg), not all above 0. NFI-GSAx = net-
-    front, MP-GSAx = all-shot (MoneyPuck)."""
+    the goalie's GSAx MINUS that season's STARTER-tier average — so bars go above/
+    below the starter-average line (blue at 0 = starter avg), not all above 0.
+    NFI-GSAx = net-front, MP-GSAx = all-shot (MoneyPuck)."""
     import altair as alt
     _avg = load_gsax_league_avg()
     _ssn = str(int(row["season"])) if pd.notna(row.get("season")) else None
@@ -3649,26 +3656,38 @@ def _goalie_gsax_bar(row) -> None:
             return None
         d = pd.DataFrame(rows)
         order = [r["Metric"] for r in rows]
-        bars = alt.Chart(d).mark_bar(size=36).encode(
+        bars = alt.Chart(d).mark_bar(size=44).encode(
             x=alt.X("Metric:N", sort=order, axis=alt.Axis(labelAngle=-20, title=None)),
             y=alt.Y("dev:Q", title=title),
             color=alt.Color("color:N", scale=None, legend=None),
             tooltip=["Metric:N", alt.Tooltip("raw:Q", title="GSAx", format=fmt),
-                     alt.Tooltip("avg:Q", title="league avg", format=fmt),
+                     alt.Tooltip("avg:Q", title="starter avg", format=fmt),
                      alt.Tooltip("dev:Q", title="vs avg", format=fmt)])
         line = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
             color=_CHART_THIRD, strokeDash=[4, 4]).encode(y="y:Q")
-        return (bars + line).properties(width=230, height=300)
+        return (bars + line).properties(width=320, height=300)
 
-    total = _panel(["NFI-GSAx", "MP-GSAx"], "GSAx vs league avg (total)", ".2f")
-    per60 = _panel(["NFI-GSAx/60", "MP-GSAx/60"], "GSAx vs league avg (/60)", ".3f")
+    total = _panel(["NFI-GSAx", "MP-GSAx"], "GSAx vs starter avg (total)", ".2f")
+    per60 = _panel(["NFI-GSAx/60", "MP-GSAx/60"], "GSAx vs starter avg (/60)", ".3f")
     panels = [p for p in (total, per60) if p is not None]
     if not panels:
         return
-    st.caption(f"**{row['Season']}** — GSAx vs the **season's league average** (blue "
-               "line = league avg): total (left) and per-60 (right). Bar up = above "
-               "average. **NFI-GSAx** = net-front, **MP-GSAx** = all-shot (MoneyPuck).")
-    _show_chart(alt.hconcat(*panels, spacing=48), dl_name=f"Goalie-GSAx-{row['Season']}")
+    st.caption(f"**{row['Season']}** — GSAx vs the season's **starter-tier average** "
+               "(blue line = starter avg): total (left) and per-60 (right). Bar up = "
+               "above the average starter. **NFI-GSAx** = net-front, **MP-GSAx** = "
+               "all-shot (MoneyPuck).")
+    # Note (blue) — the starter-average baseline for the open season, like the sQS% note.
+    if _ssn:
+        def _fmt(mtot, m60):
+            a, b = _avg.get((_ssn, mtot)), _avg.get((_ssn, m60))
+            return f"{a:+.1f} tot / {b:+.3f} /60" if a is not None and b is not None else "—"
+        st.markdown(
+            f"<div style='color:{_CHART_THIRD}; font-size:0.85rem; margin:0.1rem 0 0.4rem;'>"
+            f"<b>Starter-tier (top-{_GSAX_STARTER_N} GP) average GSAx, {row['Season']}</b> "
+            f"— NFI {_fmt('NFI-GSAx', 'NFI-GSAx/60')}; "
+            f"MP {_fmt('MP-GSAx', 'MP-GSAx/60')} (the blue baseline).</div>",
+            unsafe_allow_html=True)
+    _show_chart(alt.hconcat(*panels, spacing=110), dl_name=f"Goalie-GSAx-{row['Season']}")
 
 
 def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) -> None:
