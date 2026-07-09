@@ -2484,9 +2484,13 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             st.caption(f"Auto-scoped to **{_my_team}** (this player's team) — shown regardless of "
                        "which metric families are selected above.")
             if {"PDO", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
-                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG "
-                            f"Differential</h4>", unsafe_allow_html=True)
+                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs "
+                            f"xG Diff/60</h4>", unsafe_allow_html=True)
                 _pdo_xg_scatter(_team_frame, True, dl_suffix="-drill")
+            if {"NFI%", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
+                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
+                            f"xG Diff/60</h4>", unsafe_allow_html=True)
+                _nfi_xg_scatter(_team_frame, True, dl_suffix="-drill")
             if {"EDGE DZ%", "EDGE OZ%"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
                             f"O-Zone Time%</h4>", unsafe_allow_html=True)
@@ -2495,21 +2499,17 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
                             f"vs O-Zone</h4>", unsafe_allow_html=True)
                 _zone_start_scatter(_team_frame, True, dl_suffix="-drill")
-            if {"NFI%", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
-                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG "
-                            f"Differential</h4>", unsafe_allow_html=True)
-                _nfi_xg_scatter(_team_frame, True, dl_suffix="-drill")
             if {"EDGE Distance/min", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance/min "
-                            f"vs xG Differential</h4>", unsafe_allow_html=True)
+                            f"vs xG Diff/60</h4>", unsafe_allow_html=True)
                 _edge_distance_xg_scatter(_team_frame, True, dl_suffix="-drill")
             if {"EDGE Bursts 20+", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
-                            f"vs xG Differential</h4>", unsafe_allow_html=True)
+                            f"vs xG Diff/60</h4>", unsafe_allow_html=True)
                 _edge_bursts_xg_scatter(_team_frame, True, dl_suffix="-drill")
             if {"EDGE Top Speed", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Top Speed vs "
-                            f"xG Differential</h4>", unsafe_allow_html=True)
+                            f"xG Diff/60</h4>", unsafe_allow_html=True)
                 _edge_topspeed_xg_scatter(_team_frame, True, dl_suffix="-drill")
             if {"EDGE Distance/min", "TOI"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance/min "
@@ -2805,7 +2805,7 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
             y=alt.Y(f"{y_col}:Q", title=y_title, scale=alt.Scale(domain=_ydom, zero=False)),
             color=alt.Color(f"{color_col}:Q", title=color_title or color_col,
                             scale=alt.Scale(range=[_BAR_BLUE_STRONG, _BAR_BLUE_LIGHT]),
-                            legend=alt.Legend(orient="bottom")),
+                            legend=None),
             tooltip=_tooltip,
         )
     else:
@@ -2836,7 +2836,7 @@ def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") ->
     rule100 = alt.Chart(pd.DataFrame({"y": [100]})).mark_rule(
         color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
     _scatter_with_labels(
-        d, "xG Diff/60", "PDO", "xG Differential /60 (xGF − xGA)", "PDO",
+        d, "xG Diff/60", "PDO", "xG Diff/60", "PDO",
         f"pdo-vs-xg-differential{dl_suffix}",
         "**Descriptive luck lens — not a ranking.** PDO (my 5v5 shot-events "
         "computation) against xG differential (MoneyPuck-derived). Above the dashed "
@@ -2865,8 +2865,11 @@ def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "")
         df, "EDGE DZ%", "EDGE OZ%", "EDGE DZ%", "EDGE OZ%",
         f"EDGE-zone-scatter{dl_suffix}",
         "**Source: NHL EDGE tracking** (not my PBP data) — D-zone vs O-zone time "
-        "share, one point per player.",
-        team_scoped)
+        "share, one point per player. Color = **OZ Start%** (my PBP data), team-"
+        "scoped views only — light = easier/more sheltered zone starts, dark = "
+        "harder.",
+        team_scoped, color_col="OZ Start%",
+        color_title="OZ Start% (light = easier, dark = harder)")
 
 
 def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
@@ -2886,7 +2889,7 @@ def _edge_distance_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: st
     d = df.copy()
     d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     _scatter_with_labels(
-        d, "xG Diff/60", "EDGE Distance/min", "xG Differential /60 (xGF − xGA)",
+        d, "xG Diff/60", "EDGE Distance/min", "xG Diff/60",
         "Distance Skated (mi/min)", f"EDGE-distance-per-min-vs-xg{dl_suffix}",
         "**Source: NHL EDGE tracking** (distance/min) vs xG differential "
         "(MoneyPuck-derived), one point per player. EDGE distance is all-"
@@ -2901,7 +2904,7 @@ def _edge_bursts_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str 
     d = df.copy()
     d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     _scatter_with_labels(
-        d, "xG Diff/60", "EDGE Bursts 20+", "xG Differential /60 (xGF − xGA)",
+        d, "xG Diff/60", "EDGE Bursts 20+", "xG Diff/60",
         "Speed Bursts (20+ mph)", f"EDGE-bursts-vs-xg{dl_suffix}",
         "**Source: NHL EDGE tracking** (speed bursts) vs xG differential (MoneyPuck-"
         "derived), one point per player.",
@@ -2914,7 +2917,7 @@ def _edge_topspeed_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: st
     d = df.copy()
     d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     _scatter_with_labels(
-        d, "xG Diff/60", "EDGE Top Speed", "xG Differential /60 (xGF − xGA)",
+        d, "xG Diff/60", "EDGE Top Speed", "xG Diff/60",
         "Top Speed (mph)", f"EDGE-topspeed-vs-xg{dl_suffix}",
         "**Source: NHL EDGE tracking** (top speed) vs xG differential (MoneyPuck-"
         "derived), one point per player.",
@@ -2940,7 +2943,7 @@ def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") ->
     d = df.copy()
     d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     _scatter_with_labels(
-        d, "xG Diff/60", "NFI%", "xG Differential /60 (xGF − xGA)", "NFI%",
+        d, "xG Diff/60", "NFI%", "xG Diff/60", "NFI%",
         f"nfi-vs-xg-differential{dl_suffix}",
         "Net-Front Impact share vs xG differential (MoneyPuck-derived), one point "
         "per player. Color = **OZ Start%** (my PBP data), team-scoped views only — "
@@ -3314,9 +3317,14 @@ def render_players() -> None:
     # gates remain (e.g. is_pooled for Start%, since that data has no
     # per-season cut).
     if {"PDO", "xGF/60", "xGA/60"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG Differential</h4>",
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG Diff/60</h4>",
                     unsafe_allow_html=True)
         _pdo_xg_scatter(df, _team_scoped)
+
+    if {"NFI%", "xGF/60", "xGA/60"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG Diff/60</h4>",
+                    unsafe_allow_html=True)
+        _nfi_xg_scatter(df, _team_scoped)
 
     if {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
@@ -3334,24 +3342,19 @@ def render_players() -> None:
                    "per-season cut (pooled faceoff data only). Switch the **Season** "
                    "filter above to **2yr / 3yr / 4yr** to see this chart.")
 
-    if {"NFI%", "xGF/60", "xGA/60"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG Differential</h4>",
-                    unsafe_allow_html=True)
-        _nfi_xg_scatter(df, _team_scoped)
-
     if {"EDGE Distance/min", "xGF/60", "xGA/60"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance/min vs "
-                    f"xG Differential</h4>", unsafe_allow_html=True)
+                    f"xG Diff/60</h4>", unsafe_allow_html=True)
         _edge_distance_xg_scatter(df, _team_scoped)
 
     if {"EDGE Bursts 20+", "xGF/60", "xGA/60"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts vs "
-                    f"xG Differential</h4>", unsafe_allow_html=True)
+                    f"xG Diff/60</h4>", unsafe_allow_html=True)
         _edge_bursts_xg_scatter(df, _team_scoped)
 
     if {"EDGE Top Speed", "xGF/60", "xGA/60"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Top Speed vs "
-                    f"xG Differential</h4>", unsafe_allow_html=True)
+                    f"xG Diff/60</h4>", unsafe_allow_html=True)
         _edge_topspeed_xg_scatter(df, _team_scoped)
 
     if {"EDGE Distance/min", "TOI"}.issubset(df.columns):
