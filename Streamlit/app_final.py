@@ -2837,9 +2837,11 @@ PLAYER_FAMILY_COLS = {
     # NHL EDGE tracking — a separate basis than NZI/DZI/OZI (player-position,
     # all-situations/EV tracking vs strict 5v5 faceoff-started PBP). See
     # edge/README.md. D/N/O Start% is NOT EDGE data (it's my own PBP faceoff
-    # data) — it stays under Zone Impact only, not duplicated here, so nothing
-    # under the EDGE pill implies an EDGE-API source it doesn't have.
-    "EDGE": _EDGE_VALUE_DISP,
+    # data), but it's shown here too (as well as under Zone Impact) since it's
+    # directly comparable context alongside EDGE's own zone-time% — the
+    # methodology tab spells out the different source/definition so it's not
+    # mistaken for an EDGE-API stat.
+    "EDGE": _EDGE_VALUE_DISP + ["DZ Start%", "NZ Start%", "OZ Start%"],
 }
 
 
@@ -3088,6 +3090,19 @@ def render_players() -> None:
             "Team", team_opts, key="players_team",
             on_change=lambda: st.session_state.update(_pl_drill=None, players_search=None))
 
+    _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
+                     "D": "defense"}[pos]
+    _team_txt = team_sel if team_sel != "All" else "their own team"
+    st.caption(f"ℹ️ A **blank cell** anywhere on this page means that player or goalie "
+               f"fell below the metric's qualifying **sample-size** minimum for that "
+               f"scope — it's “not enough data”, not zero. Each metric shows "
+               f"**(league rank / team rank)** — rank within **{_cohort_label}** "
+               f"league-wide, then within **{_team_txt}**. Only players with "
+               f"**≥ {rank_floor:,} ES minutes** are ranked; lower the Min ES TOI "
+               f"slider to reveal the rest as **(UR)** = unranked (same meaning as a "
+               f"blank cell — shown but unranked, not zero). NFI-S/60 (shots against): "
+               f"lowest = #1.")
+
     # Metric-family toggles first, then the Team filter. Families start with none
     # selected (only the identity columns show); click a family to display it.
     fcol, tcol = st.columns([2.8, 1.0])
@@ -3319,18 +3334,6 @@ def render_players() -> None:
     _pl_qual = pd.to_numeric(disp["TOI"], errors="coerce").fillna(0) >= rank_floor
     _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better=_lower,
                  mark_unranked=True, qualified=_pl_qual, team_rank_idx=_team_rank_idx)
-    _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
-                     "D": "defense"}[pos]
-    _team_txt = team_sel if team_sel != "All" else "their own team"
-    st.caption(f"ℹ️ A **blank cell** anywhere on this page means that player or goalie "
-               f"fell below the metric's qualifying **sample-size** minimum for that "
-               f"scope — it's “not enough data”, not zero. Each metric shows "
-               f"**(league rank / team rank)** — rank within **{_cohort_label}** "
-               f"league-wide, then within **{_team_txt}**. Only players with "
-               f"**≥ {rank_floor:,} ES minutes** are ranked; lower the Min ES TOI "
-               f"slider to reveal the rest as **(UR)** = unranked (same meaning as a "
-               f"blank cell — shown but unranked, not zero). NFI-S/60 (shots against): "
-               f"lowest = #1.")
     _sort_hint()
     st.caption("Click a row to open that player's detail (collapses the list).")
     _gen = st.session_state.get("_pl_tbl_gen", 0)
