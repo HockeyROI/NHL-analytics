@@ -4968,56 +4968,78 @@ def render_trade_analyzer() -> None:
             dl_name="Trade-QG-line-xG")
         _zone_line_chart_compare(_trends)
 
-    # Scatter — ONLY the selected trade players (not their whole teams), NFI% (x)
-    # vs on-ice xG% (y), shown twice side by side in one image: raw xG% and
-    # team-relative RelxG%. Same faceted "player split" pattern as the bars/lines.
+    # Scatters — ONLY the selected trade players (not their whole teams). All
+    # five scatter types show; the two xG-based ones (PDO/xG%, NFI%/xG%) render
+    # Raw xG% | Rel xG% side by side in one faceted image. Axis convention
+    # matches the leaderboard scatters (xG on x, the paired metric on y).
     if sel:
         _sf = _team_scatter_frame(season_label or "4yr (2022-2026)")
         if not _sf.empty:
             _sf = _sf[_sf["player_id"].isin([int(p) for p in sel])]
         st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>Selected "
-                    "Players — NFI% vs xG%</h3>", unsafe_allow_html=True)
-        _trade_selected_xg_scatter(_sf)
+                    "Players — Scatters</h3>", unsafe_allow_html=True)
+        st.caption("Only the selected players are plotted. The xG-based scatters show "
+                   "**Raw xG%** vs **Rel xG%** side by side; the others have no "
+                   "relative variant, so they show once.")
+        if {"PDO", "xG%", "RelxG%"}.issubset(_sf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs "
+                        "xG%</h4>", unsafe_allow_html=True)
+            _trade_rawrel_scatter(_sf, "PDO", "PDO", "Trade-PDO-vs-xG")
+        if {"NFI%", "xG%", "RelxG%"}.issubset(_sf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
+                        "xG%</h4>", unsafe_allow_html=True)
+            _trade_rawrel_scatter(_sf, "NFI%", "NFI%", "Trade-NFI-vs-xG")
+        if {"EDGE DZ%", "EDGE OZ%"}.issubset(_sf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: "
+                        "D-Zone vs O-Zone Time%</h4>", unsafe_allow_html=True)
+            _edge_zone_scatter(_sf, True, dl_suffix="-trade")
+        if {"DZ Start%", "OZ Start%"}.issubset(_sf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone "
+                        "Starts: D-Zone vs O-Zone</h4>", unsafe_allow_html=True)
+            _zone_start_scatter(_sf, True, dl_suffix="-trade")
+        if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_sf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: "
+                        "Speed Bursts vs Top Speed</h4>", unsafe_allow_html=True)
+            _edge_speed_scatter(_sf, True, dl_suffix="-trade")
 
 
-def _trade_selected_xg_scatter(df_sel: pd.DataFrame) -> None:
-    """One image, two panels (Raw xG% | Rel xG%), each a scatter of NFI% (x) vs
-    the xG measure (y) for ONLY the selected trade players (each dot labeled).
-    Independent y-scales because raw xG% (~40-60) and RelxG% (~±5) differ hugely."""
+def _trade_rawrel_scatter(df_sel: pd.DataFrame, y_col: str, y_title: str,
+                          dl_name: str) -> None:
+    """Faceted Raw xG% | Rel xG% scatter for the selected trade players: x = the
+    xG measure (raw xG% left, RelxG% right), y = y_col (PDO or NFI%). Matches the
+    leaderboard scatters' xG-on-x orientation. x-scales are independent because
+    raw xG% (~40-60) and RelxG% (~±5) differ hugely; y (PDO or NFI%) is shared."""
     import altair as alt
-    need = {"Player", "NFI%", "xG%", "RelxG%"}
-    if df_sel is None or df_sel.empty or not need.issubset(df_sel.columns):
-        st.caption("No NFI% / xG% data for the selected players in this scope.")
+    if df_sel is None or df_sel.empty or not {y_col, "xG%", "RelxG%", "Player"}.issubset(df_sel.columns):
+        st.caption("No data for the selected players in this scope.")
         return
     rows = []
     for _, r in df_sel.iterrows():
-        if pd.isna(r["NFI%"]):
+        if pd.isna(r[y_col]):
             continue
         for meas, col in (("Raw xG%", "xG%"), ("Rel xG%", "RelxG%")):
             if pd.notna(r[col]):
-                rows.append({"Player": r["Player"], "NFI%": float(r["NFI%"]),
-                             "Measure": meas, "yval": float(r[col]),
+                rows.append({"Player": r["Player"], "yv": float(r[y_col]),
+                             "Measure": meas, "xv": float(r[col]),
                              "_label": str(r["Player"]).split()[-1]})
     if not rows:
-        st.caption("No NFI% / xG% data for the selected players in this scope.")
+        st.caption("No data for the selected players in this scope.")
         return
     d = pd.DataFrame(rows)
-    st.caption("**Selected players only** — NFI% (x) vs on-ice xG% (y): **Raw xG%** "
-               "(share, left) vs **Rel xG%** (team-relative, right), side by side. "
-               "Each dot is one traded player; y-axes are independent per panel.")
     base = alt.Chart(d).encode(
-        x=alt.X("NFI%:Q", scale=alt.Scale(zero=False)),
-        y=alt.Y("yval:Q", title=None, scale=alt.Scale(zero=False)))
+        x=alt.X("xv:Q", title=None, scale=alt.Scale(zero=False)),
+        y=alt.Y("yv:Q", title=y_title, scale=alt.Scale(zero=False)))
     pts = base.mark_circle(size=150, opacity=0.8, color=PALETTE["blue"]).encode(
-        tooltip=[alt.Tooltip("Player:N"), alt.Tooltip("NFI%:Q", format=".3f"),
-                 alt.Tooltip("Measure:N"), alt.Tooltip("yval:Q", format=".2f", title="value")])
+        tooltip=[alt.Tooltip("Player:N"), alt.Tooltip("Measure:N"),
+                 alt.Tooltip("xv:Q", format=".2f", title="xG measure"),
+                 alt.Tooltip("yv:Q", format=".3f", title=y_title)])
     txt = base.mark_text(align="left", dx=8, dy=-4, fontSize=12, fontWeight="bold",
                          color=PALETTE["orange"]).encode(text="_label:N")
     chart = (pts + txt).properties(width=340, height=320).facet(
         column=alt.Column("Measure:N", sort=["Raw xG%", "Rel xG%"], title=None,
                           header=alt.Header(labelFontWeight="bold", labelFontSize=13))
-        ).resolve_scale(y="independent")
-    _show_chart(chart, dl_name="Trade-xG-raw-vs-rel", brand_width=340 * 2 + 80)
+        ).resolve_scale(x="independent")
+    _show_chart(chart, dl_name=dl_name, brand_width=340 * 2 + 80)
 
 
 # ---------------------------------------------------------------------------
