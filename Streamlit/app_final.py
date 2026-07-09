@@ -2453,17 +2453,17 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG "
                             f"Differential</h4>", unsafe_allow_html=True)
                 _nfi_xg_scatter(_team_frame, True, dl_suffix="-drill")
-            if {"EDGE Distance (mi)", "RelxG%"}.issubset(_team_frame.columns):
+            if {"EDGE Distance (mi)", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance "
-                            f"Skated vs RelxG%</h4>", unsafe_allow_html=True)
+                            f"Skated vs xG Differential</h4>", unsafe_allow_html=True)
                 _edge_distance_xg_scatter(_team_frame, True, dl_suffix="-drill")
-            if {"EDGE Bursts 20+", "RelxG%"}.issubset(_team_frame.columns):
+            if {"EDGE Bursts 20+", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
-                            f"vs RelxG%</h4>", unsafe_allow_html=True)
+                            f"vs xG Differential</h4>", unsafe_allow_html=True)
                 _edge_bursts_xg_scatter(_team_frame, True, dl_suffix="-drill")
-            if {"EDGE Top Speed", "RelxG%"}.issubset(_team_frame.columns):
+            if {"EDGE Top Speed", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Top Speed vs "
-                            f"RelxG%</h4>", unsafe_allow_html=True)
+                            f"xG Differential</h4>", unsafe_allow_html=True)
                 _edge_topspeed_xg_scatter(_team_frame, True, dl_suffix="-drill")
             if {"EDGE Distance (mi)", "TOI"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance "
@@ -2826,34 +2826,40 @@ def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
 
 
 def _edge_distance_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
-    if not {"EDGE Distance (mi)", "RelxG%"}.issubset(df.columns):
+    if not {"EDGE Distance (mi)", "xGF/60", "xGA/60"}.issubset(df.columns):
         return
+    d = df.copy()
+    d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     _scatter_with_labels(
-        df, "RelxG%", "EDGE Distance (mi)", "RelxG%", "Distance Skated (mi)",
-        f"EDGE-distance-vs-relxg{dl_suffix}",
-        "**Source: NHL EDGE tracking** (distance) vs relative xG% (MoneyPuck-"
+        d, "xG Diff/60", "EDGE Distance (mi)", "xG Differential /60 (xGF − xGA)",
+        "Distance Skated (mi)", f"EDGE-distance-vs-xg{dl_suffix}",
+        "**Source: NHL EDGE tracking** (distance) vs xG differential (MoneyPuck-"
         "derived), one point per player.",
         team_scoped)
 
 
 def _edge_bursts_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
-    if not {"EDGE Bursts 20+", "RelxG%"}.issubset(df.columns):
+    if not {"EDGE Bursts 20+", "xGF/60", "xGA/60"}.issubset(df.columns):
         return
+    d = df.copy()
+    d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     _scatter_with_labels(
-        df, "RelxG%", "EDGE Bursts 20+", "RelxG%", "Speed Bursts (20+ mph)",
-        f"EDGE-bursts-vs-relxg{dl_suffix}",
-        "**Source: NHL EDGE tracking** (speed bursts) vs relative xG% (MoneyPuck-"
+        d, "xG Diff/60", "EDGE Bursts 20+", "xG Differential /60 (xGF − xGA)",
+        "Speed Bursts (20+ mph)", f"EDGE-bursts-vs-xg{dl_suffix}",
+        "**Source: NHL EDGE tracking** (speed bursts) vs xG differential (MoneyPuck-"
         "derived), one point per player.",
         team_scoped)
 
 
 def _edge_topspeed_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
-    if not {"EDGE Top Speed", "RelxG%"}.issubset(df.columns):
+    if not {"EDGE Top Speed", "xGF/60", "xGA/60"}.issubset(df.columns):
         return
+    d = df.copy()
+    d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     _scatter_with_labels(
-        df, "RelxG%", "EDGE Top Speed", "RelxG%", "Top Speed (mph)",
-        f"EDGE-topspeed-vs-relxg{dl_suffix}",
-        "**Source: NHL EDGE tracking** (top speed) vs relative xG% (MoneyPuck-"
+        d, "xG Diff/60", "EDGE Top Speed", "xG Differential /60 (xGF − xGA)",
+        "Top Speed (mph)", f"EDGE-topspeed-vs-xg{dl_suffix}",
+        "**Source: NHL EDGE tracking** (top speed) vs xG differential (MoneyPuck-"
         "derived), one point per player.",
         team_scoped)
 
@@ -2977,6 +2983,9 @@ def render_players() -> None:
             selection_mode="multi", key="players_display_seg",
             help="Tap a metric group to show its columns (Net Front Impact, "
                  "Zone Impact, Quality Games). Tap again to hide it.") or []
+        if "Zone Impact" not in display_fams and "EDGE" not in display_fams:
+            st.caption("↑ Raw DZ/NZ/OZ Start% values only appear in the table below "
+                       "once **Zone Impact** (or **EDGE**) is tapped on.")
     if "EDGE" in display_fams:
         st.markdown(
             f"<div style='background:{PALETTE['panel']}; border:1px solid {PALETTE['border']}; "
@@ -3258,25 +3267,31 @@ def render_players() -> None:
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone vs "
                     f"O-Zone</h4>", unsafe_allow_html=True)
         _zone_start_scatter(df, _team_scoped)
+    elif not is_pooled:
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone vs "
+                    f"O-Zone</h4>", unsafe_allow_html=True)
+        st.caption("⚠️ Not shown for a single-season view — D/N/O Start% has no "
+                   "per-season cut (pooled faceoff data only). Switch the **Season** "
+                   "filter above to **2yr / 3yr / 4yr** to see this chart.")
 
     if {"NFI%", "xGF/60", "xGA/60"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG Differential</h4>",
                     unsafe_allow_html=True)
         _nfi_xg_scatter(df, _team_scoped)
 
-    if {"EDGE Distance (mi)", "RelxG%"}.issubset(df.columns):
+    if {"EDGE Distance (mi)", "xGF/60", "xGA/60"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance Skated vs "
-                    f"RelxG%</h4>", unsafe_allow_html=True)
+                    f"xG Differential</h4>", unsafe_allow_html=True)
         _edge_distance_xg_scatter(df, _team_scoped)
 
-    if {"EDGE Bursts 20+", "RelxG%"}.issubset(df.columns):
+    if {"EDGE Bursts 20+", "xGF/60", "xGA/60"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts vs "
-                    f"RelxG%</h4>", unsafe_allow_html=True)
+                    f"xG Differential</h4>", unsafe_allow_html=True)
         _edge_bursts_xg_scatter(df, _team_scoped)
 
-    if {"EDGE Top Speed", "RelxG%"}.issubset(df.columns):
+    if {"EDGE Top Speed", "xGF/60", "xGA/60"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Top Speed vs "
-                    f"RelxG%</h4>", unsafe_allow_html=True)
+                    f"xG Differential</h4>", unsafe_allow_html=True)
         _edge_topspeed_xg_scatter(df, _team_scoped)
 
     if {"EDGE Distance (mi)", "TOI"}.issubset(df.columns):
