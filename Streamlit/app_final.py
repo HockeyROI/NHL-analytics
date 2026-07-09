@@ -4970,19 +4970,24 @@ def render_trade_analyzer() -> None:
             _pv, _cmp_yr, metrics=_QG_LINE_ORDER_XG,
             caption=f"**{_cmp_yr}** — **xG (MoneyPuck)** Quality-Games % vs the "
                     "**50% baseline**, one panel per player.", dl_name="Trade-QG-bars-xG")
+    # Year-over-year line graphs behind a toggle (off by default), mirroring the
+    # player drill-in — lead with the bars + scatters, reveal the season-by-season
+    # lines on demand.
     if _trends:
-        _set_dl_title(" vs ".join(_trends.keys()))
-        _qg_line_chart_compare(
-            _trends, cols=_QG_LINE_ORDER_NFI,
-            caption="**NFI** Quality Games % over time, per player — colour = aspect "
-                    "(overall/offense/defense/relative); relative (**Rel**) dashed.",
-            dl_name="Trade-QG-line-NFI")
-        _qg_line_chart_compare(
-            _trends, cols=_QG_LINE_ORDER_XG,
-            caption="**xG (MoneyPuck)** Quality Games % over time, per player — colour = "
-                    "aspect (overall/offense/defense/relative); relative (**Rel**) dashed.",
-            dl_name="Trade-QG-line-xG")
-        _zone_line_chart_compare(_trends)
+        st.checkbox("Show year-over-year graphs", key="trade_show_yoy", value=False)
+        if st.session_state.get("trade_show_yoy"):
+            _set_dl_title(" vs ".join(_trends.keys()))
+            _qg_line_chart_compare(
+                _trends, cols=_QG_LINE_ORDER_NFI,
+                caption="**NFI** Quality Games % over time, per player — colour = aspect "
+                        "(overall/offense/defense/relative); relative (**Rel**) dashed.",
+                dl_name="Trade-QG-line-NFI")
+            _qg_line_chart_compare(
+                _trends, cols=_QG_LINE_ORDER_XG,
+                caption="**xG (MoneyPuck)** Quality Games % over time, per player — colour = "
+                        "aspect (overall/offense/defense/relative); relative (**Rel**) dashed.",
+                dl_name="Trade-QG-line-xG")
+            _zone_line_chart_compare(_trends)
 
     # Scatters — ONLY the selected trade players (not their whole teams). All
     # five scatter types show; the two xG-based ones (PDO/xG%, NFI%/xG%) render
