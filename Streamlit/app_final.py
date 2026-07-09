@@ -162,8 +162,8 @@ _CHART_COLORS = {
     "NFI-QG%": _CHART_PRIMARY, "xG-QG%": _CHART_SECOND,
     "RelNFI-QG%": _CHART_PRIMARY, "RelxG-QG%": _CHART_SECOND, "RelxG%": _CHART_PRIMARY,
     "NFI-GSAx/60": _CHART_PRIMARY, "QNFG%": _CHART_PRIMARY, "QG%": _CHART_SECOND,
-    # xG family — For = light-blue (offense), Against = blue (defense), overall = orange
-    "xGF/60": _CHART_SECOND, "xGA/60": _CHART_THIRD,
+    # xG family — For = orange, Against = blue (two shades of blue read too similar)
+    "xGF/60": _CHART_PRIMARY, "xGA/60": _CHART_THIRD,
     "RelxG-F%": _CHART_SECOND, "RelxG-A%": _CHART_THIRD,
     # goalie extras (NFI SV% = purple; sQS% = blue/third)
     "NFI SV%": _CHART_FOURTH, "sQS%": _CHART_THIRD,
@@ -2397,6 +2397,9 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG "
                         f"Differential</h4>", unsafe_allow_html=True)
             _pdo_xg_scatter(_team_frame, True, dl_suffix="-drill")
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG "
+                        f"Differential</h4>", unsafe_allow_html=True)
+            _nfi_xg_scatter(_team_frame, True, dl_suffix="-drill")
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
                         f"vs Top Speed</h4>", unsafe_allow_html=True)
             _edge_speed_scatter(_team_frame, True, dl_suffix="-drill")
@@ -2628,14 +2631,15 @@ PLAYER_FAMILY_COLS = {
 
 
 def _team_scatter_frame(season_label: str, team: str = None) -> pd.DataFrame:
-    """Player-level frame with everything the 3 team-scatter charts need (PDO,
-    xG, D/N/O Start%, EDGE speed/bursts) — one shared build so the main
+    """Player-level frame with everything the 4 team-scatter charts need (PDO,
+    xG, NFI%, D/N/O Start%, EDGE speed/bursts) — one shared build so the main
     leaderboard and the drill-in's auto team-scatters use identical data.
     Optionally filtered to one team."""
     base, _ = _build_players_frame(season_label)
     if base.empty:
         return pd.DataFrame()
-    base = base.rename(columns={"player_name": "Player", "team": "Team"})
+    base = base.rename(columns={"player_name": "Player", "team": "Team",
+                                "NFI_pct": "NFI%", **_EDGE_REN})
     if team:
         base = base[base["Team"] == team]
     return base
@@ -2711,6 +2715,20 @@ def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
         f"EDGE-speed-burst-vs-top-speed{dl_suffix}",
         "**Source: NHL EDGE tracking** (not my PBP data) — top skating speed vs "
         "20+ mph speed-burst count.",
+        team_scoped)
+
+
+def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
+    import altair as alt
+    if not {"NFI%", "xGF/60", "xGA/60"}.issubset(df.columns):
+        return
+    d = df.copy()
+    d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
+    _scatter_with_labels(
+        d, "xG Diff/60", "NFI%", "xG Differential /60 (xGF − xGA)", "NFI%",
+        PALETTE["text"], f"nfi-vs-xg-differential{dl_suffix}",
+        "Net-Front Impact share vs xG differential (MoneyPuck-derived), one point "
+        "per player.",
         team_scoped)
 
 
@@ -3076,6 +3094,11 @@ def render_players() -> None:
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG Differential</h4>",
                     unsafe_allow_html=True)
         _pdo_xg_scatter(disp, _team_scoped)
+
+    if "Net Front Impact" in _shown and {"NFI%", "xGF/60", "xGA/60"}.issubset(disp.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG Differential</h4>",
+                    unsafe_allow_html=True)
+        _nfi_xg_scatter(disp, _team_scoped)
 
     if "EDGE" in _shown and {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(disp.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts vs "
