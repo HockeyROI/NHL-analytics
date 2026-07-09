@@ -2414,27 +2414,37 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                 _my_team = _t.split(" / ")[0]           # traded mid-season: first team listed
                 break
     if _my_team:
-        _team_frame = _team_scatter_frame(season_label or "4yr (2022-2026)", team=_my_team)
+        # Always pooled (4yr) here, regardless of the page's season filter —
+        # Zone Start% (and therefore PDO's bubble sizing, which uses OZ Start%)
+        # only exists on the pooled frame, so passing a single-season label
+        # through silently dropped Zone Start% and produced a header with no
+        # chart below it plus flat (unsized) PDO bubbles.
+        _team_frame = _team_scatter_frame("4yr (2022-2026)", team=_my_team)
         if not _team_frame.empty:
             st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>{_my_team} Team "
                         f"Scatters</h3>", unsafe_allow_html=True)
             st.caption(f"Auto-scoped to **{_my_team}** (this player's team) — shown regardless of "
                        "which metric families are selected above.")
-            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG "
-                        f"Differential</h4>", unsafe_allow_html=True)
-            _pdo_xg_scatter(_team_frame, True, dl_suffix="-drill")
-            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
-                        f"O-Zone Time%</h4>", unsafe_allow_html=True)
-            _edge_zone_scatter(_team_frame, True, dl_suffix="-drill")
-            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
-                        f"vs O-Zone</h4>", unsafe_allow_html=True)
-            _zone_start_scatter(_team_frame, True, dl_suffix="-drill")
-            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG "
-                        f"Differential</h4>", unsafe_allow_html=True)
-            _nfi_xg_scatter(_team_frame, True, dl_suffix="-drill")
-            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
-                        f"vs Top Speed</h4>", unsafe_allow_html=True)
-            _edge_speed_scatter(_team_frame, True, dl_suffix="-drill")
+            if {"PDO", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
+                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG "
+                            f"Differential</h4>", unsafe_allow_html=True)
+                _pdo_xg_scatter(_team_frame, True, dl_suffix="-drill")
+            if {"EDGE DZ%", "EDGE OZ%"}.issubset(_team_frame.columns):
+                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
+                            f"O-Zone Time%</h4>", unsafe_allow_html=True)
+                _edge_zone_scatter(_team_frame, True, dl_suffix="-drill")
+            if {"DZ Start%", "OZ Start%"}.issubset(_team_frame.columns):
+                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
+                            f"vs O-Zone</h4>", unsafe_allow_html=True)
+                _zone_start_scatter(_team_frame, True, dl_suffix="-drill")
+            if {"NFI%", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
+                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG "
+                            f"Differential</h4>", unsafe_allow_html=True)
+                _nfi_xg_scatter(_team_frame, True, dl_suffix="-drill")
+            if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_team_frame.columns):
+                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
+                            f"vs Top Speed</h4>", unsafe_allow_html=True)
+                _edge_speed_scatter(_team_frame, True, dl_suffix="-drill")
 
 
 # ===========================================================================
@@ -2792,8 +2802,10 @@ def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") ->
         d, "xG Diff/60", "NFI%", "xG Differential /60 (xGF − xGA)", "NFI%",
         f"nfi-vs-xg-differential{dl_suffix}",
         "Net-Front Impact share vs xG differential (MoneyPuck-derived), one point "
-        "per player.",
-        team_scoped)
+        "per player. Bubble size = **OZ Start%** (my PBP data) — bigger bubble = "
+        "easier/more sheltered zone starts (pooled seasons only; fixed-size dot "
+        "elsewhere).",
+        team_scoped, size_col="OZ Start%", size_title="OZ Start% (bigger = easier)")
 
 
 def render_players() -> None:
