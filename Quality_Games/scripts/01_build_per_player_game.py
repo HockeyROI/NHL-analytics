@@ -459,10 +459,14 @@ for gid, gshots in mp_by_game.items():
             shoot_def_missing += 1
             continue
 
+        # Inclusive end boundary — shift-end timestamps land in the same
+        # second as the stoppage that ends them, and a goal is exactly that
+        # stoppage; a strict "<" systematically dropped the scorer's own
+        # shift from on-ice attribution.
         st_s, en_s, pids_s = shifts_by_team[shoot_ab]
-        onice_s = pids_s[(st_s <= t) & (t < en_s)]
+        onice_s = pids_s[(st_s <= t) & (t <= en_s)]
         st_d, en_d, pids_d = shifts_by_team[def_ab]
-        onice_d = pids_d[(st_d <= t) & (t < en_d)]
+        onice_d = pids_d[(st_d <= t) & (t <= en_d)]
 
         xg = float(xgoals[i])
         in_nfi = bool(in_nfi_arr[i])

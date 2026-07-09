@@ -196,13 +196,15 @@ for gi, gid in enumerate(gids):
     me = shared_events[season]
     for si in range(n_shots):
         t = t_arr[si]
-        # Active shifts at time t: start <= t < end
+        # Active shifts at time t: start <= t <= end (inclusive end — shift-
+        # end timestamps land in the same second as the stoppage that ends
+        # them, and a goal is exactly that stoppage).
         hi = bisect_right(starts, t)
         # Collect on-ice player indices + teams
         A_list = []; B_list = []
         shooter = shots["team"][si]
         for i in range(hi):
-            if ends[i] <= t: continue
+            if ends[i] < t: continue
             pid_i = int(pids[i])
             if pid_i not in idx: continue
             ii = idx[pid_i]

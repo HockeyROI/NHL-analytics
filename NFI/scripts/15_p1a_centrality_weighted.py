@@ -176,11 +176,13 @@ for gid, gshots in shots_by_game.items():
         if shoot_ab not in shifts_by_team:
             continue
         st, en, pids = shifts_by_team[shoot_ab]
-        # on-ice if start <= t < end. Find candidates with start<=t.
+        # on-ice if start <= t <= end (inclusive end — shift-end timestamps
+        # land in the same second as the stoppage that ends them, and a goal
+        # is exactly that stoppage). Find candidates with start<=t.
         idx_max = np.searchsorted(st, t, side="right")
         if idx_max == 0:
             continue
-        on_mask = en[:idx_max] > t
+        on_mask = en[:idx_max] >= t
         on_pids = pids[:idx_max][on_mask]
         for pid in on_pids:
             if pos_map.get(int(pid)) != "F":
