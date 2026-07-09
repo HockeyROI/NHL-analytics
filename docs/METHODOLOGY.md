@@ -363,6 +363,69 @@ Only **OZI** has a working linemate-adjusted variant (`OZI_L`). Linemate adjustm
 - Forwards and defense are normalized within their own groups; their 0–10 scores are not directly comparable across positions.
 - 99.89% game coverage at the current data snapshot; a small number of postponed regular-season games are not in foundation files (same precedent as NFI; not blocking).
 
+### D/N/O Start% (presentation layer, not a new metric)
+
+Added 2026-07: a per-player faceoff-**start**-zone breakdown — the plain share of a player's faceoff-started 5v5 shifts that began in the defensive / neutral / offensive zone (`DZ Start%` / `NZ Start%` / `OZ Start%`). Same play-by-play data and same faceoff-started-shift basis as DZI/NZI/OZI, shown alongside them on the Player List table and in a companion scatter chart (D-zone starts vs O-zone starts, one point per player). This is descriptive only — it does not feed into, adjust, or replace DZI/NZI/OZI. Source: `Zones/output/zone_time_raw.csv`, pooled across all regular seasons (no per-season or playoff breakdown exists for this specific cut yet).
+
+---
+
+## PDO
+
+Added 2026-07: a descriptive shooting%/save% luck proxy, shown as a raw column beside xG on the Player List (no relative or Quality-Games version; not used for ranking).
+
+### Construction
+
+`SH% = on-ice goals-for ÷ on-ice shots-on-goal-for` (5v5 or all-situations, toggle-able — the toggle affects PDO only, no other xG-group column).
+`SV% = 1 − (on-ice goals-against ÷ on-ice shots-on-goal-against)`.
+`PDO = (SH% + SV%) × 100`.
+
+Shots-on-goal based (`event_type in {shot-on-goal, goal}`), **not** Fenwick or Corsi — the conventional PDO definition used across the analytics community (Natural Stat Trick, Evolving Hockey, etc.), as opposed to a Fenwick/Corsi-denominator variant some sites compute instead.
+
+On-ice attribution is a fresh pass (`NFI/scripts/build_pdo_sog.py`) that reuses the exact validated shift-join / 5v5-state-derivation logic from `03_onice_attribution_pillars.py` (copied rather than imported, since that script executes top-to-bottom and would rewrite canonical NFI outputs as a side effect). On-ice goals-for/against and TOI are reused as-is from the existing `player_counts_by_state_zone_per_season.csv` — only the on-ice SOG-for/against counters are newly computed. Floor: ≥200 min TOI in the selected scope (5v5 or all-situations). Regular season only; no playoff PDO is computed.
+
+### Known limitation
+
+`NFI/Geometry_post/Data/shift_data.csv` is missing shift-chart data for a small number of games at the end of both the 2024-25 (57 games) and 2025-26 (6 games) regular seasons — confirmed as a gap in NHL's own shift-chart API (not a scraping bug on our end; the same endpoint returns complete data for every other game). This silently drops the affected game(s) from any player who played in them, for PDO and for the pre-existing Corsi/Fenwick on-ice rates alike. Sanity-checked at the team level (every 5v5 goal must be shared by exactly 5 on-ice skaters per side) — beyond the known missing games, no further gaps were found.
+
+### PDO vs Natural Stat Trick
+
+Spot-checks against Natural Stat Trick found meaningful player-level gaps in some cases (e.g. several percentage points on individual skaters) that the known shift-data gap does not fully explain by itself — verified via an independent from-scratch re-derivation from raw shot events + shift data, which reproduced this pipeline's own numbers exactly, and via team-level goal reconciliation, which showed no broader attribution bug. The remaining gap's source is unresolved; it may reflect a genuine difference in underlying shot/shift data between this pipeline's NHL API pull and Natural Stat Trick's source. Treat PDO as descriptive and directionally useful, not as a value guaranteed to reconcile exactly with third-party sites.
+
+---
+
+## NHL EDGE
+
+Added 2026-07: NHL's own player-tracking data (radio-frequency + camera-based, tracking player position — not puck position). Shown on the Player List table as a separate "EDGE" metric family, source-labeled and never blended into TZI/NFI.
+
+### What it measures
+
+- **Zone time %** — OZ/NZ/DZ time share while the player is on the ice. OZ% has a toggle-able even-strength/all-situations scope (NHL only publishes an even-strength split for the offensive-zone stat specifically; NZ%/DZ% have just the one all-situations number regardless of the toggle).
+- **Top skating speed** (mph) — the player's single fastest recorded moment that season.
+- **Speed bursts (20+ mph)** — count of times the player exceeded 20 mph. No finer speed bands are published for skating bursts (unlike shot speed, which NHL does band).
+- **Distance skated** (miles) — total for the season.
+
+### Source and scrape
+
+`https://api-web.nhle.com/v1/edge/skater-detail/{playerId}/{season}/{gameTypeId}` — discovered via live network inspection of `www.nhl.com/nhl-edge/skaters/{slug}` (the old standalone `edge.nhl.com` site 301-redirects there under "EDGE 2.0"). Same `api-web.nhle.com` host the rest of this pipeline already uses — not Sportradar. `edge/scripts/pull_edge_stats.py` pulls all (player_id, season) pairs from `NFI/output/player_counts_by_state_zone_per_season.csv` for 2021-22 → 2025-26, regular season and playoffs. See `edge/README.md` for the full scrape write-up.
+
+### Basis mismatch vs TZI (NZI/DZI/OZI) — read this before comparing the two
+
+| | EDGE | TZI (NZI/DZI/OZI) |
+|---|---|---|
+| Tracked by | player position (chip/camera) | puck position (event/PBP-derived) |
+| Scope | all-situations (or EV, OZ only) | strict 5v5 |
+| Trigger | continuous TOI | faceoff-started shifts only |
+
+EDGE zone-time% and TZI's NZI/DZI/OZI **measure genuinely different things** and must never be read as the same metric — the app's EDGE section carries a mandatory on-screen banner stating this.
+
+### Data-quality limitation
+
+The EDGE API only exposes pre-aggregated season totals plus a single "best game" highlight per stat — there is no per-game log to inspect or filter, so a per-game tracking-failure exclusion (originally planned) isn't possible from outside NHL's system. Season totals are taken exactly as NHL computed them.
+
+### Display convention
+
+Each EDGE value shows a computed **(league / team) rank**, not NHL's own percentile — matching every other ranked column in the app. Pooled/2yr views are a games-played-weighted average across the player's available seasons (including for the rank basis), since NHL doesn't expose enough to recompute a true multi-season number.
+
 ---
 
 ## TZI2: Share-of-Attack (exploratory, not in public framework)

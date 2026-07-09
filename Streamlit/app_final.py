@@ -431,7 +431,7 @@ def render_header() -> None:
           <div class="hockeyroi-brand"><span class="hockey">HOCKEY</span><span class="roi">ROI</span></div>
           <div style="color:#2E7DC4; font-size:0.9rem; padding-bottom:0.45rem;">How these metrics work → <strong>Methodology</strong> tab (far right)</div>
         </div>
-        <div class="tagline">NHL Impact Analytics — Net-Front Impact, Zone Impact, xG &amp; Quality Games, for skaters and goalies</div>
+        <div class="tagline">NHL Impact Analytics — Net-Front Impact, Zone Impact, xG &amp; Quality Games, PDO, and NHL EDGE tracking, for skaters and goalies</div>
         <div style="color:#888888; font-size:0.85rem; margin-top:0.15rem;">
           <a href="https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md" style="color:#2E7DC4;">Methodology on GitHub</a>
         </div>
@@ -706,7 +706,29 @@ def render_methodology() -> None:
             "Zone Impact",
             "DZI / NZI / OZI — three position-normalized 0–10 lenses for offensive-zone time after "
             "defensive / neutral / offensive faceoffs. Independent lenses, not a hierarchy; a complete "
-            "player rates well across all three.",
+            "player rates well across all three. <b>D/N/O Start%</b> sits alongside them — the plain "
+            "share of a player's faceoff-started shifts that began in each zone (my own play-by-play "
+            "data, pooled across seasons). It's a presentation layer showing deployment context, not "
+            "a new metric — it doesn't feed into or alter DZI/NZI/OZI.",
+        )
+        + _meth_framework(
+            "PDO",
+            "Shooting% + save% luck proxy, 5v5 or all-situations (toggle-able): SH% = on-ice goals-for "
+            "÷ on-ice shots-on-goal-for; SV% = 1 − (on-ice goals-against ÷ on-ice shots-on-goal-"
+            "against); <b>PDO</b> = (SH% + SV%) × 100. Shots-on-goal based (not Fenwick/Corsi) — the "
+            "conventional definition. Centers on ~100 league-wide; well above/below is usually "
+            "unsustainable shooting or save luck rather than skill. A raw descriptive column shown "
+            "beside xG — no relative or Quality-Games version, and it isn't used for ranking.",
+        )
+        + _meth_framework(
+            "NHL EDGE",
+            "NHL's own player-tracking data (by player position, not puck position) — offensive / "
+            "neutral / defensive-zone time share, top skating speed, 20+ mph speed-burst count, and "
+            "distance skated. A <b>different measurement basis</b> than the zone metrics above: EDGE "
+            "tracks continuously across all-situations or even-strength TOI (toggle-able for OZ%); "
+            "NZI/DZI/OZI track puck position after strict-5v5 faceoffs only. Each EDGE value shows a "
+            "computed (league / team) rank rather than NHL's own percentile, matching every other "
+            "ranked column in the app.",
         )
         + _meth_framework(
             "Referees",
