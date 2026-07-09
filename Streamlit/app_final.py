@@ -1654,6 +1654,22 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
                     if len(pv) and pd.notna(pv.iloc[0]):
                         d[ssn] = _league_rank(sub[m], pv.iloc[0])
                 out[m] = d
+    zs = load_zone_start_per_season_raw()
+    if not zs.empty:
+        zs = zs.copy()
+        _tot = zs["oz_faceoff_shifts"] + zs["dz_faceoff_shifts"] + zs["nz_faceoff_shifts"]
+        _okz = _tot > 0
+        zs["OZ Start%"] = np.where(_okz, zs["oz_faceoff_shifts"] / _tot * 100, np.nan)
+        zs["DZ Start%"] = np.where(_okz, zs["dz_faceoff_shifts"] / _tot * 100, np.nan)
+        zs["NZ Start%"] = np.where(_okz, zs["nz_faceoff_shifts"] / _tot * 100, np.nan)
+        for m in ("OZ Start%", "DZ Start%", "NZ Start%"):
+            d = {}
+            for ssn in PROFILE_SEASONS:
+                sub = _byid(zs[zs["season"] == ssn], ssn)
+                pv = sub.loc[sub["player_id"] == pid, m]
+                if len(pv) and pd.notna(pv.iloc[0]):
+                    d[ssn] = _league_rank(sub[m], pv.iloc[0])
+            out[m] = d
     qg = load_qg_player_season()
     if not qg.empty:
         qg = qg.copy()
