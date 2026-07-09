@@ -176,10 +176,13 @@ for gid, gshots in shots_by_game.items():
         if shoot_ab not in shifts_by_team:
             continue
         st, en, pids = shifts_by_team[shoot_ab]
-        # on-ice if start <= t <= end (inclusive end — shift-end timestamps
-        # land in the same second as the stoppage that ends them, and a goal
-        # is exactly that stoppage). Find candidates with start<=t.
-        idx_max = np.searchsorted(st, t, side="right")
+        # on-ice if start < t <= end: inclusive end (shift-end timestamps land
+        # in the same second as the stoppage that ends them, and a goal is
+        # exactly that stoppage) but EXCLUSIVE start — a shift starting at the
+        # exact same instant t is the incoming line change, not someone who
+        # was on the ice when the event happened. side="left" gives indices
+        # where st[i] < t (strict), not st[i] <= t.
+        idx_max = np.searchsorted(st, t, side="left")
         if idx_max == 0:
             continue
         on_mask = en[:idx_max] >= t

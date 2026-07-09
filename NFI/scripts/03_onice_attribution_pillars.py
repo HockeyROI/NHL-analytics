@@ -362,13 +362,13 @@ for gid, gshots in shots_by_game.items():
         # that player for that one event unless collapsed to one appearance.
         if shoot_ab in shifts_by_team:
             st_s, en_s, pids_s = shifts_by_team[shoot_ab]
-            mask = (st_s <= t) & (t <= en_s)
+            mask = (st_s < t) & (t <= en_s)
             onice_shoot = np.unique(pids_s[mask])
         else:
             onice_shoot = np.array([], dtype=int)
         if def_ab in shifts_by_team:
             st_d, en_d, pids_d = shifts_by_team[def_ab]
-            mask = (st_d <= t) & (t <= en_d)
+            mask = (st_d < t) & (t <= en_d)
             onice_def = np.unique(pids_d[mask])
         else:
             onice_def = np.array([], dtype=int)

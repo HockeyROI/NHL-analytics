@@ -196,10 +196,13 @@ for gi, gid in enumerate(gids):
     me = shared_events[season]
     for si in range(n_shots):
         t = t_arr[si]
-        # Active shifts at time t: start <= t <= end (inclusive end — shift-
-        # end timestamps land in the same second as the stoppage that ends
-        # them, and a goal is exactly that stoppage).
-        hi = bisect_right(starts, t)
+        # Active shifts at time t: start < t <= end. Inclusive end (shift-end
+        # timestamps land in the same second as the stoppage that ends them,
+        # and a goal is exactly that stoppage) but EXCLUSIVE start — a shift
+        # starting at the exact same instant t is the incoming line change,
+        # not someone who was on the ice when the event happened.
+        # bisect_left (not bisect_right): gives count where starts[i] < t.
+        hi = bisect_left(starts, t)
         # Collect on-ice player indices + teams. seen_ii guards against a
         # real shift + an overlapping zero-length marker row both matching
         # the same instant, which would otherwise double-count the player.

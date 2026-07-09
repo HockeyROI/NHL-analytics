@@ -467,9 +467,9 @@ for gid, gshots in mp_by_game.items():
         # can both satisfy the inclusive bound for the same instant,
         # double-counting the player otherwise.
         st_s, en_s, pids_s = shifts_by_team[shoot_ab]
-        onice_s = np.unique(pids_s[(st_s <= t) & (t <= en_s)])
+        onice_s = np.unique(pids_s[(st_s < t) & (t <= en_s)])
         st_d, en_d, pids_d = shifts_by_team[def_ab]
-        onice_d = np.unique(pids_d[(st_d <= t) & (t <= en_d)])
+        onice_d = np.unique(pids_d[(st_d < t) & (t <= en_d)])
 
         xg = float(xgoals[i])
         in_nfi = bool(in_nfi_arr[i])
