@@ -439,6 +439,15 @@ def render_header() -> None:
         """,
         unsafe_allow_html=True,
     )
+    st.caption(
+        "ℹ️ A **blank cell** on the Player/Goalie lists means that player or goalie "
+        "fell below the metric's qualifying **sample-size** minimum for that scope — "
+        "it's “not enough data”, not zero. Each metric shows **(league rank / team "
+        "rank)** — rank within **all skaters (F + D)** league-wide, then within their "
+        "own team. Only players with **≥ 500 ES minutes** are ranked; lower the Min ES "
+        "TOI slider to reveal the rest as **(UR)** = unranked (same meaning as a blank "
+        "cell — shown but unranked, not zero). NFI-S/60 (shots against): lowest = #1."
+    )
 
 
 def render_footer() -> None:
@@ -3108,19 +3117,6 @@ def render_players() -> None:
             "Team", team_opts, key="players_team",
             on_change=lambda: st.session_state.update(_pl_drill=None, players_search=None))
 
-    _cohort_label = {"All": "all skaters (F + D)", "F": "forwards",
-                     "D": "defense"}[pos]
-    _team_txt = team_sel if team_sel != "All" else "their own team"
-    st.caption(f"ℹ️ A **blank cell** anywhere on this page means that player or goalie "
-               f"fell below the metric's qualifying **sample-size** minimum for that "
-               f"scope — it's “not enough data”, not zero. Each metric shows "
-               f"**(league rank / team rank)** — rank within **{_cohort_label}** "
-               f"league-wide, then within **{_team_txt}**. Only players with "
-               f"**≥ {rank_floor:,} ES minutes** are ranked; lower the Min ES TOI "
-               f"slider to reveal the rest as **(UR)** = unranked (same meaning as a "
-               f"blank cell — shown but unranked, not zero). NFI-S/60 (shots against): "
-               f"lowest = #1.")
-
     # Metric-family toggles first, then the Team filter. Families start with none
     # selected (only the identity columns show); click a family to display it.
     fcol, tcol = st.columns([2.8, 1.0])
@@ -4972,24 +4968,56 @@ def render_trade_analyzer() -> None:
             dl_name="Trade-QG-line-xG")
         _zone_line_chart_compare(_trends)
 
-    # Team scatters — one section per traded player, auto-scoped to that
-    # player's own team (same 5 charts as the single-player drill-in), so a
-    # multi-team trade shows each side's team context separately. cohort here
-    # must be each player's OWN position group ("defense"/"forwards"), not the
-    # page-level "All skaters"/"Same position" radio value.
+    # Scatter — ONLY the selected trade players (not their whole teams), NFI% (x)
+    # vs on-ice xG% (y), shown twice side by side in one image: raw xG% and
+    # team-relative RelxG%. Same faceted "player split" pattern as the bars/lines.
     if sel:
-        _pos_by_pid = popts.set_index("player_id")["position"].astype(str).to_dict()
-        st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>Team "
-                    "Scatters</h3>", unsafe_allow_html=True)
-        for pid in sel:
-            _nm = plabel.get(int(pid), str(pid))
-            _tr = _trends.get(_nm)
-            if _tr is None or _tr.empty:
-                continue
-            _p_cohort = (("defense" if _pos_by_pid.get(int(pid)) == "D" else "forwards")
-                        if same_pos else "all skaters")
-            _render_team_scatters(_tr, season_label, same_pos, _p_cohort, _nm,
-                                  dl_suffix=f"-trade-{pid}", heading_prefix=f"{_nm} — ")
+        _sf = _team_scatter_frame(season_label or "4yr (2022-2026)")
+        if not _sf.empty:
+            _sf = _sf[_sf["player_id"].isin([int(p) for p in sel])]
+        st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>Selected "
+                    "Players — NFI% vs xG%</h3>", unsafe_allow_html=True)
+        _trade_selected_xg_scatter(_sf)
+
+
+def _trade_selected_xg_scatter(df_sel: pd.DataFrame) -> None:
+    """One image, two panels (Raw xG% | Rel xG%), each a scatter of NFI% (x) vs
+    the xG measure (y) for ONLY the selected trade players (each dot labeled).
+    Independent y-scales because raw xG% (~40-60) and RelxG% (~±5) differ hugely."""
+    import altair as alt
+    need = {"Player", "NFI%", "xG%", "RelxG%"}
+    if df_sel is None or df_sel.empty or not need.issubset(df_sel.columns):
+        st.caption("No NFI% / xG% data for the selected players in this scope.")
+        return
+    rows = []
+    for _, r in df_sel.iterrows():
+        if pd.isna(r["NFI%"]):
+            continue
+        for meas, col in (("Raw xG%", "xG%"), ("Rel xG%", "RelxG%")):
+            if pd.notna(r[col]):
+                rows.append({"Player": r["Player"], "NFI%": float(r["NFI%"]),
+                             "Measure": meas, "yval": float(r[col]),
+                             "_label": str(r["Player"]).split()[-1]})
+    if not rows:
+        st.caption("No NFI% / xG% data for the selected players in this scope.")
+        return
+    d = pd.DataFrame(rows)
+    st.caption("**Selected players only** — NFI% (x) vs on-ice xG% (y): **Raw xG%** "
+               "(share, left) vs **Rel xG%** (team-relative, right), side by side. "
+               "Each dot is one traded player; y-axes are independent per panel.")
+    base = alt.Chart(d).encode(
+        x=alt.X("NFI%:Q", scale=alt.Scale(zero=False)),
+        y=alt.Y("yval:Q", title=None, scale=alt.Scale(zero=False)))
+    pts = base.mark_circle(size=150, opacity=0.8, color=PALETTE["blue"]).encode(
+        tooltip=[alt.Tooltip("Player:N"), alt.Tooltip("NFI%:Q", format=".3f"),
+                 alt.Tooltip("Measure:N"), alt.Tooltip("yval:Q", format=".2f", title="value")])
+    txt = base.mark_text(align="left", dx=8, dy=-4, fontSize=12, fontWeight="bold",
+                         color=PALETTE["orange"]).encode(text="_label:N")
+    chart = (pts + txt).properties(width=340, height=320).facet(
+        column=alt.Column("Measure:N", sort=["Raw xG%", "Rel xG%"], title=None,
+                          header=alt.Header(labelFontWeight="bold", labelFontSize=13))
+        ).resolve_scale(y="independent")
+    _show_chart(chart, dl_name="Trade-xG-raw-vs-rel", brand_width=340 * 2 + 80)
 
 
 # ---------------------------------------------------------------------------
