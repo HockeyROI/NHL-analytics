@@ -2486,9 +2486,16 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         # through silently dropped Zone Start% and produced a header with no
         # chart below it plus flat (unsized) PDO bubbles.
         _team_frame = _team_scatter_frame("4yr (2022-2026)", team=_my_team)
+        # Respect the "Rank against Defense/Forwards only" choice above — a
+        # same_pos view should scatter against the player's own position
+        # group on the team, not the whole roster.
+        if same_pos and not _team_frame.empty and "position" in _team_frame.columns:
+            _pos_code = "D" if cohort == "defense" else "F"
+            _team_frame = _team_frame[_team_frame["position"] == _pos_code]
         if not _team_frame.empty:
+            _scope_txt = f" ({cohort})" if same_pos else ""
             st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>{_my_team} Team "
-                        f"Scatters</h3>", unsafe_allow_html=True)
+                        f"Scatters{_scope_txt}</h3>", unsafe_allow_html=True)
             st.caption(f"Auto-scoped to **{_my_team}** (this player's team) — shown regardless of "
                        "which metric families are selected above.")
             if {"PDO", "xG%"}.issubset(_team_frame.columns):
@@ -3022,12 +3029,12 @@ def render_players() -> None:
     with c2:
         pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="players_pos")
     with c3:
-        if playoffs:
-            min_toi = st.slider("Min ES TOI (min)", 0, 1500, rank_floor, 25,
-                                key="players_toi_playoffs")
-        else:
-            toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
-            min_toi = st.slider("Min ES TOI (min)", 0, 7500, rank_floor, 50, key=toi_key)
+        team_opts = ["All"] + _all_teams
+        # Picking a team exits any drill-in and clears the player search (the two
+        # are mutually exclusive views).
+        team_sel = st.selectbox(
+            "Team", team_opts, key="players_team",
+            on_change=lambda: st.session_state.update(_pl_drill=None, players_search=None))
 
     # Metric-family toggles first, then the Team filter. Families start with none
     # selected (only the identity columns show); click a family to display it.
@@ -3078,12 +3085,12 @@ def render_players() -> None:
         st.caption("The shot-scope toggle applies only to **PDO** — other xG columns "
                    "are unaffected.")
     with tcol:
-        team_opts = ["All"] + _all_teams
-        # Picking a team exits any drill-in and clears the player search (the two
-        # are mutually exclusive views).
-        team_sel = st.selectbox(
-            "Team", team_opts, key="players_team",
-            on_change=lambda: st.session_state.update(_pl_drill=None, players_search=None))
+        if playoffs:
+            min_toi = st.slider("Min ES TOI (min)", 0, 1500, rank_floor, 25,
+                                key="players_toi_playoffs")
+        else:
+            toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
+            min_toi = st.slider("Min ES TOI (min)", 0, 7500, rank_floor, 50, key=toi_key)
 
     # Drill-in (via the search box OR clicking a leaderboard row): show one
     # player's detail (trend + charts) here. Clear/deselect to return to the list.
@@ -3310,6 +3317,15 @@ def render_players() -> None:
 
     import altair as alt
     _team_scoped = team_sel != "All"
+    # OZ Start% (the scatter color source) only exists on a pooled season, so
+    # a team filter applied while a single season is selected silently lost
+    # its color — same fix as the drill-in's team-scatters getting their own
+    # always-pooled frame. Backfill it here from the pooled frame (color-only
+    # use; doesn't touch anything else this season's df carries).
+    if "OZ Start%" not in df.columns:
+        _oz_backfill, _ = _build_players_frame("4yr (2022-2026)")
+        if not _oz_backfill.empty and "OZ Start%" in _oz_backfill.columns:
+            df = df.merge(_oz_backfill[["player_id", "OZ Start%"]], on="player_id", how="left")
     # Scatter/bar/distribution charts below use `df` (merged, renamed, but NOT
     # narrowed by the family-pill column filter that `disp` went through) so
     # they always show whenever their underlying data exists — regardless of
