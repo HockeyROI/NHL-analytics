@@ -543,7 +543,11 @@ def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=(), second_cohort=No
         qmask = qualified.reindex(disp.index).fillna(False).astype(bool)
         _trk = (team_rank_idx or {}).get(col, {})
         suffix = {}
-        perturbed = real.copy()
+        # A column that happens to be all-whole-number with no NaNs in the
+        # filtered set (e.g. a Team filter shrinking the sample) can infer as
+        # int64, which can't hold the epsilon-perturbed float below — force
+        # float64 so the perturbation always has somewhere to go.
+        perturbed = real.astype("float64").copy()
         for i, (idx, x) in enumerate(real.items()):
             if pd.isna(x):
                 continue
