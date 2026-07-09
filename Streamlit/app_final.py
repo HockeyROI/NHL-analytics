@@ -2193,31 +2193,35 @@ def _qg_bar_chart(vals: dict, label: str, caption: str = None,
     _show_chart(bars + rule, dl_name=f"{dl_prefix}-{label}")
 
 
-def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
-    """Side-by-side small-multiple bar charts (one panel per player) of the 8 QG
-    metrics vs the 50% baseline. players_vals: {player_name: {metric: 0-100}}."""
+def _qg_bar_chart_compare(players_vals: dict, label: str, metrics: list[str] = None,
+                          caption: str = None, dl_name: str = "Trade-QG-bars") -> None:
+    """Side-by-side small-multiple bar charts (one panel per player) of the QG
+    metrics vs the 50% baseline. players_vals: {player_name: {metric: 0-100}}.
+    metrics restricts to a subset (e.g. NFI-only or xG-only) so the NFI and xG
+    families render as two separate charts instead of mixed in one."""
     import altair as alt
+    _metrics = metrics or _QG_BAR_METRICS
     rows, allv = [], []
     for pname, vals in players_vals.items():
         for m, v in vals.items():
-            if pd.notna(v):
+            if m in _metrics and pd.notna(v):
                 rows.append({"Player": pname, "Metric": m, "value": float(v),
                              "base": 50.0, "color": _bar_color(v)})
                 allv.append(float(v))
     if not rows:
-        st.caption("No NFI% / Quality-Games values to compare for this selection.")
+        st.caption("No values to compare for this selection.")
         return
     d = pd.DataFrame(rows)
     _dom = _qg_axis_domain(allv)
-    st.caption(f"**{label}** — NFI% + Quality-Games % vs the **50% baseline**, one "
-               "panel per player (bar up = above 50%; darker = further from 50%).")
+    st.caption(caption or (f"**{label}** — Quality-Games % vs the **50% baseline**, "
+               "one panel per player (bar up = above 50%; darker = further from 50%)."))
     # Width per panel so the panels together fill a wide layout (faceted charts
     # ignore use_container_width, so size the panels up explicitly).
     _n = max(1, len(players_vals))
     _w = int(max(200, 1040 / _n))
     _ch = alt.Chart(d)   # shared data so a layered chart can be faceted
     bars = _ch.mark_bar(size=34).encode(
-        x=alt.X("Metric:N", sort=_QG_BAR_METRICS,
+        x=alt.X("Metric:N", sort=_metrics,
                 axis=alt.Axis(labelAngle=-30, title=None, labelFontWeight="bold",
                               labelFontSize=11, labelColor=PALETTE["text"])),
         y=alt.Y("base:Q", scale=alt.Scale(domain=_dom), title="%"),
@@ -2230,7 +2234,7 @@ def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
     chart = alt.layer(bars, rule).properties(width=_w, height=300).facet(
         column=alt.Column("Player:N", title=None,
                           header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
-    _show_chart(chart, dl_name="Trade-QG-bars",
+    _show_chart(chart, dl_name=dl_name,
                 brand_width=_w * _n + 24 * (_n - 1) + 55)
 
 
@@ -2343,12 +2347,15 @@ def _qg_combined_line(trend: pd.DataFrame) -> None:
         "Quality-Games-line-xG")
 
 
-def _qg_line_chart_compare(players: dict) -> None:
-    """Side-by-side QG % line charts, one panel per player. players: {name: trend}."""
+def _qg_line_chart_compare(players: dict, cols: list[str] = None, caption: str = None,
+                           dl_name: str = "Trade-QG-line") -> None:
+    """Side-by-side QG % line charts, one panel per player. players: {name: trend}.
+    cols restricts to a subset (e.g. NFI-only or xG-only) so the two model
+    families render as two separate charts instead of mixed in one."""
     import altair as alt
     parts, series = [], []
     for name, tr in players.items():
-        long, ser = _qg_line_long(tr)
+        long, ser = _qg_line_long_subset(tr, cols) if cols else _qg_line_long(tr)
         if long is None:
             continue
         long["Player"] = name
@@ -2359,8 +2366,8 @@ def _qg_line_chart_compare(players: dict) -> None:
     d = pd.concat(parts, ignore_index=True)
     _n = max(1, len(players))
     _w = int(max(200, 1040 / _n))
-    st.caption("Quality Games % over time, per player — **NFI** (orange) vs **xG** "
-               "(blue); relative (**Rel**) versions **dashed**.")
+    st.caption(caption or ("Quality Games % over time, per player — **NFI** (orange) vs "
+               "**xG** (blue); relative (**Rel**) versions **dashed**."))
     base = alt.Chart(d).mark_line(point=True, strokeWidth=2).encode(
         x=alt.X("Season:N", title=None, axis=alt.Axis(labelAngle=-30)),
         y=alt.Y("value:Q", title=None,
@@ -2369,7 +2376,7 @@ def _qg_line_chart_compare(players: dict) -> None:
         **_qg_line_encodings(series)).properties(width=_w, height=280)
     chart = base.facet(column=alt.Column("Player:N", title=None,
                        header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
-    _show_chart(chart, dl_name="Trade-QG-line",
+    _show_chart(chart, dl_name=dl_name,
                 brand_width=_w * _n + 24 * (_n - 1) + 55)
 
 
@@ -2517,55 +2524,66 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             _chart("EDGE Speed Bursts (20+ mph)", ["EDGE Bursts 20+"])
             _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])
 
-    # 3 team scatters — ALWAYS shown here regardless of which family pills are
+    # Team scatters — ALWAYS shown here regardless of which family pills are
     # selected above, auto-scoped to this player's own team, so a drill-in
     # gives an immediate team-context view without needing the main
     # leaderboard's own Team filter set.
+    _render_team_scatters(trend, season_label, same_pos, cohort, _highlight_name)
+
+
+def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool,
+                          cohort: str, highlight_name: str, dl_suffix: str = "-drill",
+                          heading_prefix: str = "") -> None:
+    """The 5 team-scatter charts (PDO/xG%, NFI%/xG%, EDGE zone, Zone Starts,
+    EDGE speed), auto-scoped to a player's own team. Shared by the single-
+    player drill-in and the Trade Analyzer (one call per traded player)."""
     _my_team = None
     if "Team" in trend.columns:
         for _t in trend["Team"].dropna().iloc[::-1]:   # most recent season first
             if isinstance(_t, str) and _t:
                 _my_team = _t.split(" / ")[0]           # traded mid-season: first team listed
                 break
-    if _my_team:
-        # Uses the page's actual season filter now that D/N/O Start% has a
-        # real per-season cut (previously force-pooled to always have Start%
-        # data, which meant a team's roster here could include players from
-        # any of the last 4 seasons — e.g. a long-retired player still
-        # showing up under their old team when viewing a recent season).
-        _team_frame = _team_scatter_frame(season_label or "4yr (2022-2026)", team=_my_team)
-        # Respect the "Rank against Defense/Forwards only" choice above — a
-        # same_pos view should scatter against the player's own position
-        # group on the team, not the whole roster.
-        if same_pos and not _team_frame.empty and "position" in _team_frame.columns:
-            _pos_code = "D" if cohort == "defense" else "F"
-            _team_frame = _team_frame[_team_frame["position"] == _pos_code]
-        if not _team_frame.empty:
-            _scope_txt = f" ({cohort})" if same_pos else ""
-            st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>{_my_team} Team "
-                        f"Scatters{_scope_txt}</h3>", unsafe_allow_html=True)
-            st.caption(f"Auto-scoped to **{_my_team}** (this player's team) — shown regardless of "
-                       "which metric families are selected above.")
-            if {"PDO", "xG%"}.issubset(_team_frame.columns):
-                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs "
-                            f"xG%</h4>", unsafe_allow_html=True)
-                _pdo_xg_scatter(_team_frame, True, dl_suffix="-drill", highlight_name=_highlight_name)
-            if {"NFI%", "xG%"}.issubset(_team_frame.columns):
-                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
-                            f"xG%</h4>", unsafe_allow_html=True)
-                _nfi_xg_scatter(_team_frame, True, dl_suffix="-drill", highlight_name=_highlight_name)
-            if {"EDGE DZ%", "EDGE OZ%"}.issubset(_team_frame.columns):
-                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
-                            f"O-Zone Time%</h4>", unsafe_allow_html=True)
-                _edge_zone_scatter(_team_frame, True, dl_suffix="-drill", highlight_name=_highlight_name)
-            if {"DZ Start%", "OZ Start%"}.issubset(_team_frame.columns):
-                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
-                            f"vs O-Zone</h4>", unsafe_allow_html=True)
-                _zone_start_scatter(_team_frame, True, dl_suffix="-drill", highlight_name=_highlight_name)
-            if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_team_frame.columns):
-                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
-                            f"vs Top Speed</h4>", unsafe_allow_html=True)
-                _edge_speed_scatter(_team_frame, True, dl_suffix="-drill", highlight_name=_highlight_name)
+    if not _my_team:
+        return
+    # Uses the page's actual season filter now that D/N/O Start% has a
+    # real per-season cut (previously force-pooled to always have Start%
+    # data, which meant a team's roster here could include players from
+    # any of the last 4 seasons — e.g. a long-retired player still
+    # showing up under their old team when viewing a recent season).
+    _team_frame = _team_scatter_frame(season_label or "4yr (2022-2026)", team=_my_team)
+    # Respect the "Rank against Defense/Forwards only" choice above — a
+    # same_pos view should scatter against the player's own position
+    # group on the team, not the whole roster.
+    if same_pos and not _team_frame.empty and "position" in _team_frame.columns:
+        _pos_code = "D" if cohort == "defense" else "F"
+        _team_frame = _team_frame[_team_frame["position"] == _pos_code]
+    if _team_frame.empty:
+        return
+    _scope_txt = f" ({cohort})" if same_pos else ""
+    st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>{heading_prefix}{_my_team} "
+                f"Team Scatters{_scope_txt}</h3>", unsafe_allow_html=True)
+    st.caption(f"Auto-scoped to **{_my_team}** (this player's team) — shown regardless of "
+               "which metric families are selected above.")
+    if {"PDO", "xG%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs "
+                    f"xG%</h4>", unsafe_allow_html=True)
+        _pdo_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+    if {"NFI%", "xG%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
+                    f"xG%</h4>", unsafe_allow_html=True)
+        _nfi_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+    if {"EDGE DZ%", "EDGE OZ%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
+                    f"O-Zone Time%</h4>", unsafe_allow_html=True)
+        _edge_zone_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+    if {"DZ Start%", "OZ Start%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
+                    f"vs O-Zone</h4>", unsafe_allow_html=True)
+        _zone_start_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+    if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
+                    f"vs Top Speed</h4>", unsafe_allow_html=True)
+        _edge_speed_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
 
 
 # ===========================================================================
@@ -4918,7 +4936,9 @@ def render_trade_analyzer() -> None:
             _show_df(disp, width="stretch", hide_index=True)
 
     # Then the side-by-side comparison charts — one panel per player. Bars = the
-    # filter's year; the secondary line image = QG % over time.
+    # filter's year; the secondary line image = QG % over time. NFI and xG are
+    # split into separate charts (each family read on its own basis) rather
+    # than mixed together, matching the single-player drill-in's split.
     _seasons_all = [SEASON_DISPLAY.get(s, s) for s in PROFILE_SEASONS] + ["2yr avg (24-26)"]
     _cmp_yr = _default_qg_year(season_label, _seasons_all)
     _trends, _pv = {}, {}
@@ -4930,11 +4950,46 @@ def render_trade_analyzer() -> None:
             _pv[_nm] = _player_qg_vals(int(pid), _tr, _cmp_yr)
     if _pv:
         _set_dl_title(" vs ".join(_pv.keys()))
-        _qg_bar_chart_compare(_pv, _cmp_yr)
+        _qg_bar_chart_compare(
+            _pv, _cmp_yr, metrics=_QG_LINE_ORDER_NFI,
+            caption=f"**{_cmp_yr}** — **NFI** Quality-Games % vs the **50% baseline**, "
+                    "one panel per player.", dl_name="Trade-QG-bars-NFI")
+        _qg_bar_chart_compare(
+            _pv, _cmp_yr, metrics=_QG_LINE_ORDER_XG,
+            caption=f"**{_cmp_yr}** — **xG (MoneyPuck)** Quality-Games % vs the "
+                    "**50% baseline**, one panel per player.", dl_name="Trade-QG-bars-xG")
     if _trends:
         _set_dl_title(" vs ".join(_trends.keys()))
-        _qg_line_chart_compare(_trends)
+        _qg_line_chart_compare(
+            _trends, cols=_QG_LINE_ORDER_NFI,
+            caption="**NFI** Quality Games % over time, per player — colour = aspect "
+                    "(overall/offense/defense/relative); relative (**Rel**) dashed.",
+            dl_name="Trade-QG-line-NFI")
+        _qg_line_chart_compare(
+            _trends, cols=_QG_LINE_ORDER_XG,
+            caption="**xG (MoneyPuck)** Quality Games % over time, per player — colour = "
+                    "aspect (overall/offense/defense/relative); relative (**Rel**) dashed.",
+            dl_name="Trade-QG-line-xG")
         _zone_line_chart_compare(_trends)
+
+    # Team scatters — one section per traded player, auto-scoped to that
+    # player's own team (same 5 charts as the single-player drill-in), so a
+    # multi-team trade shows each side's team context separately. cohort here
+    # must be each player's OWN position group ("defense"/"forwards"), not the
+    # page-level "All skaters"/"Same position" radio value.
+    if sel:
+        _pos_by_pid = popts.set_index("player_id")["position"].astype(str).to_dict()
+        st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>Team "
+                    "Scatters</h3>", unsafe_allow_html=True)
+        for pid in sel:
+            _nm = plabel.get(int(pid), str(pid))
+            _tr = _trends.get(_nm)
+            if _tr is None or _tr.empty:
+                continue
+            _p_cohort = (("defense" if _pos_by_pid.get(int(pid)) == "D" else "forwards")
+                        if same_pos else "all skaters")
+            _render_team_scatters(_tr, season_label, same_pos, _p_cohort, _nm,
+                                  dl_suffix=f"-trade-{pid}", heading_prefix=f"{_nm} — ")
 
 
 # ---------------------------------------------------------------------------
