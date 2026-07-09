@@ -1109,12 +1109,13 @@ _EDGE_REN = {
     "speed_bursts_over_20mph": "EDGE Bursts 20+",
     "speed_bursts_over_20mph_percentile": "EDGE Bursts %ile",
     "distance_skated_miles": "EDGE Distance (mi)", "distance_skated_percentile": "EDGE Distance %ile",
+    "edge_distance_per_min": "EDGE Distance/min",
 }
 # Value-only columns (excludes the raw NHL percentile columns) — displayed with
 # a computed (league / team) rank bracket instead, same convention as every
 # other ranked column in this table.
 _EDGE_VALUE_RAW = [c for c in _EDGE_COLS if "percentile" not in c]
-_EDGE_VALUE_DISP = [_EDGE_REN[c] for c in _EDGE_VALUE_RAW]
+_EDGE_VALUE_DISP = [_EDGE_REN[c] for c in _EDGE_VALUE_RAW] + ["EDGE Distance/min"]
 
 # EDGE OZ%-scope toggle — the ONLY EDGE stat with an even-strength split from
 # NHL is offensive-zone time; NZ%/DZ% have just the one (all-situations)
@@ -1165,6 +1166,39 @@ def _edge_rate(scope_key: str) -> pd.DataFrame:
     for c in _EDGE_COLS:
         agg[c] = np.where(agg["_wtot"] > 0, agg[f"_wsum_{c}"] / agg["_wtot"], np.nan)
     return agg[["player_id"] + _EDGE_COLS]
+
+
+def _edge_distance_rate(scope_key: str) -> pd.DataFrame:
+    """EDGE distance skated, normalized to a per-minute rate. Computed as a
+    ratio-of-sums (sum distance, sum toi_min across the scope's seasons, then
+    divide once) rather than games-weighted-averaging the way _edge_rate
+    pools its other columns — distance_skated_miles is a season TOTAL, and
+    toi_min elsewhere in this app is a season-summed cumulative figure for
+    pooled scopes, so averaging the numerator while the denominator stays
+    summed would silently understate the pooled rate by roughly 1/N seasons.
+    EDGE distance is all-situations while toi_min is ES-only, so the rate
+    itself is still an approximation — just an internally-consistent one."""
+    edge = load_edge_player_season()
+    nfi = load_nfi_player()
+    if edge.empty or nfi.empty:
+        return pd.DataFrame()
+    e = edge[["player_id", "season", "distance_skated_miles"]].dropna()
+    n = nfi[["player_id", "season", "toi_min"]].copy()
+    n["season"] = n["season"].astype(str)
+    m = e.merge(n, on=["player_id", "season"], how="inner")
+    if scope_key == "pooled":
+        sub = m[m["season"].isin(POOLED_SEASONS)]
+    elif scope_key == "pooled_2yr":
+        sub = m[m["season"].isin(POOLED_2YR_SEASONS)]
+    else:
+        sub = m[m["season"] == scope_key]
+    if sub.empty:
+        return pd.DataFrame()
+    g = sub.groupby("player_id").agg(_dist=("distance_skated_miles", "sum"),
+                                     _toi=("toi_min", "sum")).reset_index()
+    ok = g["_toi"] > 0
+    g["edge_distance_per_min"] = np.where(ok, g["_dist"] / g["_toi"], np.nan)
+    return g[["player_id", "edge_distance_per_min"]]
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -1453,8 +1487,19 @@ def _player_trend(pid: int) -> pd.DataFrame:
             _oz_col, _oz_pct_col = _EDGE_OZ_SCOPE_COL[_edge_toggle_state()]
             ea["oz_time_pct"] = ea[_oz_col]
             ea["oz_time_pct_percentile"] = ea[_oz_pct_col]
+            # EDGE distance skated, normalized to a per-minute rate BEFORE the
+            # rename below — same ratio (distance / toi_min, this player's own
+            # season rows) that _edge_distance_rate uses league-wide, so the
+            # per-season and pooled 2yr-avg rows land on an identical basis.
+            _dist_toi = ea[["season", "distance_skated_miles"]].merge(
+                p[["season", "toi_min"]], on="season", how="left")
+            _ok_toi = _dist_toi["toi_min"] > 0
+            _dist_toi["EDGE Distance/min"] = np.where(
+                _ok_toi, _dist_toi["distance_skated_miles"] / _dist_toi["toi_min"], np.nan)
             ea = ea[["season"] + _EDGE_VALUE_RAW].rename(columns=_EDGE_REN)
             trend = trend.merge(ea, on="season", how="outer")
+            trend = trend.merge(_dist_toi[["season", "EDGE Distance/min"]],
+                                on="season", how="outer")
 
     # D/N/O Start% has no per-season cut (pooled-only, see load_zone_start_pooled) —
     # add the columns as all-NaN per-season placeholders so the "2yr avg" row
@@ -1719,6 +1764,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     _b["EDGE Top Speed"] = lambda v: f"{v:.1f} mph"
     _b["EDGE Bursts 20+"] = lambda v: f"{v:.0f}"
     _b["EDGE Distance (mi)"] = lambda v: f"{v:.1f} mi"
+    _b["EDGE Distance/min"] = lambda v: f"{v:.3f} mi/min"
     has_team = "Team" in trend.columns
     has_gp = "GP" in trend.columns
     rows = []
@@ -2453,9 +2499,9 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG "
                             f"Differential</h4>", unsafe_allow_html=True)
                 _nfi_xg_scatter(_team_frame, True, dl_suffix="-drill")
-            if {"EDGE Distance (mi)", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
-                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance "
-                            f"Skated vs xG Differential</h4>", unsafe_allow_html=True)
+            if {"EDGE Distance/min", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
+                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance/min "
+                            f"vs xG Differential</h4>", unsafe_allow_html=True)
                 _edge_distance_xg_scatter(_team_frame, True, dl_suffix="-drill")
             if {"EDGE Bursts 20+", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
@@ -2465,9 +2511,9 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Top Speed vs "
                             f"xG Differential</h4>", unsafe_allow_html=True)
                 _edge_topspeed_xg_scatter(_team_frame, True, dl_suffix="-drill")
-            if {"EDGE Distance (mi)", "TOI"}.issubset(_team_frame.columns):
-                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance "
-                            f"Skated vs Minutes Played</h4>", unsafe_allow_html=True)
+            if {"EDGE Distance/min", "TOI"}.issubset(_team_frame.columns):
+                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance/min "
+                            f"vs Minutes Played</h4>", unsafe_allow_html=True)
                 _edge_distance_toi_scatter(_team_frame, True, dl_suffix="-drill")
             if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
@@ -2672,6 +2718,11 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     edge = _edge_rate(key)
     if not edge.empty and not base.empty:
         base = base.merge(edge, on="player_id", how="left")
+    # EDGE distance skated, normalized to a per-minute rate (ratio-of-sums,
+    # not games-weighted averaging — see _edge_distance_rate docstring).
+    edge_dist_rate = _edge_distance_rate(key)
+    if not edge_dist_rate.empty and not base.empty:
+        base = base.merge(edge_dist_rate, on="player_id", how="left")
     # Quality-Games For/Against (xG-QG-F/A%, NFI-QG-F/A%), ratio-of-sums pooling.
     qgfa = _qg_fa_rates(key)
     if not qgfa.empty and not base.empty:
@@ -2745,11 +2796,15 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
                 alt.Tooltip(f"{y_col}:Q", format=".2f")]
     if _use_color:
         _tooltip.append(alt.Tooltip(f"{color_col}:Q", title=color_title or color_col, format=".1f"))
-        points = alt.Chart(d).mark_circle(size=90, opacity=0.85).encode(
+        # Explicit light-blue -> deep-navy range (not a named "blues" scheme):
+        # the scheme's pale end was reading as barely-off-white against the
+        # chart background, making the gradient look flat. These two brand
+        # colors (also used for the floating-bar charts) give real contrast.
+        points = alt.Chart(d).mark_circle(size=90, opacity=0.95).encode(
             x=alt.X(f"{x_col}:Q", title=x_title, scale=alt.Scale(domain=_xdom, zero=False)),
             y=alt.Y(f"{y_col}:Q", title=y_title, scale=alt.Scale(domain=_ydom, zero=False)),
             color=alt.Color(f"{color_col}:Q", title=color_title or color_col,
-                            scale=alt.Scale(scheme="blues", reverse=True),
+                            scale=alt.Scale(range=[_BAR_BLUE_STRONG, _BAR_BLUE_LIGHT]),
                             legend=alt.Legend(orient="bottom")),
             tooltip=_tooltip,
         )
@@ -2826,15 +2881,17 @@ def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
 
 
 def _edge_distance_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
-    if not {"EDGE Distance (mi)", "xGF/60", "xGA/60"}.issubset(df.columns):
+    if not {"EDGE Distance/min", "xGF/60", "xGA/60"}.issubset(df.columns):
         return
     d = df.copy()
     d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     _scatter_with_labels(
-        d, "xG Diff/60", "EDGE Distance (mi)", "xG Differential /60 (xGF − xGA)",
-        "Distance Skated (mi)", f"EDGE-distance-vs-xg{dl_suffix}",
-        "**Source: NHL EDGE tracking** (distance) vs xG differential (MoneyPuck-"
-        "derived), one point per player.",
+        d, "xG Diff/60", "EDGE Distance/min", "xG Differential /60 (xGF − xGA)",
+        "Distance Skated (mi/min)", f"EDGE-distance-per-min-vs-xg{dl_suffix}",
+        "**Source: NHL EDGE tracking** (distance/min) vs xG differential "
+        "(MoneyPuck-derived), one point per player. EDGE distance is all-"
+        "situations while minutes played is ES-only, so this rate is an "
+        "approximation.",
         team_scoped)
 
 
@@ -2865,13 +2922,14 @@ def _edge_topspeed_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: st
 
 
 def _edge_distance_toi_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
-    if not {"EDGE Distance (mi)", "TOI"}.issubset(df.columns):
+    if not {"EDGE Distance/min", "TOI"}.issubset(df.columns):
         return
     _scatter_with_labels(
-        df, "TOI", "EDGE Distance (mi)", "Minutes Played (TOI)", "Distance Skated (mi)",
-        f"EDGE-distance-vs-toi{dl_suffix}",
-        "**Source: NHL EDGE tracking** (distance) vs minutes played, one point "
-        "per player.",
+        df, "TOI", "EDGE Distance/min", "Minutes Played (TOI)", "Distance Skated (mi/min)",
+        f"EDGE-distance-per-min-vs-toi{dl_suffix}",
+        "**Source: NHL EDGE tracking** (distance/min) vs minutes played, one "
+        "point per player. EDGE distance is all-situations while minutes "
+        "played is ES-only, so this rate is an approximation.",
         team_scoped)
 
 
@@ -3167,6 +3225,8 @@ def render_players() -> None:
         fmt["EDGE Bursts 20+"] = lambda x: "—" if pd.isna(x) else f"{x:.0f}"
     if "EDGE Distance (mi)" in disp.columns:
         fmt["EDGE Distance (mi)"] = lambda x: "—" if pd.isna(x) else f"{x:.1f} mi"
+    if "EDGE Distance/min" in disp.columns:
+        fmt["EDGE Distance/min"] = lambda x: "—" if pd.isna(x) else f"{x:.3f} mi/min"
     if "TOI" in disp.columns:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     for c in ("GP",):
@@ -3279,8 +3339,8 @@ def render_players() -> None:
                     unsafe_allow_html=True)
         _nfi_xg_scatter(df, _team_scoped)
 
-    if {"EDGE Distance (mi)", "xGF/60", "xGA/60"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance Skated vs "
+    if {"EDGE Distance/min", "xGF/60", "xGA/60"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance/min vs "
                     f"xG Differential</h4>", unsafe_allow_html=True)
         _edge_distance_xg_scatter(df, _team_scoped)
 
@@ -3294,8 +3354,8 @@ def render_players() -> None:
                     f"xG Differential</h4>", unsafe_allow_html=True)
         _edge_topspeed_xg_scatter(df, _team_scoped)
 
-    if {"EDGE Distance (mi)", "TOI"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance Skated vs "
+    if {"EDGE Distance/min", "TOI"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance/min vs "
                     f"Minutes Played</h4>", unsafe_allow_html=True)
         _edge_distance_toi_scatter(df, _team_scoped)
 
