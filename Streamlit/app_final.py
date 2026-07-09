@@ -2432,6 +2432,9 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
                         f"vs Top Speed</h4>", unsafe_allow_html=True)
             _edge_speed_scatter(_team_frame, True, dl_suffix="-drill")
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
+                        f"O-Zone Time%</h4>", unsafe_allow_html=True)
+            _edge_zone_scatter(_team_frame, True, dl_suffix="-drill")
 
 
 # ===========================================================================
@@ -2752,6 +2755,17 @@ def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
         f"zone-start-scatter{dl_suffix}",
         "**Source: my PBP data** (faceoff-started 5v5 shifts, pooled) — D-zone vs "
         "O-zone faceoff-start share, one point per player.",
+        team_scoped)
+
+
+def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
+    if not {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
+        return
+    _scatter_with_labels(
+        df, "EDGE DZ%", "EDGE OZ%", "EDGE DZ%", "EDGE OZ%",
+        f"EDGE-zone-scatter{dl_suffix}",
+        "**Source: NHL EDGE tracking** (not my PBP data) — D-zone vs O-zone time "
+        "share, one point per player.",
         team_scoped)
 
 
@@ -3159,23 +3173,10 @@ def render_players() -> None:
                     f"Top Speed</h4>", unsafe_allow_html=True)
         _edge_speed_scatter(df, _team_scoped)
 
-    if {"EDGE OZ%", "EDGE NZ%", "EDGE DZ%"}.issubset(df.columns):
-        edge_zone_long = df.melt(value_vars=["EDGE OZ%", "EDGE NZ%", "EDGE DZ%"],
-                                    var_name="Zone", value_name="Time%")
-        edge_zone_long["Zone"] = edge_zone_long["Zone"].str.replace("EDGE ", "", regex=False) \
-            .str.replace("%", "", regex=False)
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1.2rem;'>EDGE: Zone-Time "
-                    f"Distribution</h4>", unsafe_allow_html=True)
-        st.caption("**Source: NHL EDGE tracking** — distribution of all-situations zone-time share "
-                   "across the current filtered player set. DZ (blue) / NZ (grey) / OZ (orange).")
-        hist3 = alt.Chart(edge_zone_long.dropna()).mark_bar(opacity=0.65).encode(
-            x=alt.X("Time%:Q", bin=alt.Bin(maxbins=30), axis=alt.Axis(format="%"), title="Zone-Time Share"),
-            y=alt.Y("count():Q", title="Players", stack=None),
-            color=alt.Color("Zone:N", scale=alt.Scale(domain=["DZ", "NZ", "OZ"],
-                             range=[PALETTE["blue"], PALETTE["text_secondary"], PALETTE["orange"]]),
-                             legend=alt.Legend(title=None)),
-        ).properties(height=340)
-        _show_chart(hist3, dl_name="EDGE-zone-time-distribution")
+    if {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1.2rem;'>EDGE: D-Zone vs "
+                    f"O-Zone Time%</h4>", unsafe_allow_html=True)
+        _edge_zone_scatter(df, _team_scoped)
 
     # Row click → drill into that player (collapse the list). Bump the table key
     # so the leaderboard re-renders without a stale selection when we come back.
@@ -3966,7 +3967,7 @@ def _goalie_consistency_bar(row, qg_label: str, sv_baseline) -> None:
     _show_chart(bars + rule, dl_name=f"Goalie-consistency-{row['Season']}")
 
 
-def _goalie_gsax_bar(row) -> None:
+def _goalie_gsax_bar(row, qg_scope_suffix: str = "") -> None:
     """One-year GSAx bar, its own chart: total (left) and per-60 (right). Bars
     span from that season's STARTER-tier average (not 0) to the goalie's raw
     GSAx — same y/y2 floating-bar encoding as _goalie_consistency_bar's sQS%
@@ -4022,6 +4023,14 @@ def _goalie_gsax_bar(row) -> None:
             f"— NFI {_fmt('NFI-GSAx', 'NFI-GSAx/60')}; "
             f"MP {_fmt('MP-GSAx', 'MP-GSAx/60')} (the blue baseline).</div>",
             unsafe_allow_html=True)
+        _sqs_bl = load_qg_starter_baseline(qg_scope_suffix).get(_ssn)
+        if _sqs_bl is not None:
+            _scope_label = "all situations" if qg_scope_suffix else "5v5"
+            st.markdown(
+                f"<div style='color:{_CHART_THIRD}; font-size:0.85rem; margin:0.1rem 0 0.4rem;'>"
+                f"<b>sQS% starter baseline save% ({_scope_label})</b> — a game clears sQS% "
+                f"when its save% beats this line: {row['Season']} {_sqs_bl:.1f}%.</div>",
+                unsafe_allow_html=True)
     _show_chart(alt.hconcat(*panels, spacing=110), dl_name=f"Goalie-GSAx-{row['Season']}")
 
 
@@ -4081,7 +4090,7 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
             _svb = (load_nfi_sv_baseline().get(str(int(_row["season"])))
                     if pd.notna(_row.get("season")) else None)
             _goalie_consistency_bar(_row, qg_label, _svb)
-            _goalie_gsax_bar(_row)
+            _goalie_gsax_bar(_row, qg_scope_suffix)
 
     # (2) Consistency % over time (no GSAx) — QNFG%, QG%, sQS% on one axis.
     _cons = [c for c in ("QNFG%", "QG%", qg_label) if c in trend.columns]
