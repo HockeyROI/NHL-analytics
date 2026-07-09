@@ -2683,7 +2683,7 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
     axis domains so points aren't clustered in a corner, player-name labels
     shown directly ONLY when team_scoped (a small, readable point count) —
     otherwise names are hover-only (league-wide would be unreadable). Dots
-    are always orange, labels always blue — consistent across all 4 charts.
+    are always blue, labels always orange — consistent across all 4 charts.
     size_col (optional): bubble size by a 3rd metric (bigger = higher value);
     silently falls back to a fixed dot size if that column isn't available
     for the current scope."""
@@ -2699,7 +2699,7 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
                 alt.Tooltip(f"{y_col}:Q", format=".2f")]
     if _use_size:
         _tooltip.append(alt.Tooltip(f"{size_col}:Q", title=size_title or size_col, format=".1f"))
-        points = alt.Chart(d).mark_circle(opacity=0.7, color=PALETTE["orange"]).encode(
+        points = alt.Chart(d).mark_circle(opacity=0.7, color=PALETTE["blue"]).encode(
             x=alt.X(f"{x_col}:Q", title=x_title, scale=alt.Scale(domain=_xdom, zero=False)),
             y=alt.Y(f"{y_col}:Q", title=y_title, scale=alt.Scale(domain=_ydom, zero=False)),
             size=alt.Size(f"{size_col}:Q", title=size_title or size_col,
@@ -2707,7 +2707,7 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
             tooltip=_tooltip,
         )
     else:
-        points = alt.Chart(d).mark_circle(size=90, opacity=0.75, color=PALETTE["orange"]).encode(
+        points = alt.Chart(d).mark_circle(size=90, opacity=0.75, color=PALETTE["blue"]).encode(
             x=alt.X(f"{x_col}:Q", title=x_title, scale=alt.Scale(domain=_xdom, zero=False)),
             y=alt.Y(f"{y_col}:Q", title=y_title, scale=alt.Scale(domain=_ydom, zero=False)),
             tooltip=_tooltip,
@@ -2715,7 +2715,7 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
     chart = points + extra_layer if extra_layer is not None else points
     if team_scoped:
         labels = alt.Chart(d).mark_text(align="left", dx=6, dy=-6, fontSize=10,
-                                        color=PALETTE["blue"]).encode(
+                                        color=PALETTE["orange"]).encode(
             x=alt.X(f"{x_col}:Q", scale=alt.Scale(domain=_xdom, zero=False)),
             y=alt.Y(f"{y_col}:Q", scale=alt.Scale(domain=_ydom, zero=False)),
             text=f"{name_col}:N",
