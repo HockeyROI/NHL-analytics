@@ -2080,22 +2080,29 @@ def _strip_tooltips(obj) -> None:
             _strip_tooltips(v)
 
 
-def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 6) -> None:
+def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 6,
+                keep_tooltip: bool = False) -> None:
     """Render an Altair chart + a 'Save PNG' download button. Non-faceted charts
     carry the two-colour HockeyROI wordmark + site URL embedded inside the plot
     (bottom-right, just above the x-axis) so it shows on-screen AND in the PNG
     without distorting the axes. Faceted/multi-panel charts can't embed it (value-
     positioned marks don't resolve to a panel's coordinates), so they show the same
     stacked wordmark + URL as an HTML footer on-screen and have it composited into
-    the PNG. brand_lift raises the embedded footer when data crowds the bottom."""
+    the PNG. brand_lift raises the embedded footer when data crowds the bottom.
+    keep_tooltip: most charts strip on-screen tooltips (the Save button below
+    covers "more data"), but a chart that has NO other way to identify a point —
+    e.g. a league-wide scatter with hundreds of unlabeled dots — should set this
+    True so hovering still reveals which point is which."""
     import altair as alt
     import hashlib
     _cd = chart.to_dict()
     _multi = any(k in _cd for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
     disp = chart if _multi else alt.layer(chart, _brand_layer(brand_lift))
-    # On-screen: strip hover tooltips (the Save button below covers "more data").
+    # On-screen: strip hover tooltips (the Save button below covers "more data"),
+    # unless keep_tooltip says this chart actually needs them to identify a point.
     _on_screen = disp.to_dict()
-    _strip_tooltips(_on_screen)
+    if not keep_tooltip:
+        _strip_tooltips(_on_screen)
     st.vega_lite_chart(_on_screen, use_container_width=True)
     if _multi:
         _chart_brand(brand_width)
@@ -3012,7 +3019,11 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
                 text="_label:N",
             )
             chart = chart + labels
-    _show_chart(chart, dl_name=dl_name)
+    # League-wide (not team_scoped) scatters have no visible name label — hover
+    # is the ONLY way to identify a point — so keep the tooltip there. Team-
+    # scoped scatters already show a name label on every dot, so they stay
+    # tooltip-free like other charts.
+    _show_chart(chart, dl_name=dl_name, keep_tooltip=not team_scoped)
 
 
 def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
