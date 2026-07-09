@@ -164,16 +164,21 @@ for gid, gshots in shots_by_game.items():
         # Inclusive end boundary — see 03_onice_attribution_pillars.py for the
         # full explanation (shift-end timestamps land in the same second as
         # the stoppage that ends them, and a goal is exactly that stoppage).
+        # np.unique() dedupes: a player can have a real shift AND a separate
+        # zero-length "marker" row (abs_start==abs_end) both ending at the
+        # same instant a goal is scored — the inclusive bound now lets BOTH
+        # rows independently satisfy the on-ice test, double-counting that
+        # player for that one event unless collapsed back to one appearance.
         if shoot_ab in shifts_by_team:
             st_s, en_s, pids_s = shifts_by_team[shoot_ab]
             mask = (st_s <= t) & (t <= en_s)
-            onice_shoot = pids_s[mask]
+            onice_shoot = np.unique(pids_s[mask])
         else:
             onice_shoot = np.array([], dtype=int)
         if def_ab in shifts_by_team:
             st_d, en_d, pids_d = shifts_by_team[def_ab]
             mask = (st_d <= t) & (t <= en_d)
-            onice_def = pids_d[mask]
+            onice_def = np.unique(pids_d[mask])
         else:
             onice_def = np.array([], dtype=int)
 

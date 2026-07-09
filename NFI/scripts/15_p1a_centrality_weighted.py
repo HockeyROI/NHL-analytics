@@ -183,7 +183,10 @@ for gid, gshots in shots_by_game.items():
         if idx_max == 0:
             continue
         on_mask = en[:idx_max] >= t
-        on_pids = pids[:idx_max][on_mask]
+        # np.unique(): a real shift + an overlapping zero-length marker row
+        # can both satisfy the inclusive bound for the same instant,
+        # double-counting the player otherwise.
+        on_pids = np.unique(pids[:idx_max][on_mask])
         for pid in on_pids:
             if pos_map.get(int(pid)) != "F":
                 continue

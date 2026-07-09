@@ -200,14 +200,18 @@ for gi, gid in enumerate(gids):
         # end timestamps land in the same second as the stoppage that ends
         # them, and a goal is exactly that stoppage).
         hi = bisect_right(starts, t)
-        # Collect on-ice player indices + teams
-        A_list = []; B_list = []
+        # Collect on-ice player indices + teams. seen_ii guards against a
+        # real shift + an overlapping zero-length marker row both matching
+        # the same instant, which would otherwise double-count the player.
+        A_list = []; B_list = []; seen_ii = set()
         shooter = shots["team"][si]
         for i in range(hi):
             if ends[i] < t: continue
             pid_i = int(pids[i])
             if pid_i not in idx: continue
             ii = idx[pid_i]
+            if ii in seen_ii: continue
+            seen_ii.add(ii)
             if teams[i] == shooter:
                 A_list.append(ii)
             else:
