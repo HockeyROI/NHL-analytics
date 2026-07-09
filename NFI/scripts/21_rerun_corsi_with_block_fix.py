@@ -205,22 +205,28 @@ for gid, gshots in shots_by_game.items():
         shoot_ab = r.shooting_team_abbrev
         def_ab = r.away_team_abbrev if shoot_ab == r.home_team_abbrev else r.home_team_abbrev
 
-        # Resolve on-ice players for both sides once
+        # Resolve on-ice players for both sides once. Asymmetric (start, end]
+        # + dedup — see NFI/scripts/03_onice_attribution_pillars.py for the
+        # full writeup: side="left" gives strict start (excludes a shift
+        # only just starting at this instant — the incoming line-change
+        # player), en[:idx] >= t keeps inclusive end (recovers the outgoing
+        # player truly on for the event); np.unique guards a real shift + a
+        # zero-length marker row both matching the same player at once.
         sh_pids_F = sh_pids_D = def_pids_F = def_pids_D = None
         if shoot_ab in shifts_by_team:
             st, en, pids = shifts_by_team[shoot_ab]
-            idx = np.searchsorted(st, t, side="right")
+            idx = np.searchsorted(st, t, side="left")
             if idx > 0:
-                on = en[:idx] > t
-                onp = pids[:idx][on]
+                on = en[:idx] >= t
+                onp = np.unique(pids[:idx][on])
                 sh_pids_F = [int(p) for p in onp if pos_grp.get(int(p))=="F"]
                 sh_pids_D = [int(p) for p in onp if pos_grp.get(int(p))=="D"]
         if def_ab in shifts_by_team:
             st, en, pids = shifts_by_team[def_ab]
-            idx = np.searchsorted(st, t, side="right")
+            idx = np.searchsorted(st, t, side="left")
             if idx > 0:
-                on = en[:idx] > t
-                onp = pids[:idx][on]
+                on = en[:idx] >= t
+                onp = np.unique(pids[:idx][on])
                 def_pids_F = [int(p) for p in onp if pos_grp.get(int(p))=="F"]
                 def_pids_D = [int(p) for p in onp if pos_grp.get(int(p))=="D"]
 

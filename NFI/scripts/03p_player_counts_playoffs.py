@@ -113,10 +113,18 @@ for gid, gs in shots_by_game.items():
         shooter = x["shooter_player_id"]
         os_ = shifts_by_team.get(shoot_ab); od_ = shifts_by_team.get(def_ab)
         # shifts_by_team stores (starts, ends, pids); zip yields (start, end, pid).
-        onice_shoot = ([int(pid) for a, b, pid in zip(*os_)
-                        if a <= t < b and pos_map.get(int(pid)) != "G"] if os_ else [])
-        onice_def = ([int(pid) for a, b, pid in zip(*od_)
-                      if a <= t < b and pos_map.get(int(pid)) != "G"] if od_ else [])
+        # Asymmetric (a, b] + dedup — see NFI/scripts/03_onice_attribution_
+        # pillars.py for the full writeup: inclusive end recovers the
+        # outgoing player who was truly on for the event; exclusive start
+        # keeps out the incoming player whose shift starts at that same
+        # instant; dedup guards a real shift + zero-length marker row both
+        # matching the same player at once.
+        onice_shoot = (list(dict.fromkeys(
+                        int(pid) for a, b, pid in zip(*os_)
+                        if a < t <= b and pos_map.get(int(pid)) != "G")) if os_ else [])
+        onice_def = (list(dict.fromkeys(
+                      int(pid) for a, b, pid in zip(*od_)
+                      if a < t <= b and pos_map.get(int(pid)) != "G")) if od_ else [])
         if not pd.isna(shooter):
             ind_att[(int(shooter), season)][(state, zone)] += 1
             if is_goal:

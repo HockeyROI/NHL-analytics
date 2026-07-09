@@ -182,11 +182,18 @@ for gi, gid in enumerate(gids):
         continue
     shot_t = shots["t"]; shot_team = shots["team"]
     shot_fen = shots["fen"]; shot_cor = shots["cor"]; shot_cm = shots["cm"]
-    # For each shift, bisect [start, end) in shot_t, vectorize tallies
+    # For each shift, bisect (start, end] in shot_t, vectorize tallies.
+    # Asymmetric on purpose — inclusive end, exclusive start: a shot exactly
+    # at the shift's end second is who was on the ice for it (the outgoing
+    # player); a shot exactly at the shift's start second belongs to the
+    # PREVIOUS shift's occupant, not the incoming player who's only just
+    # stepping on. Symmetric [start, end) or [start, end] both mis-attribute
+    # goals at line-change boundaries — see NFI/scripts/03_onice_attribution_
+    # pillars.py for the full writeup of this bug and its fix.
     for i in range(len(pids)):
         s_i, e_i = starts[i], ends[i]
-        a = bisect_left(shot_t, s_i)
-        b = bisect_left(shot_t, e_i)
+        a = bisect_right(shot_t, s_i)
+        b = bisect_right(shot_t, e_i)
         if b <= a:
             continue
         sl_team = shot_team[a:b]

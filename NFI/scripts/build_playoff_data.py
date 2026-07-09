@@ -181,10 +181,15 @@ for gi, gid in enumerate(gids):
     if shots is not None and len(shots["t"]) > 0:
         shot_t = shots["t"]; shot_team = shots["team"]
         shot_fen = shots["fen"]; shot_cm = shots["cm"]
+        # Asymmetric (start, end] — see NFI/scripts/03_onice_attribution_
+        # pillars.py for why: inclusive end recovers the outgoing player who
+        # was truly on for a shot/goal at the shift's last second; exclusive
+        # start keeps out the incoming player whose shift is only just
+        # starting at that same instant (very common right around goals).
         for i in range(len(pids)):
             s_i, e_i = starts[i], ends[i]
-            a = bisect_left(shot_t, s_i)
-            b = bisect_left(shot_t, e_i)
+            a = bisect_right(shot_t, s_i)
+            b = bisect_right(shot_t, e_i)
             if b <= a: continue
             sl_team = shot_team[a:b]
             pid_i = int(pids[i]); team_i = teams[i]
