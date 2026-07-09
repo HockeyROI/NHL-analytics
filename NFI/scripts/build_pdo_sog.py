@@ -161,15 +161,18 @@ for gid, gshots in shots_by_game.items():
         shoot_ab = s["shooting_team_abbrev"]
         def_ab = away_ab if shoot_ab == home_ab else home_ab
 
+        # Inclusive end boundary — see 03_onice_attribution_pillars.py for the
+        # full explanation (shift-end timestamps land in the same second as
+        # the stoppage that ends them, and a goal is exactly that stoppage).
         if shoot_ab in shifts_by_team:
             st_s, en_s, pids_s = shifts_by_team[shoot_ab]
-            mask = (st_s <= t) & (t < en_s)
+            mask = (st_s <= t) & (t <= en_s)
             onice_shoot = pids_s[mask]
         else:
             onice_shoot = np.array([], dtype=int)
         if def_ab in shifts_by_team:
             st_d, en_d, pids_d = shifts_by_team[def_ab]
-            mask = (st_d <= t) & (t < en_d)
+            mask = (st_d <= t) & (t <= en_d)
             onice_def = pids_d[mask]
         else:
             onice_def = np.array([], dtype=int)

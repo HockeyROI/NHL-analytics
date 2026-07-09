@@ -347,15 +347,23 @@ for gid, gshots in shots_by_game.items():
         goalie = sh["goalie_id"]
 
         # shooting team on-ice
+        # Inclusive end boundary: shift-end timestamps are logged in the SAME
+        # second as the stoppage that ends them, and a goal is exactly the
+        # kind of event that causes that stoppage — so a strict "<" here
+        # systematically dropped the scorer's own shift (and others ending
+        # at that same second) from on-ice attribution. Verified directly:
+        # 37/45 (82%) of a player's own goals failed the on-ice test under
+        # the old strict bound; 3/45 (all explained by separate data gaps,
+        # not this boundary) under the inclusive one.
         if shoot_ab in shifts_by_team:
             st_s, en_s, pids_s = shifts_by_team[shoot_ab]
-            mask = (st_s <= t) & (t < en_s)
+            mask = (st_s <= t) & (t <= en_s)
             onice_shoot = pids_s[mask]
         else:
             onice_shoot = np.array([], dtype=int)
         if def_ab in shifts_by_team:
             st_d, en_d, pids_d = shifts_by_team[def_ab]
-            mask = (st_d <= t) & (t < en_d)
+            mask = (st_d <= t) & (t <= en_d)
             onice_def = pids_d[mask]
         else:
             onice_def = np.array([], dtype=int)

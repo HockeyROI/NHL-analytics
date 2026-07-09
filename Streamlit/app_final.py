@@ -174,6 +174,7 @@ _CHART_COLORS = {
     "EDGE OZ%": _CHART_PRIMARY, "EDGE NZ%": _CHART_SECOND, "EDGE DZ%": _CHART_THIRD,
     "EDGE Top Speed": _CHART_PRIMARY, "EDGE Bursts 20+": _CHART_PRIMARY,
     "EDGE Distance (mi)": _CHART_PRIMARY,
+    "OZ Start%": _CHART_PRIMARY, "DZ Start%": _CHART_THIRD,
 }
 
 
@@ -1508,10 +1509,19 @@ def _player_trend(pid: int) -> pd.DataFrame:
             trend = trend.merge(_dist_toi[["season", "EDGE Distance/min"]],
                                 on="season", how="outer")
 
-    # D/N/O Start% has no per-season cut (pooled-only, see load_zone_start_pooled) —
-    # add the columns as all-NaN per-season placeholders so the "2yr avg" row
-    # (which pulls from the separately-pooled _players_2yr_frame via _P2YR_MAP)
-    # can still surface them; the per-season rows correctly show "—".
+    # D/N/O Start% — real per-season data (Zones/output/zone_start_per_season.csv).
+    _zs = load_zone_start_per_season_raw()
+    if not _zs.empty:
+        _zsp = _zs[_zs["player_id"] == pid].copy()
+        if not _zsp.empty:
+            _tot = (_zsp["oz_faceoff_shifts"] + _zsp["dz_faceoff_shifts"]
+                    + _zsp["nz_faceoff_shifts"])
+            _okz = _tot > 0
+            _zsp["OZ Start%"] = np.where(_okz, _zsp["oz_faceoff_shifts"] / _tot * 100, np.nan)
+            _zsp["DZ Start%"] = np.where(_okz, _zsp["dz_faceoff_shifts"] / _tot * 100, np.nan)
+            _zsp["NZ Start%"] = np.where(_okz, _zsp["nz_faceoff_shifts"] / _tot * 100, np.nan)
+            trend = trend.merge(_zsp[["season", "OZ Start%", "DZ Start%", "NZ Start%"]],
+                                on="season", how="outer")
     for _c in ("DZ Start%", "NZ Start%", "OZ Start%"):
         if _c not in trend.columns:
             trend[_c] = np.nan
@@ -2460,6 +2470,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                    ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
         if "Zone Impact" in _show_fams:
             _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
+            _chart("D/O Zone Start% (faceoff-started 5v5 shifts)", ["OZ Start%", "DZ Start%"])
         if "Net Front Impact" in _show_fams:
             _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
             _chart("NFI% (net-front share)", ["NFI%"])
@@ -2641,6 +2652,48 @@ def load_zone_start_pooled() -> pd.DataFrame:
     return d[["player_id", "OZ Start%", "DZ Start%", "NZ Start%"]]
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_zone_start_per_season_raw() -> pd.DataFrame:
+    """Per-player, per-season faceoff-START zone split (D/N/O) RAW SHIFT
+    COUNTS, from Zones/output/zone_start_per_season.csv — same underlying
+    PBP faceoff-shift classification as load_zone_start_pooled, just kept
+    per-season instead of pre-collapsed, so any scope (single season, 2yr,
+    4yr pooled) can compute its own Start% via ratio-of-sums. No minimum-
+    sample floor (a descriptive "who starts where" share, not a rating)."""
+    fp = ZONES / "output" / "zone_start_per_season.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    return pd.read_csv(fp, dtype={"season": str})
+
+
+def _zone_start_rate(scope_key: str) -> pd.DataFrame:
+    """D/N/O Start% for one scope, via ratio-of-sums over the per-season raw
+    faceoff-shift counts (sum across the scope's seasons, then compute the
+    share once) — the same pattern as _xg_onice_rates/_edge_distance_rate,
+    so a single season, the 2yr pool, and the 4yr pool are all internally
+    consistent instead of one being a different aggregation method."""
+    d = load_zone_start_per_season_raw()
+    if d.empty:
+        return pd.DataFrame()
+    if scope_key == "pooled":
+        sub = d[d["season"].isin(POOLED_SEASONS)]
+    elif scope_key == "pooled_2yr":
+        sub = d[d["season"].isin(POOLED_2YR_SEASONS)]
+    else:
+        sub = d[d["season"] == str(scope_key)]
+    if sub.empty:
+        return pd.DataFrame()
+    g = sub.groupby("player_id").agg(
+        _oz=("oz_faceoff_shifts", "sum"), _dz=("dz_faceoff_shifts", "sum"),
+        _nz=("nz_faceoff_shifts", "sum")).reset_index()
+    total = g["_oz"] + g["_dz"] + g["_nz"]
+    ok = total > 0
+    g["OZ Start%"] = np.where(ok, g["_oz"] / total * 100, np.nan)
+    g["DZ Start%"] = np.where(ok, g["_dz"] / total * 100, np.nan)
+    g["NZ Start%"] = np.where(ok, g["_nz"] / total * 100, np.nan)
+    return g[["player_id", "OZ Start%", "DZ Start%", "NZ Start%"]]
+
+
 def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.DataFrame, bool]:
     """Return (long per-player frame, is_pooled). NFI + QG, plus NZI/DZI/OZI in
     the pooled view only (zone data has no season axis)."""
@@ -2694,7 +2747,7 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         if not zone.empty and not base.empty:
             base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
             base = base.merge(zone, on=["player_name", "_pos_group"], how="left")
-        zstart = load_zone_start_pooled()
+        zstart = _zone_start_rate(key)
         if not zstart.empty and not base.empty:
             base = base.merge(zstart, on="player_id", how="left")
     else:
@@ -2713,6 +2766,9 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         if not zone.empty and not base.empty:
             base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
             base = base.merge(zone, on=["player_name", "_pos_group"], how="left")
+        zstart = _zone_start_rate(SEASON_KEY[season_label])
+        if not zstart.empty and not base.empty:
+            base = base.merge(zstart, on="player_id", how="left")
 
     # Raw attack/suppress per-60 (ES CNFI+MNFI on-ice for/against), scoped to the
     # same seasons as the view via ratio-of-sums. Joins on player_id.
@@ -2866,7 +2922,7 @@ def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
     _scatter_with_labels(
         df, "DZ Start%", "OZ Start%", "DZ Start%", "OZ Start%",
         f"zone-start-scatter{dl_suffix}",
-        "**Source: my PBP data** (faceoff-started 5v5 shifts, pooled) — D-zone vs "
+        "**Source: my PBP data** (faceoff-started 5v5 shifts) — D-zone vs "
         "O-zone faceoff-start share, one point per player.",
         team_scoped)
 
@@ -3304,12 +3360,11 @@ def render_players() -> None:
     if playoffs:
         zone_note = " · NZI/DZI/OZI pooled across playoffs"
     elif SEASON_KEY.get(season_label) == "pooled_2yr":
-        zone_note = (" · NZI/DZI/OZI pooled 2024-25 + 2025-26; "
-                     "D/N/O Start% pooled across all seasons (no 2yr build yet)")
+        zone_note = " · NZI/DZI/OZI and D/N/O Start% pooled 2024-25 + 2025-26"
     elif is_pooled:
         zone_note = " · NZI/DZI/OZI and D/N/O Start% pooled across all seasons"
     else:
-        zone_note = " · NZI/DZI/OZI for this season · D/N/O Start% not available for single seasons (pooled only)"
+        zone_note = " · NZI/DZI/OZI and D/N/O Start% for this season"
     st.caption(
         f"{len(disp):,} players (≥ {min_toi:,} ES min) · {scope_label} · sorted by "
         f"RelNFI% descending · ranked at ≥ {rank_floor:,} ES min (else UR){zone_note}"
@@ -3347,16 +3402,10 @@ def render_players() -> None:
                     f"O-Zone Time%</h4>", unsafe_allow_html=True)
         _edge_zone_scatter(df, _team_scoped)
 
-    if is_pooled and {"DZ Start%", "OZ Start%"}.issubset(df.columns):
+    if {"DZ Start%", "OZ Start%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone vs "
                     f"O-Zone</h4>", unsafe_allow_html=True)
         _zone_start_scatter(df, _team_scoped)
-    elif not is_pooled:
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone vs "
-                    f"O-Zone</h4>", unsafe_allow_html=True)
-        st.caption("⚠️ Not shown for a single-season view — D/N/O Start% has no "
-                   "per-season cut (pooled faceoff data only). Switch the **Season** "
-                   "filter above to **2yr / 3yr / 4yr** to see this chart.")
 
     if {"EDGE Distance/min", "xG%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance/min vs "
