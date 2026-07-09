@@ -2425,6 +2425,43 @@ def _zone_line_chart_compare(players: dict) -> None:
                 brand_width=_w * _n + 24 * (_n - 1) + 55)
 
 
+def _trade_line_compare(players: dict, cols: list[str], caption: str,
+                        dl_name: str) -> None:
+    """Generic faceted (one panel per player) year-over-year line chart for a set
+    of trend columns — the multi-player analogue of the drill-in's inner _chart().
+    players: {name: trend_df}. Colours follow _CHART_COLORS; y-domain is tightened
+    to the data (shared across panels) so season-to-season movement is visible."""
+    import altair as alt
+    parts = []
+    for name, tr in players.items():
+        use = [c for c in cols if c in tr.columns and tr[c].notna().any()]
+        if not use:
+            continue
+        long = (tr[["Season"] + use].melt("Season", var_name="Metric",
+                value_name="value").dropna(subset=["value"]))
+        long["Player"] = name
+        parts.append(long)
+    if not parts:
+        return
+    d = pd.concat(parts, ignore_index=True)
+    ys = [c for c in cols if c in set(d["Metric"])]
+    _n = max(1, len(players))
+    _w = int(max(200, 1040 / _n))
+    st.caption(caption)
+    base = alt.Chart(d).mark_line(point=True, strokeWidth=2).encode(
+        x=alt.X("Season:N", title=None, axis=alt.Axis(labelAngle=-30)),
+        y=alt.Y("value:Q", title=None, scale=alt.Scale(domain=_tight_domain(d["value"]))),
+        color=alt.Color("Metric:N", sort=ys, legend=alt.Legend(
+            orient="bottom", title=None, symbolType="stroke", symbolStrokeWidth=2.5),
+            scale=alt.Scale(domain=ys,
+                            range=[_CHART_COLORS.get(c, _CHART_SECOND) for c in ys])),
+        tooltip=["Player:N", "Season:N", "Metric:N", alt.Tooltip("value:Q", format=".2f")]
+        ).properties(width=_w, height=280)
+    chart = base.facet(column=alt.Column("Player:N", title=None,
+                       header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
+    _show_chart(chart, dl_name=dl_name, brand_width=_w * _n + 24 * (_n - 1) + 55)
+
+
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                            team=None, season_label=None) -> None:
     """Per-season trend table + auto-showing line charts for one player.
@@ -4972,11 +5009,13 @@ def render_trade_analyzer() -> None:
                     "**50% baseline**, one panel per player.", dl_name="Trade-QG-bars-xG")
     # Year-over-year line graphs behind a toggle (off by default), mirroring the
     # player drill-in — lead with the bars + scatters, reveal the season-by-season
-    # lines on demand.
+    # lines on demand. Same full metric set as the drill-in (Quality Games, xG,
+    # Net-Front Impact, Zone Impact, EDGE), one panel per player.
     if _trends:
         st.checkbox("Show year-over-year graphs", key="trade_show_yoy", value=False)
         if st.session_state.get("trade_show_yoy"):
             _set_dl_title(" vs ".join(_trends.keys()))
+            # Quality Games (split NFI / xG by model)
             _qg_line_chart_compare(
                 _trends, cols=_QG_LINE_ORDER_NFI,
                 caption="**NFI** Quality Games % over time, per player — colour = aspect "
@@ -4987,7 +5026,38 @@ def render_trade_analyzer() -> None:
                 caption="**xG (MoneyPuck)** Quality Games % over time, per player — colour = "
                         "aspect (overall/offense/defense/relative); relative (**Rel**) dashed.",
                 dl_name="Trade-QG-line-xG")
+            # xG family
+            _trade_line_compare(_trends, ["xGF/60", "xGA/60"],
+                "On-ice xG per 60 (xGF/60, xGA/60) over time, per player.",
+                "Trade-xG-per60")
+            _trade_line_compare(_trends, ["RelxG%", "RelxG-F%", "RelxG-A%"],
+                "Relative xG % (RelxG%, RelxG-F%, RelxG-A%) over time, per player.",
+                "Trade-RelxG")
+            _trade_line_compare(_trends, ["PDO"],
+                "PDO (5v5) over time, per player.", "Trade-PDO-line")
+            # Net-Front Impact family
+            _trade_line_compare(_trends, ["RelNFI%", "RelNFI-A%", "RelNFI-S%"],
+                "RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%) over time, per player.",
+                "Trade-RelNFI")
+            _trade_line_compare(_trends, ["NFI-A/60", "NFI-S/60"],
+                "Raw net-front rate per 60 (NFI-A/60, NFI-S/60) over time, per player.",
+                "Trade-NFI-rate")
+            _trade_line_compare(_trends, ["NFI%"],
+                "NFI% (net-front share) over time, per player.", "Trade-NFI-pct")
+            # Zone Impact + zone starts
             _zone_line_chart_compare(_trends)
+            _trade_line_compare(_trends, ["OZ Start%", "DZ Start%"],
+                "D/O Zone Start% (faceoff-started 5v5 shifts) over time, per player.",
+                "Trade-ZoneStart")
+            # EDGE tracking
+            _trade_line_compare(_trends, ["EDGE OZ%", "EDGE DZ%"],
+                "EDGE Zone-Time % (OZ, DZ) over time, per player.", "Trade-EDGE-zone")
+            _trade_line_compare(_trends, ["EDGE Top Speed"],
+                "EDGE Top Speed (mph) over time, per player.", "Trade-EDGE-topspeed")
+            _trade_line_compare(_trends, ["EDGE Bursts 20+"],
+                "EDGE Speed Bursts (20+ mph) over time, per player.", "Trade-EDGE-bursts")
+            _trade_line_compare(_trends, ["EDGE Distance (mi)"],
+                "EDGE Distance Skated (mi) over time, per player.", "Trade-EDGE-dist")
 
     # Scatters — ONLY the selected trade players (not their whole teams). All
     # five scatter types show; the two xG-based ones (PDO/xG%, NFI%/xG%) render
