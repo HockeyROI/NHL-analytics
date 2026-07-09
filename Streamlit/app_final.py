@@ -2388,7 +2388,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])
             _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
                    ["RelxG%", "RelxG-F%", "RelxG-A%"])
-            _chart("PDO (5v5, SOG-based)", ["PDO"])
+            _chart("PDO (5v5)", ["PDO"])
         if "Net Front Impact" in _show_fams:
             _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
                    ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
@@ -2735,7 +2735,7 @@ def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") ->
     _scatter_with_labels(
         d, "xG Diff/60", "PDO", "xG Differential /60 (xGF − xGA)", "PDO",
         f"pdo-vs-xg-differential{dl_suffix}",
-        "**Descriptive luck lens — not a ranking.** PDO (my 5v5 SOG-based shot-events "
+        "**Descriptive luck lens — not a ranking.** PDO (my 5v5 shot-events "
         "computation) against xG differential (MoneyPuck-derived). Above the dashed "
         "PDO=100 line = running hot; below = running cold. Bubble size = **OZ Start%** "
         "(my PBP data) — bigger bubble = easier/more sheltered zone starts (pooled "
