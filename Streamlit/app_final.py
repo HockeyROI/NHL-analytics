@@ -169,6 +169,11 @@ _CHART_COLORS = {
     "NFI SV%": _CHART_FOURTH, "sQS%": _CHART_THIRD,
     "NFI-GSAx": _CHART_PRIMARY, "MP-GSAx": _CHART_THIRD,
     "MP-GSAx/60": _CHART_THIRD,
+    # EDGE zone-time trio (same "3rd line = brand blue" convention as NZI/DZI/OZI);
+    # the other EDGE charts are single-line, so they default to orange below.
+    "EDGE OZ%": _CHART_PRIMARY, "EDGE NZ%": _CHART_SECOND, "EDGE DZ%": _CHART_THIRD,
+    "EDGE Top Speed": _CHART_PRIMARY, "EDGE Bursts 20+": _CHART_PRIMARY,
+    "EDGE Distance (mi)": _CHART_PRIMARY,
 }
 
 
@@ -2558,10 +2563,10 @@ PLAYER_FAMILY_COLS = {
     "Zone Impact": ["DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI"],
     # NHL EDGE tracking — a separate basis than NZI/DZI/OZI (player-position,
     # all-situations/EV tracking vs strict 5v5 faceoff-started PBP). See
-    # edge/README.md. My own D/N/O Start% is repeated here (same columns as
-    # Zone Impact) so EDGE's zone-time% sits directly beside the PBP-based
-    # start split for comparison.
-    "EDGE": _EDGE_VALUE_DISP + ["DZ Start%", "NZ Start%", "OZ Start%"],
+    # edge/README.md. D/N/O Start% is NOT EDGE data (it's my own PBP faceoff
+    # data) — it stays under Zone Impact only, not duplicated here, so nothing
+    # under the EDGE pill implies an EDGE-API source it doesn't have.
+    "EDGE": _EDGE_VALUE_DISP,
 }
 
 
@@ -2666,12 +2671,11 @@ def render_players() -> None:
             f"<span style='color:{PALETTE['text']};'>NHL EDGE tracking data: measured by player "
             f"<b>position</b> (not puck position), across <b>all-situations / even-strength "
             f"TOI</b> (not strict 5v5 faceoff-started shifts). Do not read EDGE zone-time% as "
-            f"the same metric as NZI/DZI/OZI or the D/N/O Start% columns — different data "
-            f"source, different definition (D/N/O Start% is repeated here from Zone Impact "
-            f"for side-by-side comparison; it's still my PBP data, not EDGE). Each EDGE value "
-            f"shows a computed (league / team) rank, same convention as every other column — "
-            f"not NHL's own percentile. Pooled/2yr views are a games-played-weighted average "
-            f"across seasons — regular season only.</span></div>",
+            f"the same metric as NZI/DZI/OZI or the D/N/O Start% columns (on Zone Impact) — "
+            f"different data source, different definition. Each EDGE value shows a computed "
+            f"(league / team) rank, same convention as every other column — not NHL's own "
+            f"percentile. Pooled/2yr views are a games-played-weighted average across seasons "
+            f"— regular season only.</span></div>",
             unsafe_allow_html=True,
         )
     if "xG" in display_fams:
