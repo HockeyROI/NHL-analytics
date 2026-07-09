@@ -2420,21 +2420,21 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                         f"Scatters</h3>", unsafe_allow_html=True)
             st.caption(f"Auto-scoped to **{_my_team}** (this player's team) — shown regardless of "
                        "which metric families are selected above.")
-            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
-                        f"vs O-Zone</h4>", unsafe_allow_html=True)
-            _zone_start_scatter(_team_frame, True, dl_suffix="-drill")
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG "
                         f"Differential</h4>", unsafe_allow_html=True)
             _pdo_xg_scatter(_team_frame, True, dl_suffix="-drill")
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
+                        f"O-Zone Time%</h4>", unsafe_allow_html=True)
+            _edge_zone_scatter(_team_frame, True, dl_suffix="-drill")
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
+                        f"vs O-Zone</h4>", unsafe_allow_html=True)
+            _zone_start_scatter(_team_frame, True, dl_suffix="-drill")
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG "
                         f"Differential</h4>", unsafe_allow_html=True)
             _nfi_xg_scatter(_team_frame, True, dl_suffix="-drill")
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
                         f"vs Top Speed</h4>", unsafe_allow_html=True)
             _edge_speed_scatter(_team_frame, True, dl_suffix="-drill")
-            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
-                        f"O-Zone Time%</h4>", unsafe_allow_html=True)
-            _edge_zone_scatter(_team_frame, True, dl_suffix="-drill")
 
 
 # ===========================================================================
@@ -2754,8 +2754,9 @@ def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
         df, "DZ Start%", "OZ Start%", "DZ Start%", "OZ Start%",
         f"zone-start-scatter{dl_suffix}",
         "**Source: my PBP data** (faceoff-started 5v5 shifts, pooled) — D-zone vs "
-        "O-zone faceoff-start share, one point per player.",
-        team_scoped)
+        "O-zone faceoff-start share, one point per player. Bubble size = DZ Start% "
+        "— bigger bubble = harder zone starts.",
+        team_scoped, size_col="DZ Start%", size_title="DZ Start% (bigger = harder)")
 
 
 def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
@@ -2765,8 +2766,9 @@ def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "")
         df, "EDGE DZ%", "EDGE OZ%", "EDGE DZ%", "EDGE OZ%",
         f"EDGE-zone-scatter{dl_suffix}",
         "**Source: NHL EDGE tracking** (not my PBP data) — D-zone vs O-zone time "
-        "share, one point per player.",
-        team_scoped)
+        "share, one point per player. Bubble size = EDGE DZ% — bigger bubble = "
+        "harder zone starts.",
+        team_scoped, size_col="EDGE DZ%", size_title="EDGE DZ% (bigger = harder)")
 
 
 def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
@@ -3153,15 +3155,20 @@ def render_players() -> None:
     # which metric-family pills are toggled. Only genuine data-availability
     # gates remain (e.g. is_pooled for Start%, since that data has no
     # per-season cut).
-    if is_pooled and {"DZ Start%", "OZ Start%"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone vs "
-                    f"O-Zone</h4>", unsafe_allow_html=True)
-        _zone_start_scatter(df, _team_scoped)
-
     if {"PDO", "xGF/60", "xGA/60"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG Differential</h4>",
                     unsafe_allow_html=True)
         _pdo_xg_scatter(df, _team_scoped)
+
+    if {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
+                    f"O-Zone Time%</h4>", unsafe_allow_html=True)
+        _edge_zone_scatter(df, _team_scoped)
+
+    if is_pooled and {"DZ Start%", "OZ Start%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone vs "
+                    f"O-Zone</h4>", unsafe_allow_html=True)
+        _zone_start_scatter(df, _team_scoped)
 
     if {"NFI%", "xGF/60", "xGA/60"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG Differential</h4>",
@@ -3172,11 +3179,6 @@ def render_players() -> None:
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts vs "
                     f"Top Speed</h4>", unsafe_allow_html=True)
         _edge_speed_scatter(df, _team_scoped)
-
-    if {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1.2rem;'>EDGE: D-Zone vs "
-                    f"O-Zone Time%</h4>", unsafe_allow_html=True)
-        _edge_zone_scatter(df, _team_scoped)
 
     # Row click → drill into that player (collapse the list). Bump the table key
     # so the leaderboard re-renders without a stale selection when we come back.
