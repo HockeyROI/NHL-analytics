@@ -1721,7 +1721,8 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     return pd.DataFrame(rows, columns=lead + metric_cols), trend, metric_cols
 
 
-_QG_BAR_METRICS = ["NFI%", "NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%"]
+_QG_BAR_METRICS = ["NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
+                   "xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%"]
 _BRAND_DEEP = "#0A1A2F"          # "Hockey" — deeper than the chart navy
 _BRAND_ROI = PALETTE["orange"]   # "ROI" — brand orange (#FF6B35)
 
@@ -2008,11 +2009,13 @@ def _qg_bar_chart(vals: dict, label: str, caption: str = None,
         return
     d = pd.DataFrame(rows)
     _dom = _qg_axis_domain([r["value"] for r in rows])
-    st.caption(caption or (f"**{label}** — NFI% + Quality-Games % vs the **50% "
-               "baseline** (bar up = above 50%, down = below; darker = further from 50%)."))
-    # Colour the 2nd and 4th category labels orange, the rest blue.
-    _orange_lbls = "[" + ",".join(f"'{rows[i]['Metric']}'"
-                                  for i in (1, 3) if i < len(rows)) + "]"
+    st.caption(caption or (f"**{label}** — Quality-Games % vs the **50% "
+               "baseline** (bar up = above 50%, down = below; darker = further from 50%). "
+               "**NFI** family in blue, **xG** family in orange."))
+    # Colour labels by metric family (xG-* orange, NFI-* blue) rather than fixed
+    # index positions — scales to any bar count instead of assuming exactly 5.
+    _orange_lbls = "[" + ",".join(f"'{r['Metric']}'" for r in rows
+                                  if r["Metric"].startswith("xG")) + "]"
     _label_color = {"expr": f"indexof({_orange_lbls}, datum.value) >= 0 "
                             f"? '{PALETTE['orange']}' : '{PALETTE['text']}'"}
     bars = alt.Chart(d).mark_bar(size=40).encode(
@@ -2029,7 +2032,7 @@ def _qg_bar_chart(vals: dict, label: str, caption: str = None,
 
 
 def _qg_bar_chart_compare(players_vals: dict, label: str) -> None:
-    """Side-by-side small-multiple bar charts (one panel per player) of the 5 QG
+    """Side-by-side small-multiple bar charts (one panel per player) of the 8 QG
     metrics vs the 50% baseline. players_vals: {player_name: {metric: 0-100}}."""
     import altair as alt
     rows, allv = [], []
@@ -2127,26 +2130,55 @@ def _qg_line_ydomain(values) -> list:
     return [lo - pad, hi + pad]
 
 
-def _qg_combined_line(trend: pd.DataFrame) -> None:
-    """One line chart with all eight Quality-Games %: colour = aspect (overall
-    orange, offense light-blue, defense blue, relative purple); style = model
-    (NFI solid, xG dashed)."""
+_QG_LINE_ORDER_NFI = ["NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%"]
+_QG_LINE_ORDER_XG = ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%"]
+
+
+def _qg_line_long_subset(trend: pd.DataFrame, cols: list[str]):
+    cols = [c for c in cols if c in trend.columns and trend[c].notna().any()]
+    if not cols:
+        return None, []
+    long = (trend[["Season"] + cols].melt("Season", var_name="Metric",
+            value_name="value").dropna(subset=["value"]))
+    long["Series"] = long["Metric"].map(_QG_SERIES)
+    return long, [_QG_SERIES[c] for c in cols]
+
+
+def _qg_split_line_chart(trend: pd.DataFrame, cols: list[str], caption: str,
+                         dl_name: str) -> None:
     import altair as alt
-    long, series = _qg_line_long(trend)
+    long, series = _qg_line_long_subset(trend, cols)
     if long is None:
         return
-    st.caption("All Quality Games % — colour = aspect (**overall** orange, "
-               "**offense** light-blue, **defense** blue, **relative** purple); "
-               "**NFI = solid, xG = dashed**.")
+    st.caption(caption)
+    _leg = alt.Legend(title=None, orient="bottom", direction="horizontal",
+                      symbolType="stroke", symbolStrokeWidth=2.5, symbolSize=260)
     chart = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
         x=alt.X("Season:N", title=None),
         y=alt.Y("value:Q", title=None,
                 scale=alt.Scale(domain=_qg_line_ydomain(long["value"]))),
+        color=alt.Color("Series:N", sort=series, legend=_leg,
+                        scale=alt.Scale(domain=series,
+                                        range=[_QG_SERIES_COLOR[s] for s in series])),
         tooltip=["Season:N", "Series:N", alt.Tooltip("value:Q", format=".3f")],
-        **_qg_line_encodings(series)).properties(height=320)
-    # The y-axis is zoomed, so the lines crowd the bottom — lift the footer clear
-    # of the x-axis (between the too-low 20 and the too-high 46).
-    _show_chart(chart, dl_name="Quality-Games-line", brand_lift=33)
+    ).properties(height=300)
+    _show_chart(chart, dl_name=dl_name, brand_lift=33)
+
+
+def _qg_combined_line(trend: pd.DataFrame) -> None:
+    """Two line charts — NFI Quality-Games % and xG (MoneyPuck) Quality-Games %,
+    split by model so each is readable on its own. Colour = aspect (overall
+    orange, offense light-blue, defense blue, relative purple)."""
+    _qg_split_line_chart(
+        trend, _QG_LINE_ORDER_NFI,
+        "**NFI** Quality Games % — colour = aspect (**overall** orange, "
+        "**offense** light-blue, **defense** blue, **relative** purple).",
+        "Quality-Games-line-NFI")
+    _qg_split_line_chart(
+        trend, _QG_LINE_ORDER_XG,
+        "**xG (MoneyPuck)** Quality Games % — colour = aspect (**overall** orange, "
+        "**offense** light-blue, **defense** blue, **relative** purple).",
+        "Quality-Games-line-xG")
 
 
 def _qg_line_chart_compare(players: dict) -> None:
