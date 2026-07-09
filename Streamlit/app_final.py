@@ -1456,6 +1456,14 @@ def _player_trend(pid: int) -> pd.DataFrame:
             ea = ea[["season"] + _EDGE_VALUE_RAW].rename(columns=_EDGE_REN)
             trend = trend.merge(ea, on="season", how="outer")
 
+    # D/N/O Start% has no per-season cut (pooled-only, see load_zone_start_pooled) —
+    # add the columns as all-NaN per-season placeholders so the "2yr avg" row
+    # (which pulls from the separately-pooled _players_2yr_frame via _P2YR_MAP)
+    # can still surface them; the per-season rows correctly show "—".
+    for _c in ("DZ Start%", "NZ Start%", "OZ Start%"):
+        if _c not in trend.columns:
+            trend[_c] = np.nan
+
     trend = trend[trend["season"].isin(PROFILE_SEASONS)].copy()
     # The raw per-60s (NFI-A/60, NFI-S/60) come from an UNfloored count file, so a
     # season below the NFI build's TOI floor would otherwise show them alone with
@@ -1645,6 +1653,7 @@ _P2YR_MAP = {"NFI%": "NFI_pct", "RelNFI%": "RelNFI_pct", "RelNFI-A%": "RelNFI_F_
              "xG-QG-F%": "xG-QG-F%", "xG-QG-A%": "xG-QG-A%",
              "NFI-QG-A%": "NFI-QG-A%", "NFI-QG-S%": "NFI-QG-S%",
              "PDO": "PDO",
+             "DZ Start%": "DZ Start%", "NZ Start%": "NZ Start%", "OZ Start%": "OZ Start%",
              # EDGE — the 2yr frame carries these under their RAW column names
              # (the display rename only happens in render_players' own table).
              **{disp: raw for raw, disp in _EDGE_REN.items()}}
@@ -1671,7 +1680,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
         return pd.DataFrame(), trend, []
     share_cols = ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%"]
     rate_cols = ["NFI-A/60", "NFI-S/60"]
-    zone_cols = ["NZI", "DZI", "OZI"]
+    zone_cols = ["DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI"]
     qg_cols = ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
                "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%"]
     xg_cols = ["xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO"]
@@ -1700,6 +1709,8 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
         _b[c] = lambda v: f"{v:+.2f}"
     for c in ("NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI"):
         _b[c] = lambda v: f"{v:.1f}"
+    for c in ("DZ Start%", "NZ Start%", "OZ Start%"):
+        _b[c] = lambda v: f"{v:.1f}%"
     for c in ("xGF/60", "xGA/60"):
         _b[c] = lambda v: f"{v:.2f}"
     _b["PDO"] = lambda v: f"{v:.1f}"
@@ -2359,9 +2370,10 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         st.caption(title)
         long = (trend[["Season"] + ys].melt("Season", var_name="Metric",
                 value_name="value").dropna(subset=["value"]))
-        # ydomain (when given) fixes a comparable spread; otherwise zoom to the
-        # data range (zero=False) rather than forcing a wasteful 0 baseline.
-        _ysc = alt.Scale(domain=ydomain) if ydomain else alt.Scale(zero=False)
+        # ydomain (when given) fixes a comparable spread; otherwise tighten to
+        # the actual data range so season-to-season movement is visible
+        # instead of flattened by a wide auto-zero domain.
+        _ysc = alt.Scale(domain=ydomain or _tight_domain(long["value"]))
         ch = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
             x=alt.X("Season:N", title=None),
             y=alt.Y("value:Q", title=None, scale=_ysc),
@@ -2398,7 +2410,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
             _chart("NFI% (net-front share)", ["NFI%"])
         if "EDGE" in _show_fams:
-            _chart("EDGE Zone-Time % (OZ, NZ, DZ)", ["EDGE OZ%", "EDGE NZ%", "EDGE DZ%"])
+            _chart("EDGE Zone-Time % (OZ, DZ)", ["EDGE OZ%", "EDGE DZ%"])
             _chart("EDGE Top Speed (mph)", ["EDGE Top Speed"])
             _chart("EDGE Speed Bursts (20+ mph)", ["EDGE Bursts 20+"])
             _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])
@@ -2690,16 +2702,18 @@ def _team_scatter_frame(season_label: str, team: str = None) -> pd.DataFrame:
 def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
                          y_title: str, dl_name: str, caption: str,
                          team_scoped: bool, name_col: str = "Player",
-                         extra_layer=None, size_col: str = None,
-                         size_title: str = None) -> None:
-    """Shared scatter renderer for the 4 team-scatter charts: tight (non-zero)
+                         extra_layer=None, color_col: str = None,
+                         color_title: str = None) -> None:
+    """Shared scatter renderer for the 5 team-scatter charts: tight (non-zero)
     axis domains so points aren't clustered in a corner, player-name labels
     shown directly ONLY when team_scoped (a small, readable point count) —
-    otherwise names are hover-only (league-wide would be unreadable). Dots
-    are always blue, labels always orange — consistent across all 4 charts.
-    size_col (optional): bubble size by a 3rd metric (bigger = higher value);
-    silently falls back to a fixed dot size if that column isn't available
-    for the current scope."""
+    otherwise names are hover-only (league-wide would be unreadable), and
+    shown as LAST NAME only to keep the chart readable. Dots are always blue
+    (uniform size), labels always orange. color_col (optional): a light
+    (easy) -> dark (hard) color gradient by a 3rd metric — team-scoped views
+    ONLY (league-wide always plain blue dots, since a color legend across
+    hundreds of points isn't readable); silently falls back to plain dots if
+    that column isn't available for the current scope."""
     import altair as alt
     d = df.dropna(subset=[x_col, y_col]).copy()
     if d.empty:
@@ -2707,16 +2721,18 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
     st.caption(caption)
     _xdom = _tight_domain(d[x_col], pad_frac=0.15, min_pad=1e-6)
     _ydom = _tight_domain(d[y_col], pad_frac=0.15, min_pad=1e-6)
-    _use_size = size_col is not None and size_col in d.columns and d[size_col].notna().any()
+    _use_color = (team_scoped and color_col is not None and color_col in d.columns
+                  and d[color_col].notna().any())
     _tooltip = [alt.Tooltip(f"{name_col}:N"), alt.Tooltip(f"{x_col}:Q", format=".2f"),
                 alt.Tooltip(f"{y_col}:Q", format=".2f")]
-    if _use_size:
-        _tooltip.append(alt.Tooltip(f"{size_col}:Q", title=size_title or size_col, format=".1f"))
-        points = alt.Chart(d).mark_circle(opacity=0.7, color=PALETTE["blue"]).encode(
+    if _use_color:
+        _tooltip.append(alt.Tooltip(f"{color_col}:Q", title=color_title or color_col, format=".1f"))
+        points = alt.Chart(d).mark_circle(size=90, opacity=0.85).encode(
             x=alt.X(f"{x_col}:Q", title=x_title, scale=alt.Scale(domain=_xdom, zero=False)),
             y=alt.Y(f"{y_col}:Q", title=y_title, scale=alt.Scale(domain=_ydom, zero=False)),
-            size=alt.Size(f"{size_col}:Q", title=size_title or size_col,
-                          scale=alt.Scale(range=[40, 400]), legend=alt.Legend(orient="bottom")),
+            color=alt.Color(f"{color_col}:Q", title=color_title or color_col,
+                            scale=alt.Scale(scheme="blues", reverse=True),
+                            legend=alt.Legend(orient="bottom")),
             tooltip=_tooltip,
         )
     else:
@@ -2727,11 +2743,12 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
         )
     chart = points + extra_layer if extra_layer is not None else points
     if team_scoped:
+        d["_label"] = d[name_col].astype(str).str.split().str[-1]
         labels = alt.Chart(d).mark_text(align="left", dx=6, dy=-6, fontSize=10,
                                         color=PALETTE["orange"]).encode(
             x=alt.X(f"{x_col}:Q", scale=alt.Scale(domain=_xdom, zero=False)),
             y=alt.Y(f"{y_col}:Q", scale=alt.Scale(domain=_ydom, zero=False)),
-            text=f"{name_col}:N",
+            text="_label:N",
         )
         chart = chart + labels
     _show_chart(chart, dl_name=dl_name)
@@ -2750,11 +2767,11 @@ def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") ->
         f"pdo-vs-xg-differential{dl_suffix}",
         "**Descriptive luck lens — not a ranking.** PDO (my 5v5 shot-events "
         "computation) against xG differential (MoneyPuck-derived). Above the dashed "
-        "PDO=100 line = running hot; below = running cold. Bubble size = **OZ Start%** "
-        "(my PBP data) — bigger bubble = easier/more sheltered zone starts (pooled "
-        "seasons only; fixed-size dot elsewhere).",
-        team_scoped, extra_layer=rule100, size_col="OZ Start%",
-        size_title="OZ Start% (bigger = easier)")
+        "PDO=100 line = running hot; below = running cold. Color = **OZ Start%** "
+        "(my PBP data), team-scoped views only — light = easier/more sheltered zone "
+        "starts, dark = harder.",
+        team_scoped, extra_layer=rule100, color_col="OZ Start%",
+        color_title="OZ Start% (light = easier, dark = harder)")
 
 
 def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
@@ -2764,9 +2781,8 @@ def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
         df, "DZ Start%", "OZ Start%", "DZ Start%", "OZ Start%",
         f"zone-start-scatter{dl_suffix}",
         "**Source: my PBP data** (faceoff-started 5v5 shifts, pooled) — D-zone vs "
-        "O-zone faceoff-start share, one point per player. Bubble size = DZ Start% "
-        "— bigger bubble = harder zone starts.",
-        team_scoped, size_col="DZ Start%", size_title="DZ Start% (bigger = harder)")
+        "O-zone faceoff-start share, one point per player.",
+        team_scoped)
 
 
 def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
@@ -2776,9 +2792,8 @@ def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "")
         df, "EDGE DZ%", "EDGE OZ%", "EDGE DZ%", "EDGE OZ%",
         f"EDGE-zone-scatter{dl_suffix}",
         "**Source: NHL EDGE tracking** (not my PBP data) — D-zone vs O-zone time "
-        "share, one point per player. Bubble size = EDGE DZ% — bigger bubble = "
-        "harder zone starts.",
-        team_scoped, size_col="EDGE DZ%", size_title="EDGE DZ% (bigger = harder)")
+        "share, one point per player.",
+        team_scoped)
 
 
 def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
@@ -2802,10 +2817,10 @@ def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") ->
         d, "xG Diff/60", "NFI%", "xG Differential /60 (xGF − xGA)", "NFI%",
         f"nfi-vs-xg-differential{dl_suffix}",
         "Net-Front Impact share vs xG differential (MoneyPuck-derived), one point "
-        "per player. Bubble size = **OZ Start%** (my PBP data) — bigger bubble = "
-        "easier/more sheltered zone starts (pooled seasons only; fixed-size dot "
-        "elsewhere).",
-        team_scoped, size_col="OZ Start%", size_title="OZ Start% (bigger = easier)")
+        "per player. Color = **OZ Start%** (my PBP data), team-scoped views only — "
+        "light = easier/more sheltered zone starts, dark = harder.",
+        team_scoped, color_col="OZ Start%",
+        color_title="OZ Start% (light = easier, dark = harder)")
 
 
 def render_players() -> None:
