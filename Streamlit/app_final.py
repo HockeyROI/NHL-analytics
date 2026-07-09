@@ -2806,7 +2806,7 @@ def render_players() -> None:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
-                    "NFI-S/60", "NZI", "DZI", "OZI",
+                    "NFI-S/60", "NZI", "DZI", "OZI", "DZ Start%", "NZ Start%", "OZ Start%",
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
                     "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
                     "xG-QG-F%", "xG-QG-A%", "NFI-QG-A%", "NFI-QG-S%",
