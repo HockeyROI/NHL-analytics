@@ -36,6 +36,7 @@ POS_CSV = f"{ROOT}/NFI/output/player_positions.csv"
 GAME_CSV = f"{ROOT}/Data/game_ids.csv"
 COUNTS_CSV = f"{ROOT}/NFI/output/player_counts_by_state_zone_per_season.csv"
 OUT_CSV = f"{ROOT}/NFI/output/player_pdo_5v5_per_season.csv"
+OUT_CSV_ALLSIT = f"{ROOT}/NFI/output/player_pdo_allsit_per_season.csv"
 
 SEASONS = {"20212022", "20222023", "20232024", "20242025", "20252026"}
 TOI_FLOOR_MIN = 200.0
@@ -183,54 +184,86 @@ for gid, gshots in shots_by_game.items():
 
 print(f"Processed {n_games} games.")
 
-# ----------------- Reuse existing on-ice goals + TOI (state=='ES') -----------------
+# ----------------- Reuse existing on-ice goals + TOI -----------------
+# Two scopes computed together in this one pass (the shift-join above already
+# tracked SOG on-ice by state, so no need to re-scan): 5v5 (state=='ES') and
+# all-situations (every state summed). Same pattern as the app's existing
+# sQS%/QG%b 5v5-vs-all-situations toggle.
 print("Loading existing on-ice goals + TOI from player_counts_by_state_zone_per_season.csv...")
 counts = pd.read_csv(COUNTS_CSV, dtype={"season": str})
+
 es = counts[counts["state"] == "ES"].copy()
-gl = es.groupby(["player_id", "season"]).agg(
+gl_es = es.groupby(["player_id", "season"]).agg(
     onice_for_gl=("onice_for_gl", "sum"),
     onice_ag_gl=("onice_ag_gl", "sum"),
     toi_min=("toi_min", "first"),   # constant across zone rows per (player,season,state)
 ).reset_index()
-print(f"  ES player-season rows: {len(gl)}")
+print(f"  ES player-season rows: {len(gl_es)}")
+
+# All situations: toi_min is constant across zone rows WITHIN one state, so
+# take it once per (player,season,state) before summing across states —
+# summing the raw column directly would double-count each state's zone rows.
+toi_by_state = counts.groupby(["player_id", "season", "state"])["toi_min"].first().reset_index()
+toi_all = toi_by_state.groupby(["player_id", "season"])["toi_min"].sum().reset_index()
+gl_all = counts.groupby(["player_id", "season"]).agg(
+    onice_for_gl=("onice_for_gl", "sum"),
+    onice_ag_gl=("onice_ag_gl", "sum"),
+).reset_index().merge(toi_all, on=["player_id", "season"])
+print(f"  all-situations player-season rows: {len(gl_all)}")
 
 names = pd.read_csv(POS_CSV, dtype={"player_id": int})[["player_id", "player_name"]].drop_duplicates("player_id")
 
-rows = []
-for _, r in gl.iterrows():
-    pid, season = int(r["player_id"]), r["season"]
-    sog_for = plr_onice_for_sog_s.get((pid, season), {}).get("ES", 0)
-    sog_ag = plr_onice_ag_sog_s.get((pid, season), {}).get("ES", 0)
-    gf, ga, toi_min = r["onice_for_gl"], r["onice_ag_gl"], r["toi_min"]
-    if toi_min < TOI_FLOOR_MIN or sog_for <= 0 or sog_ag <= 0:
-        continue
-    sh_pct = gf / sog_for
-    sv_pct = 1 - ga / sog_ag
-    pdo = (sh_pct + sv_pct) * 100
-    rows.append({
-        "player_id": pid, "season": season,
-        "toi_min_es": round(toi_min, 1),
-        "sog_for": sog_for, "goals_for": int(gf),
-        "sog_against": sog_ag, "goals_against": int(ga),
-        "sh_pct": round(sh_pct * 100, 2),
-        "sv_pct": round(sv_pct * 100, 2),
-        "pdo": round(pdo, 2),
-    })
 
-out = pd.DataFrame(rows)
-out = out.merge(names, on="player_id", how="left")
-out = out[["player_id", "player_name", "season", "toi_min_es",
-           "sog_for", "goals_for", "sog_against", "goals_against",
-           "sh_pct", "sv_pct", "pdo"]]
-out = out.sort_values(["season", "pdo"], ascending=[True, False])
-out.to_csv(OUT_CSV, index=False)
-print(f"\nWrote {OUT_CSV}: {len(out)} player-season rows (>=200 min ES TOI)")
+def build_rows(gl_df: pd.DataFrame, sog_scope: str, toi_label: str) -> pd.DataFrame:
+    rows = []
+    for _, r in gl_df.iterrows():
+        pid, season = int(r["player_id"]), r["season"]
+        if sog_scope == "ES":
+            sog_for = plr_onice_for_sog_s.get((pid, season), {}).get("ES", 0)
+            sog_ag = plr_onice_ag_sog_s.get((pid, season), {}).get("ES", 0)
+        else:
+            sog_for = sum(plr_onice_for_sog_s.get((pid, season), {}).values())
+            sog_ag = sum(plr_onice_ag_sog_s.get((pid, season), {}).values())
+        gf, ga, toi_min = r["onice_for_gl"], r["onice_ag_gl"], r["toi_min"]
+        if toi_min < TOI_FLOOR_MIN or sog_for <= 0 or sog_ag <= 0:
+            continue
+        sh_pct = gf / sog_for
+        sv_pct = 1 - ga / sog_ag
+        pdo = (sh_pct + sv_pct) * 100
+        rows.append({
+            "player_id": pid, "season": season,
+            toi_label: round(toi_min, 1),
+            "sog_for": sog_for, "goals_for": int(gf),
+            "sog_against": sog_ag, "goals_against": int(ga),
+            "sh_pct": round(sh_pct * 100, 2),
+            "sv_pct": round(sv_pct * 100, 2),
+            "pdo": round(pdo, 2),
+        })
+    return pd.DataFrame(rows)
 
-print("\n=== PDO distribution sanity check ===")
-print(out["pdo"].describe())
-print(f"\nmean={out['pdo'].mean():.2f}  median={out['pdo'].median():.2f}  std={out['pdo'].std():.2f}")
 
-print("\n=== TOP 15 (highest PDO) ===")
-print(out.nlargest(15, "pdo")[["player_name", "season", "toi_min_es", "sh_pct", "sv_pct", "pdo"]].to_string(index=False))
-print("\n=== BOTTOM 15 (lowest PDO) ===")
-print(out.nsmallest(15, "pdo")[["player_name", "season", "toi_min_es", "sh_pct", "sv_pct", "pdo"]].to_string(index=False))
+def finish_and_write(gl_df, sog_scope, toi_label, out_path, floor_desc):
+    out = build_rows(gl_df, sog_scope, toi_label)
+    out = out.merge(names, on="player_id", how="left")
+    out = out[["player_id", "player_name", "season", toi_label,
+               "sog_for", "goals_for", "sog_against", "goals_against",
+               "sh_pct", "sv_pct", "pdo"]]
+    out = out.sort_values(["season", "pdo"], ascending=[True, False])
+    out.to_csv(out_path, index=False)
+    print(f"\nWrote {out_path}: {len(out)} player-season rows ({floor_desc})")
+    print(out["pdo"].describe())
+    print(f"mean={out['pdo'].mean():.2f}  median={out['pdo'].median():.2f}  std={out['pdo'].std():.2f}")
+    return out
+
+
+out_5v5 = finish_and_write(gl_es, "ES", "toi_min_es", OUT_CSV, ">=200 min 5v5 TOI")
+print("\n=== 5v5 TOP 15 (highest PDO) ===")
+print(out_5v5.nlargest(15, "pdo")[["player_name", "season", "toi_min_es", "sh_pct", "sv_pct", "pdo"]].to_string(index=False))
+print("\n=== 5v5 BOTTOM 15 (lowest PDO) ===")
+print(out_5v5.nsmallest(15, "pdo")[["player_name", "season", "toi_min_es", "sh_pct", "sv_pct", "pdo"]].to_string(index=False))
+
+out_allsit = finish_and_write(gl_all, "ALL", "toi_min_allsit", OUT_CSV_ALLSIT, ">=200 min all-situations TOI")
+print("\n=== ALL-SITUATIONS TOP 15 (highest PDO) ===")
+print(out_allsit.nlargest(15, "pdo")[["player_name", "season", "toi_min_allsit", "sh_pct", "sv_pct", "pdo"]].to_string(index=False))
+print("\n=== ALL-SITUATIONS BOTTOM 15 (lowest PDO) ===")
+print(out_allsit.nsmallest(15, "pdo")[["player_name", "season", "toi_min_allsit", "sh_pct", "sv_pct", "pdo"]].to_string(index=False))

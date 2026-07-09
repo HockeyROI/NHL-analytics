@@ -994,24 +994,39 @@ def _as_rates(scope_key: str) -> pd.DataFrame:
     return agg[["player_id", "NFI_A_rate", "NFI_S_rate"]]
 
 
+# PDO shot scope — same 5v5-vs-all-situations pattern as the Goalies sQS%
+# toggle (QG_SCOPE_SUFFIX). Built together in one pass by build_pdo_sog.py.
+PDO_SCOPE_FILE = {"5v5": "player_pdo_5v5_per_season.csv",
+                   "All situations": "player_pdo_allsit_per_season.csv"}
+
+
+def _pdo_toggle_state() -> str:
+    """Shared PDO shot-scope toggle state (set by the widget in
+    render_players, read here so it applies wherever PDO is computed this
+    run — same shared-session-state pattern as _qg_toggle_state)."""
+    return st.session_state.get("players_pdo_scope", "5v5")
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
-def load_pdo_counts() -> pd.DataFrame:
-    """Per-(player_id, season) SOG/goals building blocks for PDO — 5v5 raw
+def load_pdo_counts(scope_label: str = "5v5") -> pd.DataFrame:
+    """Per-(player_id, season) SOG/goals building blocks for PDO — raw
     shot-events computation (fresh on-ice attribution pass reusing the
     validated 03_onice_attribution_pillars.py logic; see
     NFI/scripts/build_pdo_sog.py). Descriptive only — not a canonical NFI
-    metric, no rel/QG."""
-    fp = REPO_ROOT / "NFI" / "output" / "player_pdo_5v5_per_season.csv"
+    metric, no rel/QG. scope_label: '5v5' or 'All situations'."""
+    fn = PDO_SCOPE_FILE.get(scope_label, PDO_SCOPE_FILE["5v5"])
+    fp = REPO_ROOT / "NFI" / "output" / fn
     if not fp.exists():
         return pd.DataFrame()
     return pd.read_csv(fp, dtype={"season": str})
 
 
 def _pdo_rate(scope_key: str) -> pd.DataFrame:
-    """PDO (5v5, SOG-based) for one scope, by ratio-of-sums on SOG/goals —
-    same pooling convention as _as_rates. Regular season only (no playoff
-    PDO computed). Raw column — no rel, no QG."""
-    g = load_pdo_counts()
+    """PDO for one scope, by ratio-of-sums on SOG/goals — same pooling
+    convention as _as_rates. Regular season only (no playoff PDO computed).
+    Raw column — no rel, no QG. Shot scope (5v5/all situations) follows the
+    shared toggle in _pdo_toggle_state()."""
+    g = load_pdo_counts(_pdo_toggle_state())
     if g.empty:
         return pd.DataFrame()
     if scope_key == "pooled":
@@ -1053,6 +1068,24 @@ _EDGE_COLS = ["oz_time_pct", "oz_time_pct_percentile",
               "top_skating_speed_mph", "top_skating_speed_percentile",
               "speed_bursts_over_20mph", "speed_bursts_over_20mph_percentile",
               "distance_skated_miles", "distance_skated_percentile"]
+
+# Raw EDGE column -> display name. Shared by the Player List leaderboard and
+# the per-player drill-in trend, so both stay in sync.
+_EDGE_REN = {
+    "oz_time_pct": "EDGE OZ%", "oz_time_pct_percentile": "EDGE OZ %ile",
+    "oz_time_pct_ev": "EDGE OZ% (EV)", "oz_time_pct_ev_percentile": "EDGE OZ %ile (EV)",
+    "nz_time_pct": "EDGE NZ%", "nz_time_pct_percentile": "EDGE NZ %ile",
+    "dz_time_pct": "EDGE DZ%", "dz_time_pct_percentile": "EDGE DZ %ile",
+    "top_skating_speed_mph": "EDGE Top Speed", "top_skating_speed_percentile": "EDGE Speed %ile",
+    "speed_bursts_over_20mph": "EDGE Bursts 20+",
+    "speed_bursts_over_20mph_percentile": "EDGE Bursts %ile",
+    "distance_skated_miles": "EDGE Distance (mi)", "distance_skated_percentile": "EDGE Distance %ile",
+}
+# Value-only columns (excludes the raw NHL percentile columns) — displayed with
+# a computed (league / team) rank bracket instead, same convention as every
+# other ranked column in this table.
+_EDGE_VALUE_RAW = [c for c in _EDGE_COLS if "percentile" not in c]
+_EDGE_VALUE_DISP = [_EDGE_REN[c] for c in _EDGE_VALUE_RAW]
 
 
 def _edge_rate(scope_key: str) -> pd.DataFrame:
@@ -1356,6 +1389,24 @@ def _player_trend(pid: int) -> pd.DataFrame:
             trend = trend.merge(xg[["season", "xGF/60", "xGA/60"]],
                                 on="season", how="outer")
 
+    # PDO (SOG-based; scope follows the shared 5v5/all-situations toggle) per season.
+    pdo_counts = load_pdo_counts(_pdo_toggle_state())
+    if not pdo_counts.empty:
+        pc = pdo_counts[(pdo_counts["player_id"] == pid)
+                         & (pdo_counts["season"].isin(PROFILE_SEASONS))].copy()
+        if not pc.empty:
+            trend = trend.merge(pc[["season", "pdo"]].rename(columns={"pdo": "PDO"}),
+                                on="season", how="outer")
+
+    # NHL EDGE tracking per season (regular season only; see edge/README.md).
+    edge_season = load_edge_player_season()
+    if not edge_season.empty:
+        ea = edge_season[(edge_season["player_id"] == pid)
+                          & (edge_season["season"].isin(PROFILE_SEASONS))].copy()
+        if not ea.empty:
+            ea = ea[["season"] + _EDGE_VALUE_RAW].rename(columns=_EDGE_REN)
+            trend = trend.merge(ea, on="season", how="outer")
+
     trend = trend[trend["season"].isin(PROFILE_SEASONS)].copy()
     # The raw per-60s (NFI-A/60, NFI-S/60) come from an UNfloored count file, so a
     # season below the NFI build's TOI floor would otherwise show them alone with
@@ -1500,6 +1551,32 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
                 if len(pv) and pd.notna(pv.iloc[0]):
                     d[ssn] = _league_rank(sub[src], pv.iloc[0])
             out[disp_c] = d
+    pdo = load_pdo_counts(_pdo_toggle_state())
+    if not pdo.empty:
+        pdo = pdo.copy()
+        pdo["season"] = pdo["season"].astype(str)
+        d = {}
+        for ssn in PROFILE_SEASONS:
+            sub = _byid(pdo[pdo["season"] == ssn], ssn)
+            pv = sub.loc[sub["player_id"] == pid, "pdo"]
+            if len(pv) and pd.notna(pv.iloc[0]):
+                d[ssn] = _league_rank(sub["pdo"], pv.iloc[0])
+        out["PDO"] = d
+    edge = load_edge_player_season()
+    if not edge.empty:
+        edge = edge.copy()
+        edge["season"] = edge["season"].astype(str)
+        for raw_c in _EDGE_VALUE_RAW:
+            disp_c = _EDGE_REN[raw_c]
+            if raw_c not in edge.columns:
+                continue
+            d = {}
+            for ssn in PROFILE_SEASONS:
+                sub = _byid(edge[edge["season"] == ssn], ssn)
+                pv = sub.loc[sub["player_id"] == pid, raw_c]
+                if len(pv) and pd.notna(pv.iloc[0]):
+                    d[ssn] = _league_rank(sub[raw_c], pv.iloc[0])
+            out[disp_c] = d
     return out
 
 
@@ -1514,7 +1591,11 @@ _P2YR_MAP = {"NFI%": "NFI_pct", "RelNFI%": "RelNFI_pct", "RelNFI-A%": "RelNFI_F_
              "RelxG-F%": "RelxG_F_pct", "RelxG-A%": "RelxG_A_pct",
              "xGF/60": "xGF/60", "xGA/60": "xGA/60",
              "xG-QG-F%": "xG-QG-F%", "xG-QG-A%": "xG-QG-A%",
-             "NFI-QG-A%": "NFI-QG-A%", "NFI-QG-S%": "NFI-QG-S%"}
+             "NFI-QG-A%": "NFI-QG-A%", "NFI-QG-S%": "NFI-QG-S%",
+             "PDO": "PDO",
+             # EDGE — the 2yr frame carries these under their RAW column names
+             # (the display rename only happens in render_players' own table).
+             **{disp: raw for raw, disp in _EDGE_REN.items()}}
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -1541,12 +1622,19 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     zone_cols = ["NZI", "DZI", "OZI"]
     qg_cols = ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
                "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%"]
-    xg_cols = ["xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%"]
-    metric_cols = [c for c in qg_cols + xg_cols + share_cols + rate_cols + zone_cols
+    xg_cols = ["xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO"]
+    edge_cols = _EDGE_VALUE_DISP
+    metric_cols = [c for c in qg_cols + xg_cols + share_cols + rate_cols + zone_cols + edge_cols
                    if c in trend.columns]
-    if families:   # narrow to the selected metric families
-        _fam_of = {col: fam for fam, fcols in PLAYER_FAMILY_COLS.items() for col in fcols}
-        metric_cols = [c for c in metric_cols if _fam_of.get(c) in set(families)]
+    if families:   # narrow to the selected metric families (a column may belong
+                   # to more than one family, e.g. D/N/O Start% under both Zone
+                   # Impact and EDGE — show it if ANY selected family claims it)
+        _fam_of = {}
+        for fam, fcols in PLAYER_FAMILY_COLS.items():
+            for col in fcols:
+                _fam_of.setdefault(col, set()).add(fam)
+        _wanted = set(families)
+        metric_cols = [c for c in metric_cols if _fam_of.get(c) and _fam_of[c] & _wanted]
 
     # Per-season rank (cohort per same_pos) appended to each cell. When a team is
     # given, also compute the within-team rank → cells read "(league / team)".
@@ -1562,6 +1650,12 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
         _b[c] = lambda v: f"{v:.1f}"
     for c in ("xGF/60", "xGA/60"):
         _b[c] = lambda v: f"{v:.2f}"
+    _b["PDO"] = lambda v: f"{v:.1f}"
+    for c in ("EDGE OZ%", "EDGE OZ% (EV)", "EDGE NZ%", "EDGE DZ%"):
+        _b[c] = lambda v: f"{v * 100:.1f}%"
+    _b["EDGE Top Speed"] = lambda v: f"{v:.1f} mph"
+    _b["EDGE Bursts 20+"] = lambda v: f"{v:.0f}"
+    _b["EDGE Distance (mi)"] = lambda v: f"{v:.1f} mi"
     has_team = "Team" in trend.columns
     has_gp = "GP" in trend.columns
     rows = []
@@ -2198,6 +2292,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])
         _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
                ["RelxG%", "RelxG-F%", "RelxG-A%"])
+        _chart("PDO (5v5, SOG-based)", ["PDO"])
     if "Net Front Impact" in _show_fams:
         _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
                ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
@@ -2206,6 +2301,11 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
     if "Net Front Impact" in _show_fams:
         _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
         _chart("NFI% (net-front share)", ["NFI%"])
+    if "EDGE" in _show_fams:
+        _chart("EDGE Zone-Time % (OZ, NZ, DZ)", ["EDGE OZ%", "EDGE NZ%", "EDGE DZ%"])
+        _chart("EDGE Top Speed (mph)", ["EDGE Top Speed"])
+        _chart("EDGE Speed Bursts (20+ mph)", ["EDGE Bursts 20+"])
+        _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])
 
 
 # ===========================================================================
@@ -2426,11 +2526,10 @@ PLAYER_FAMILY_COLS = {
     "Zone Impact": ["DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI"],
     # NHL EDGE tracking — a separate basis than NZI/DZI/OZI (player-position,
     # all-situations/EV tracking vs strict 5v5 faceoff-started PBP). See
-    # edge/README.md.
-    "EDGE": ["EDGE OZ%", "EDGE OZ %ile", "EDGE OZ% (EV)", "EDGE OZ %ile (EV)",
-             "EDGE NZ%", "EDGE NZ %ile", "EDGE DZ%", "EDGE DZ %ile",
-             "EDGE Top Speed", "EDGE Speed %ile", "EDGE Bursts 20+", "EDGE Bursts %ile",
-             "EDGE Distance (mi)", "EDGE Distance %ile"],
+    # edge/README.md. My own D/N/O Start% is repeated here (same columns as
+    # Zone Impact) so EDGE's zone-time% sits directly beside the PBP-based
+    # start split for comparison.
+    "EDGE": _EDGE_VALUE_DISP + ["DZ Start%", "NZ Start%", "OZ Start%"],
 }
 
 
@@ -2536,11 +2635,21 @@ def render_players() -> None:
             f"<b>position</b> (not puck position), across <b>all-situations / even-strength "
             f"TOI</b> (not strict 5v5 faceoff-started shifts). Do not read EDGE zone-time% as "
             f"the same metric as NZI/DZI/OZI or the D/N/O Start% columns — different data "
-            f"source, different definition. Pooled/2yr views are a games-played-weighted "
-            f"average across seasons (including the percentile columns), not NHL's own pooled "
-            f"number — regular season only.</span></div>",
+            f"source, different definition (D/N/O Start% is repeated here from Zone Impact "
+            f"for side-by-side comparison; it's still my PBP data, not EDGE). Each EDGE value "
+            f"shows a computed (league / team) rank, same convention as every other column — "
+            f"not NHL's own percentile. Pooled/2yr views are a games-played-weighted average "
+            f"across seasons — regular season only.</span></div>",
             unsafe_allow_html=True,
         )
+    if "xG" in display_fams:
+        st.session_state.setdefault("players_pdo_scope", "5v5")
+        st.radio("PDO shot scope", list(PDO_SCOPE_FILE.keys()), horizontal=True,
+                 key="players_pdo_scope",
+                 help="Shot scope for PDO only — every other xG-group column stays "
+                      "as-is regardless.")
+        st.caption("The shot-scope toggle applies only to **PDO** — other xG columns "
+                   "are unaffected.")
     with tcol:
         team_opts = ["All"] + _all_teams
         # Picking a team exits any drill-in and clears the player search (the two
@@ -2628,14 +2737,7 @@ def render_players() -> None:
         "xG_QG_pct": "xG-QG%", "NFI_QG_pct": "NFI-QG%",
         "RelNFI_QG_pct": "RelNFI-QG%", "RelxG_QG_pct": "RelxG-QG%",
         "RelxG_pct": "RelxG%", "RelxG_F_pct": "RelxG-F%", "RelxG_A_pct": "RelxG-A%",
-        "oz_time_pct": "EDGE OZ%", "oz_time_pct_percentile": "EDGE OZ %ile",
-        "oz_time_pct_ev": "EDGE OZ% (EV)", "oz_time_pct_ev_percentile": "EDGE OZ %ile (EV)",
-        "nz_time_pct": "EDGE NZ%", "nz_time_pct_percentile": "EDGE NZ %ile",
-        "dz_time_pct": "EDGE DZ%", "dz_time_pct_percentile": "EDGE DZ %ile",
-        "top_skating_speed_mph": "EDGE Top Speed", "top_skating_speed_percentile": "EDGE Speed %ile",
-        "speed_bursts_over_20mph": "EDGE Bursts 20+",
-        "speed_bursts_over_20mph_percentile": "EDGE Bursts %ile",
-        "distance_skated_miles": "EDGE Distance (mi)", "distance_skated_percentile": "EDGE Distance %ile",
+        **_EDGE_REN,
     }
     df = df.rename(columns=_ren)
     rank_cohort = rank_cohort.rename(columns=_ren)
@@ -2649,19 +2751,21 @@ def render_players() -> None:
             "xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI",
-            "EDGE OZ%", "EDGE OZ %ile", "EDGE OZ% (EV)", "EDGE OZ %ile (EV)",
-            "EDGE NZ%", "EDGE NZ %ile", "EDGE DZ%", "EDGE DZ %ile",
-            "EDGE Top Speed", "EDGE Speed %ile", "EDGE Bursts 20+", "EDGE Bursts %ile",
-            "EDGE Distance (mi)", "EDGE Distance %ile"]
+            *_EDGE_VALUE_DISP]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
     # Metric-family display: identity columns (no family) always show; a family's
     # columns show only when that family is selected. Nothing selected = identity
-    # columns only.
-    _fam_of = {col: fam for fam, fcols in PLAYER_FAMILY_COLS.items() for col in fcols}
+    # columns only. A column may belong to more than one family (e.g. D/N/O
+    # Start% under both Zone Impact and EDGE) — show it if ANY selected family
+    # claims it.
+    _fam_of = {}
+    for _fam, _fcols in PLAYER_FAMILY_COLS.items():
+        for _col in _fcols:
+            _fam_of.setdefault(_col, set()).add(_fam)
     _shown = set(display_fams)
-    cols = [c for c in cols if _fam_of.get(c) is None or _fam_of.get(c) in _shown]
+    cols = [c for c in cols if not _fam_of.get(c) or _fam_of[c] & _shown]
     disp = df[cols].copy()
 
     fmt = {}
@@ -2689,10 +2793,6 @@ def render_players() -> None:
     for c in ("EDGE OZ%", "EDGE OZ% (EV)", "EDGE NZ%", "EDGE DZ%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x*100:.1f}%"
-    for c in ("EDGE OZ %ile", "EDGE OZ %ile (EV)", "EDGE NZ %ile", "EDGE DZ %ile",
-              "EDGE Speed %ile", "EDGE Bursts %ile", "EDGE Distance %ile"):
-        if c in disp.columns:
-            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x*100:.0f}th"
     if "EDGE Top Speed" in disp.columns:
         fmt["EDGE Top Speed"] = lambda x: "—" if pd.isna(x) else f"{x:.1f} mph"
     if "EDGE Bursts 20+" in disp.columns:
@@ -2709,7 +2809,8 @@ def render_players() -> None:
                     "NFI-S/60", "NZI", "DZI", "OZI",
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
                     "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
-                    "xG-QG-F%", "xG-QG-A%", "NFI-QG-A%", "NFI-QG-S%"]
+                    "xG-QG-F%", "xG-QG-A%", "NFI-QG-A%", "NFI-QG-S%",
+                    *_EDGE_VALUE_DISP]
     # lower value = better (rank ascending): shots/xG against
     _lower = {"NFI-S/60", "xGA/60", "RelxG-A%"}
     # Second bracket number = within-team rank. With a team selected, rank within
