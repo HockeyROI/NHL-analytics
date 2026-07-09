@@ -1236,7 +1236,12 @@ def _xg_onice_rates(scope_key: str, playoffs: bool = False) -> pd.DataFrame:
     ok = g["_toi"] > 0
     g["xGF/60"] = np.where(ok, g["_xgf"] / g["_toi"] * 3600.0, np.nan)
     g["xGA/60"] = np.where(ok, g["_xga"] / g["_toi"] * 3600.0, np.nan)
-    return g[["player_id", "xGF/60", "xGA/60"]]
+    # Raw on-ice xG share (xGF% = xGF / (xGF + xGA)) — NOT RelxG%, which is
+    # relative to teammates. This is the plain Corsi%-style share, same
+    # pattern as NFI% alongside RelNFI%.
+    _tot = g["_xgf"] + g["_xga"]
+    g["xG%"] = np.where(_tot > 0, g["_xgf"] / _tot * 100.0, np.nan)
+    return g[["player_id", "xGF/60", "xGA/60", "xG%"]]
 
 
 # Quality-Games For/Against split (built by 03_quality_game_for_against.py): the
@@ -1466,7 +1471,9 @@ def _player_trend(pid: int) -> pd.DataFrame:
             _ok = xg["_toi"] > 0
             xg["xGF/60"] = np.where(_ok, xg["_xgf"] / xg["_toi"] * 3600.0, np.nan)
             xg["xGA/60"] = np.where(_ok, xg["_xga"] / xg["_toi"] * 3600.0, np.nan)
-            trend = trend.merge(xg[["season", "xGF/60", "xGA/60"]],
+            _tot = xg["_xgf"] + xg["_xga"]
+            xg["xG%"] = np.where(_tot > 0, xg["_xgf"] / _tot * 100.0, np.nan)
+            trend = trend.merge(xg[["season", "xGF/60", "xGA/60", "xG%"]],
                                 on="season", how="outer")
 
     # PDO (SOG-based; scope follows the shared 5v5/all-situations toggle) per season.
@@ -1694,7 +1701,7 @@ _P2YR_MAP = {"NFI%": "NFI_pct", "RelNFI%": "RelNFI_pct", "RelNFI-A%": "RelNFI_F_
              # xG family + QG For/Against — the 2yr frame carries these under their
              # display names (or storage names for RelxG-F/A).
              "RelxG-F%": "RelxG_F_pct", "RelxG-A%": "RelxG_A_pct",
-             "xGF/60": "xGF/60", "xGA/60": "xGA/60",
+             "xGF/60": "xGF/60", "xGA/60": "xGA/60", "xG%": "xG%",
              "xG-QG-F%": "xG-QG-F%", "xG-QG-A%": "xG-QG-A%",
              "NFI-QG-A%": "NFI-QG-A%", "NFI-QG-S%": "NFI-QG-S%",
              "PDO": "PDO",
@@ -1728,7 +1735,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     zone_cols = ["DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI"]
     qg_cols = ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
                "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%"]
-    xg_cols = ["xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO"]
+    xg_cols = ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO"]
     edge_cols = _EDGE_VALUE_DISP
     metric_cols = [c for c in qg_cols + xg_cols + share_cols + rate_cols + zone_cols + edge_cols
                    if c in trend.columns]
@@ -1758,6 +1765,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
         _b[c] = lambda v: f"{v:.1f}%"
     for c in ("xGF/60", "xGA/60"):
         _b[c] = lambda v: f"{v:.2f}"
+    _b["xG%"] = lambda v: f"{v:.1f}%"
     _b["PDO"] = lambda v: f"{v:.1f}"
     for c in ("EDGE OZ%", "EDGE OZ% (EV)", "EDGE NZ%", "EDGE DZ%"):
         _b[c] = lambda v: f"{v * 100:.1f}%"
@@ -2483,13 +2491,13 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                         f"Scatters</h3>", unsafe_allow_html=True)
             st.caption(f"Auto-scoped to **{_my_team}** (this player's team) — shown regardless of "
                        "which metric families are selected above.")
-            if {"PDO", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
+            if {"PDO", "xG%"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs "
-                            f"xG Diff/60</h4>", unsafe_allow_html=True)
+                            f"xG%</h4>", unsafe_allow_html=True)
                 _pdo_xg_scatter(_team_frame, True, dl_suffix="-drill")
-            if {"NFI%", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
+            if {"NFI%", "xG%"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
-                            f"xG Diff/60</h4>", unsafe_allow_html=True)
+                            f"xG%</h4>", unsafe_allow_html=True)
                 _nfi_xg_scatter(_team_frame, True, dl_suffix="-drill")
             if {"EDGE DZ%", "EDGE OZ%"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
@@ -2499,17 +2507,17 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
                             f"vs O-Zone</h4>", unsafe_allow_html=True)
                 _zone_start_scatter(_team_frame, True, dl_suffix="-drill")
-            if {"EDGE Distance/min", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
+            if {"EDGE Distance/min", "xG%"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance/min "
-                            f"vs xG Diff/60</h4>", unsafe_allow_html=True)
+                            f"vs xG%</h4>", unsafe_allow_html=True)
                 _edge_distance_xg_scatter(_team_frame, True, dl_suffix="-drill")
-            if {"EDGE Bursts 20+", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
+            if {"EDGE Bursts 20+", "xG%"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
-                            f"vs xG Diff/60</h4>", unsafe_allow_html=True)
+                            f"vs xG%</h4>", unsafe_allow_html=True)
                 _edge_bursts_xg_scatter(_team_frame, True, dl_suffix="-drill")
-            if {"EDGE Top Speed", "xGF/60", "xGA/60"}.issubset(_team_frame.columns):
+            if {"EDGE Top Speed", "xG%"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Top Speed vs "
-                            f"xG Diff/60</h4>", unsafe_allow_html=True)
+                            f"xG%</h4>", unsafe_allow_html=True)
                 _edge_topspeed_xg_scatter(_team_frame, True, dl_suffix="-drill")
             if {"EDGE Distance/min", "TOI"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance/min "
@@ -2738,7 +2746,7 @@ PLAYER_FAMILY_COLS = {
     "Quality Games": ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
                       "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%"],
     # xG = the raw + relative expected-goals rate metrics (split out of QG).
-    "xG": ["xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO"],
+    "xG": ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO"],
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
     "Zone Impact": ["DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI"],
@@ -2829,20 +2837,18 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
 
 def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
     import altair as alt
-    if not {"PDO", "xGF/60", "xGA/60"}.issubset(df.columns):
+    if not {"PDO", "xG%"}.issubset(df.columns):
         return
-    d = df.copy()
-    d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     rule100 = alt.Chart(pd.DataFrame({"y": [100]})).mark_rule(
         color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
     _scatter_with_labels(
-        d, "xG Diff/60", "PDO", "xG Diff/60", "PDO",
-        f"pdo-vs-xg-differential{dl_suffix}",
+        df, "xG%", "PDO", "xG%", "PDO",
+        f"pdo-vs-xg-pct{dl_suffix}",
         "**Descriptive luck lens — not a ranking.** PDO (my 5v5 shot-events "
-        "computation) against xG differential (MoneyPuck-derived). Above the dashed "
-        "PDO=100 line = running hot; below = running cold. Color = **OZ Start%** "
-        "(my PBP data), team-scoped views only — light = easier/more sheltered zone "
-        "starts, dark = harder.",
+        "computation) against raw on-ice xG% (xGF / (xGF+xGA), MoneyPuck-derived). "
+        "Above the dashed PDO=100 line = running hot; below = running cold. Color = "
+        "**OZ Start%** (my PBP data), team-scoped views only — light = easier/more "
+        "sheltered zone starts, dark = harder.",
         team_scoped, extra_layer=rule100, color_col="OZ Start%",
         color_title="OZ Start% (light = easier, dark = harder)")
 
@@ -2884,14 +2890,12 @@ def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
 
 
 def _edge_distance_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
-    if not {"EDGE Distance/min", "xGF/60", "xGA/60"}.issubset(df.columns):
+    if not {"EDGE Distance/min", "xG%"}.issubset(df.columns):
         return
-    d = df.copy()
-    d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     _scatter_with_labels(
-        d, "xG Diff/60", "EDGE Distance/min", "xG Diff/60",
+        df, "xG%", "EDGE Distance/min", "xG%",
         "Distance Skated (mi/min)", f"EDGE-distance-per-min-vs-xg{dl_suffix}",
-        "**Source: NHL EDGE tracking** (distance/min) vs xG differential "
+        "**Source: NHL EDGE tracking** (distance/min) vs raw on-ice xG% "
         "(MoneyPuck-derived), one point per player. EDGE distance is all-"
         "situations while minutes played is ES-only, so this rate is an "
         "approximation.",
@@ -2899,27 +2903,23 @@ def _edge_distance_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: st
 
 
 def _edge_bursts_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
-    if not {"EDGE Bursts 20+", "xGF/60", "xGA/60"}.issubset(df.columns):
+    if not {"EDGE Bursts 20+", "xG%"}.issubset(df.columns):
         return
-    d = df.copy()
-    d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     _scatter_with_labels(
-        d, "xG Diff/60", "EDGE Bursts 20+", "xG Diff/60",
+        df, "xG%", "EDGE Bursts 20+", "xG%",
         "Speed Bursts (20+ mph)", f"EDGE-bursts-vs-xg{dl_suffix}",
-        "**Source: NHL EDGE tracking** (speed bursts) vs xG differential (MoneyPuck-"
+        "**Source: NHL EDGE tracking** (speed bursts) vs raw on-ice xG% (MoneyPuck-"
         "derived), one point per player.",
         team_scoped)
 
 
 def _edge_topspeed_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
-    if not {"EDGE Top Speed", "xGF/60", "xGA/60"}.issubset(df.columns):
+    if not {"EDGE Top Speed", "xG%"}.issubset(df.columns):
         return
-    d = df.copy()
-    d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     _scatter_with_labels(
-        d, "xG Diff/60", "EDGE Top Speed", "xG Diff/60",
+        df, "xG%", "EDGE Top Speed", "xG%",
         "Top Speed (mph)", f"EDGE-topspeed-vs-xg{dl_suffix}",
-        "**Source: NHL EDGE tracking** (top speed) vs xG differential (MoneyPuck-"
+        "**Source: NHL EDGE tracking** (top speed) vs raw on-ice xG% (MoneyPuck-"
         "derived), one point per player.",
         team_scoped)
 
@@ -2938,14 +2938,12 @@ def _edge_distance_toi_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: s
 
 def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
     import altair as alt
-    if not {"NFI%", "xGF/60", "xGA/60"}.issubset(df.columns):
+    if not {"NFI%", "xG%"}.issubset(df.columns):
         return
-    d = df.copy()
-    d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
     _scatter_with_labels(
-        d, "xG Diff/60", "NFI%", "xG Diff/60", "NFI%",
-        f"nfi-vs-xg-differential{dl_suffix}",
-        "Net-Front Impact share vs xG differential (MoneyPuck-derived), one point "
+        df, "xG%", "NFI%", "xG%", "NFI%",
+        f"nfi-vs-xg-pct{dl_suffix}",
+        "Net-Front Impact share vs raw on-ice xG% (MoneyPuck-derived), one point "
         "per player. Color = **OZ Start%** (my PBP data), team-scoped views only — "
         "light = easier/more sheltered zone starts, dark = harder.",
         team_scoped, color_col="OZ Start%",
@@ -3177,7 +3175,7 @@ def render_players() -> None:
     cols = ["Player", "Pos", "Team", "GP", "TOI",
             "xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
             "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
-            "xGF/60", "xGA/60", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO",
+            "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI",
             *_EDGE_VALUE_DISP]
@@ -3211,6 +3209,8 @@ def render_players() -> None:
     for c in ("xGF/60", "xGA/60"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    if "xG%" in disp.columns:
+        fmt["xG%"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
     if "PDO" in disp.columns:
         fmt["PDO"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     for c in ("NZI", "DZI", "OZI"):
@@ -3316,13 +3316,13 @@ def render_players() -> None:
     # which metric-family pills are toggled. Only genuine data-availability
     # gates remain (e.g. is_pooled for Start%, since that data has no
     # per-season cut).
-    if {"PDO", "xGF/60", "xGA/60"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG Diff/60</h4>",
+    if {"PDO", "xG%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG%</h4>",
                     unsafe_allow_html=True)
         _pdo_xg_scatter(df, _team_scoped)
 
-    if {"NFI%", "xGF/60", "xGA/60"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG Diff/60</h4>",
+    if {"NFI%", "xG%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG%</h4>",
                     unsafe_allow_html=True)
         _nfi_xg_scatter(df, _team_scoped)
 
@@ -3342,19 +3342,19 @@ def render_players() -> None:
                    "per-season cut (pooled faceoff data only). Switch the **Season** "
                    "filter above to **2yr / 3yr / 4yr** to see this chart.")
 
-    if {"EDGE Distance/min", "xGF/60", "xGA/60"}.issubset(df.columns):
+    if {"EDGE Distance/min", "xG%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Distance/min vs "
-                    f"xG Diff/60</h4>", unsafe_allow_html=True)
+                    f"xG%</h4>", unsafe_allow_html=True)
         _edge_distance_xg_scatter(df, _team_scoped)
 
-    if {"EDGE Bursts 20+", "xGF/60", "xGA/60"}.issubset(df.columns):
+    if {"EDGE Bursts 20+", "xG%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts vs "
-                    f"xG Diff/60</h4>", unsafe_allow_html=True)
+                    f"xG%</h4>", unsafe_allow_html=True)
         _edge_bursts_xg_scatter(df, _team_scoped)
 
-    if {"EDGE Top Speed", "xGF/60", "xGA/60"}.issubset(df.columns):
+    if {"EDGE Top Speed", "xG%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Top Speed vs "
-                    f"xG Diff/60</h4>", unsafe_allow_html=True)
+                    f"xG%</h4>", unsafe_allow_html=True)
         _edge_topspeed_xg_scatter(df, _team_scoped)
 
     if {"EDGE Distance/min", "TOI"}.issubset(df.columns):
