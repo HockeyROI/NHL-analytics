@@ -3791,7 +3791,8 @@ def _goalie_gsax_bar(row) -> None:
     _show_chart(alt.hconcat(*panels, spacing=110), dl_name=f"Goalie-GSAx-{row['Season']}")
 
 
-def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) -> None:
+def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True,
+                           season_label: str = None) -> None:
     """Per-season trend table + line charts for one goalie."""
     qg_label = "sQS%"
     disp, trend, metric_cols = _goalie_profile_table(gid, qg_scope_suffix, qg_starter)
@@ -3835,7 +3836,14 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
     if _bar_cols:
         _bt = trend.dropna(subset=_bar_cols, how="all")
         if not _bt.empty:
-            _row = _bt.iloc[-1]
+            # Default to the globally-selected Season filter (same pattern as the
+            # Player List bar chart's _default_qg_year) instead of always the
+            # latest row — previously hardcoded to iloc[-1], so the bars never
+            # changed when the Season filter changed.
+            _bt_seasons = _bt["Season"].astype(str).tolist()
+            _yr = _default_qg_year(season_label, _bt_seasons)
+            _match = _bt[_bt["Season"].astype(str) == str(_yr)]
+            _row = _match.iloc[0] if len(_match) else _bt.iloc[-1]
             _svb = (load_nfi_sv_baseline().get(str(int(_row["season"])))
                     if pd.notna(_row.get("season")) else None)
             _goalie_consistency_bar(_row, qg_label, _svb)
@@ -4129,7 +4137,7 @@ def render_goalies() -> None:
         if playoffs:
             _render_goalie_playoff_summary(int(gid), qg_scope_suffix, qg_starter)
         else:
-            _render_goalie_profile(int(gid), qg_scope_suffix, qg_starter)
+            _render_goalie_profile(int(gid), qg_scope_suffix, qg_starter, season_label)
 
     if goalie_pick is not None:
         st.session_state["_gl_drill"] = None     # an explicit search overrides a click
