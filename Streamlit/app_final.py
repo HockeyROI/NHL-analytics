@@ -1067,7 +1067,6 @@ def load_edge_player_season() -> pd.DataFrame:
 
 
 _EDGE_COLS = ["oz_time_pct", "oz_time_pct_percentile",
-              "oz_time_pct_ev", "oz_time_pct_ev_percentile",
               "nz_time_pct", "nz_time_pct_percentile",
               "dz_time_pct", "dz_time_pct_percentile",
               "top_skating_speed_mph", "top_skating_speed_percentile",
@@ -1078,7 +1077,6 @@ _EDGE_COLS = ["oz_time_pct", "oz_time_pct_percentile",
 # the per-player drill-in trend, so both stay in sync.
 _EDGE_REN = {
     "oz_time_pct": "EDGE OZ%", "oz_time_pct_percentile": "EDGE OZ %ile",
-    "oz_time_pct_ev": "EDGE OZ% (EV)", "oz_time_pct_ev_percentile": "EDGE OZ %ile (EV)",
     "nz_time_pct": "EDGE NZ%", "nz_time_pct_percentile": "EDGE NZ %ile",
     "dz_time_pct": "EDGE DZ%", "dz_time_pct_percentile": "EDGE DZ %ile",
     "top_skating_speed_mph": "EDGE Top Speed", "top_skating_speed_percentile": "EDGE Speed %ile",
@@ -1092,6 +1090,19 @@ _EDGE_REN = {
 _EDGE_VALUE_RAW = [c for c in _EDGE_COLS if "percentile" not in c]
 _EDGE_VALUE_DISP = [_EDGE_REN[c] for c in _EDGE_VALUE_RAW]
 
+# EDGE OZ%-scope toggle — the ONLY EDGE stat with an even-strength split from
+# NHL is offensive-zone time; NZ%/DZ% have just the one (all-situations)
+# number no matter what, since that's all the API publishes for those two.
+_EDGE_OZ_SCOPE_COL = {"Even Strength": ("oz_time_pct_ev", "oz_time_pct_ev_percentile"),
+                      "All Situations": ("oz_time_pct", "oz_time_pct_percentile")}
+
+
+def _edge_toggle_state() -> str:
+    """Shared EDGE OZ% scope toggle state (set by the widget in
+    render_players, read here so it applies wherever EDGE is computed this
+    run — same shared-session-state pattern as _pdo_toggle_state)."""
+    return st.session_state.get("players_edge_scope", "All Situations")
+
 
 def _edge_rate(scope_key: str) -> pd.DataFrame:
     """EDGE tracking columns for one scope. Single seasons return that
@@ -1104,6 +1115,10 @@ def _edge_rate(scope_key: str) -> pd.DataFrame:
     g = load_edge_player_season()
     if g.empty:
         return pd.DataFrame()
+    g = g.copy()
+    _oz_col, _oz_pct_col = _EDGE_OZ_SCOPE_COL[_edge_toggle_state()]
+    g["oz_time_pct"] = g[_oz_col]
+    g["oz_time_pct_percentile"] = g[_oz_pct_col]
     if scope_key == "pooled":
         sub = g[g["season"].isin(POOLED_SEASONS)].copy()
     elif scope_key == "pooled_2yr":
@@ -1409,6 +1424,9 @@ def _player_trend(pid: int) -> pd.DataFrame:
         ea = edge_season[(edge_season["player_id"] == pid)
                           & (edge_season["season"].isin(PROFILE_SEASONS))].copy()
         if not ea.empty:
+            _oz_col, _oz_pct_col = _EDGE_OZ_SCOPE_COL[_edge_toggle_state()]
+            ea["oz_time_pct"] = ea[_oz_col]
+            ea["oz_time_pct_percentile"] = ea[_oz_pct_col]
             ea = ea[["season"] + _EDGE_VALUE_RAW].rename(columns=_EDGE_REN)
             trend = trend.merge(ea, on="season", how="outer")
 
@@ -1571,6 +1589,9 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
     if not edge.empty:
         edge = edge.copy()
         edge["season"] = edge["season"].astype(str)
+        _oz_col, _oz_pct_col = _EDGE_OZ_SCOPE_COL[_edge_toggle_state()]
+        edge["oz_time_pct"] = edge[_oz_col]
+        edge["oz_time_pct_percentile"] = edge[_oz_pct_col]
         for raw_c in _EDGE_VALUE_RAW:
             disp_c = _EDGE_REN[raw_c]
             if raw_c not in edge.columns:
@@ -2292,7 +2313,16 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                    if any(pd.notna(v) for v in _player_qg_vals(pid, trend, s).values())]
             if _wd:
                 _yr = _wd[-1]
-    _qg_bar_chart(_player_qg_vals(pid, trend, _yr), _yr)
+    _all_qg_vals = _player_qg_vals(pid, trend, _yr)
+    _nfi_vals = {m: v for m, v in _all_qg_vals.items() if m in _QG_LINE_ORDER_NFI}
+    _xg_vals = {m: v for m, v in _all_qg_vals.items() if m in _QG_LINE_ORDER_XG}
+    _qg_bar_chart(_nfi_vals, _yr,
+                 caption=f"**{_yr}** — **NFI** Quality Games % vs the **50% baseline**.",
+                 dl_prefix="QG-bars-NFI")
+    _qg_bar_chart(_xg_vals, _yr,
+                 caption=f"**{_yr}** — **xG (MoneyPuck)** Quality Games % vs the "
+                         "**50% baseline**.",
+                 dl_prefix="QG-bars-xG")
     st.caption("↕ Click a different year (or the 2yr row) above to change the bars.")
 
     def _chart(title: str, cols: list[str], ydomain=None) -> None:
@@ -2678,6 +2708,14 @@ def render_players() -> None:
             f"— regular season only.</span></div>",
             unsafe_allow_html=True,
         )
+        st.session_state.setdefault("players_edge_scope", "All Situations")
+        st.radio("EDGE OZ% scope", list(_EDGE_OZ_SCOPE_COL.keys()), horizontal=True,
+                 key="players_edge_scope",
+                 help="Scope for EDGE OZ% only — NZ%/DZ% always show their one "
+                      "available (all-situations) number; NHL doesn't publish an "
+                      "even-strength split for those two.")
+        st.caption("The scope toggle applies only to **EDGE OZ%** — NZ%/DZ% have no "
+                   "even-strength variant from NHL, so they're unaffected.")
     if "xG" in display_fams:
         st.session_state.setdefault("players_pdo_scope", "5v5")
         st.radio("PDO shot scope", list(PDO_SCOPE_FILE.keys()), horizontal=True,
