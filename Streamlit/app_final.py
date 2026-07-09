@@ -731,9 +731,11 @@ def render_methodology() -> None:
             "neutral / defensive-zone time share, top skating speed, 20+ mph speed-burst count, and "
             "distance skated. A <b>different measurement basis</b> than the zone metrics above: EDGE "
             "tracks continuously across all-situations or even-strength TOI (toggle-able for OZ%); "
-            "NZI/DZI/OZI track puck position after strict-5v5 faceoffs only. Each EDGE value shows a "
-            "computed (league / team) rank rather than NHL's own percentile, matching every other "
-            "ranked column in the app.",
+            "NZI/DZI/OZI and D/N/O Start% track puck/faceoff position after strict-5v5 faceoffs only "
+            "— do not read EDGE zone-time% as the same metric as those, different data source and "
+            "definition. Each EDGE value shows a computed (league / team) rank rather than NHL's own "
+            "percentile, matching every other ranked column in the app. Pooled/2yr views are a "
+            "games-played-weighted average across seasons — regular season only.",
         )
         + _meth_framework(
             "Referees",
@@ -2403,9 +2405,11 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         return
     _show_fams = set(families) if families else set(PLAYER_FAMILY_COLS)
     cohort = "all skaters"
+    nfi = load_nfi_player()
+    _prow_any = nfi[nfi["player_id"] == int(pid)] if not nfi.empty else nfi
+    _highlight_name = _prow_any["player_name"].iloc[0] if len(_prow_any) else None
     if same_pos:
-        nfi = load_nfi_player()
-        prow = nfi[nfi["player_id"] == int(pid)] if not nfi.empty else nfi
+        prow = _prow_any
         if len(prow):
             cohort = "defense" if str(prow["position"].iloc[0]) == "D" else "forwards"
     if team:
@@ -2528,23 +2532,23 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             if {"PDO", "xG%"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs "
                             f"xG%</h4>", unsafe_allow_html=True)
-                _pdo_xg_scatter(_team_frame, True, dl_suffix="-drill")
+                _pdo_xg_scatter(_team_frame, True, dl_suffix="-drill", highlight_name=_highlight_name)
             if {"NFI%", "xG%"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
                             f"xG%</h4>", unsafe_allow_html=True)
-                _nfi_xg_scatter(_team_frame, True, dl_suffix="-drill")
+                _nfi_xg_scatter(_team_frame, True, dl_suffix="-drill", highlight_name=_highlight_name)
             if {"EDGE DZ%", "EDGE OZ%"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
                             f"O-Zone Time%</h4>", unsafe_allow_html=True)
-                _edge_zone_scatter(_team_frame, True, dl_suffix="-drill")
+                _edge_zone_scatter(_team_frame, True, dl_suffix="-drill", highlight_name=_highlight_name)
             if {"DZ Start%", "OZ Start%"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
                             f"vs O-Zone</h4>", unsafe_allow_html=True)
-                _zone_start_scatter(_team_frame, True, dl_suffix="-drill")
+                _zone_start_scatter(_team_frame, True, dl_suffix="-drill", highlight_name=_highlight_name)
             if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_team_frame.columns):
                 st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
                             f"vs Top Speed</h4>", unsafe_allow_html=True)
-                _edge_speed_scatter(_team_frame, True, dl_suffix="-drill")
+                _edge_speed_scatter(_team_frame, True, dl_suffix="-drill", highlight_name=_highlight_name)
 
 
 # ===========================================================================
@@ -2843,7 +2847,7 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
                          y_title: str, dl_name: str, caption: str,
                          team_scoped: bool, name_col: str = "Player",
                          extra_layer=None, color_col: str = None,
-                         color_title: str = None) -> None:
+                         color_title: str = None, highlight_name: str = None) -> None:
     """Shared scatter renderer for the 5 team-scatter charts: tight (non-zero)
     axis domains so points aren't clustered in a corner, player-name labels
     shown directly ONLY when team_scoped (a small, readable point count) —
@@ -2853,7 +2857,10 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
     (easy) -> dark (hard) color gradient by a 3rd metric — team-scoped views
     ONLY (league-wide always plain blue dots, since a color legend across
     hundreds of points isn't readable); silently falls back to plain dots if
-    that column isn't available for the current scope."""
+    that column isn't available for the current scope. highlight_name
+    (optional): the searched/drilled-into player's full name — their label
+    renders bold and slightly larger so they're easy to pick out among
+    teammates."""
     import altair as alt
     d = df.dropna(subset=[x_col, y_col]).copy()
     if d.empty:
@@ -2888,17 +2895,36 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
     chart = points + extra_layer if extra_layer is not None else points
     if team_scoped:
         d["_label"] = d[name_col].astype(str).str.split().str[-1]
-        labels = alt.Chart(d).mark_text(align="left", dx=6, dy=-6, fontSize=10,
-                                        color=PALETTE["orange"]).encode(
-            x=alt.X(f"{x_col}:Q", scale=alt.Scale(domain=_xdom, zero=False)),
-            y=alt.Y(f"{y_col}:Q", scale=alt.Scale(domain=_ydom, zero=False)),
-            text="_label:N",
-        )
-        chart = chart + labels
+        _is_hl = (highlight_name is not None) and (d[name_col] == highlight_name).any()
+        if _is_hl:
+            _hl = d[d[name_col] == highlight_name]
+            _rest = d[d[name_col] != highlight_name]
+            labels = alt.Chart(_rest).mark_text(align="left", dx=6, dy=-6, fontSize=10,
+                                                color=PALETTE["orange"]).encode(
+                x=alt.X(f"{x_col}:Q", scale=alt.Scale(domain=_xdom, zero=False)),
+                y=alt.Y(f"{y_col}:Q", scale=alt.Scale(domain=_ydom, zero=False)),
+                text="_label:N",
+            )
+            hl_label = alt.Chart(_hl).mark_text(align="left", dx=7, dy=-7, fontSize=13,
+                                                fontWeight="bold",
+                                                color=PALETTE["orange"]).encode(
+                x=alt.X(f"{x_col}:Q", scale=alt.Scale(domain=_xdom, zero=False)),
+                y=alt.Y(f"{y_col}:Q", scale=alt.Scale(domain=_ydom, zero=False)),
+                text="_label:N",
+            )
+            chart = chart + labels + hl_label
+        else:
+            labels = alt.Chart(d).mark_text(align="left", dx=6, dy=-6, fontSize=10,
+                                            color=PALETTE["orange"]).encode(
+                x=alt.X(f"{x_col}:Q", scale=alt.Scale(domain=_xdom, zero=False)),
+                y=alt.Y(f"{y_col}:Q", scale=alt.Scale(domain=_ydom, zero=False)),
+                text="_label:N",
+            )
+            chart = chart + labels
     _show_chart(chart, dl_name=dl_name)
 
 
-def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
+def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None) -> None:
     import altair as alt
     if not {"PDO", "xG%"}.issubset(df.columns):
         return
@@ -2913,10 +2939,10 @@ def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") ->
         "**OZ Start%** (my PBP data), team-scoped views only — light = easier/more "
         "sheltered zone starts, dark = harder.",
         team_scoped, extra_layer=rule100, color_col="OZ Start%",
-        color_title="OZ Start% (light = easier, dark = harder)")
+        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name)
 
 
-def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
+def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None) -> None:
     if not {"DZ Start%", "OZ Start%"}.issubset(df.columns):
         return
     _scatter_with_labels(
@@ -2924,10 +2950,10 @@ def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
         f"zone-start-scatter{dl_suffix}",
         "**Source: my PBP data** (faceoff-started 5v5 shifts) — D-zone vs "
         "O-zone faceoff-start share, one point per player.",
-        team_scoped)
+        team_scoped, highlight_name=highlight_name)
 
 
-def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
+def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None) -> None:
     if not {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
         return
     _scatter_with_labels(
@@ -2938,10 +2964,10 @@ def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "")
         "scoped views only — light = easier/more sheltered zone starts, dark = "
         "harder.",
         team_scoped, color_col="OZ Start%",
-        color_title="OZ Start% (light = easier, dark = harder)")
+        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name)
 
 
-def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
+def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None) -> None:
     if not {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(df.columns):
         return
     _scatter_with_labels(
@@ -2949,10 +2975,10 @@ def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
         "Speed Bursts (20+ mph)", f"EDGE-speed-burst-vs-top-speed{dl_suffix}",
         "**Source: NHL EDGE tracking** (not my PBP data) — top skating speed vs "
         "20+ mph speed-burst count.",
-        team_scoped)
+        team_scoped, highlight_name=highlight_name)
 
 
-def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
+def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None) -> None:
     import altair as alt
     if not {"NFI%", "xG%"}.issubset(df.columns):
         return
@@ -2963,7 +2989,7 @@ def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") ->
         "per player. Color = **OZ Start%** (my PBP data), team-scoped views only — "
         "light = easier/more sheltered zone starts, dark = harder.",
         team_scoped, color_col="OZ Start%",
-        color_title="OZ Start% (light = easier, dark = harder)")
+        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name)
 
 
 def render_players() -> None:
@@ -3062,21 +3088,6 @@ def render_players() -> None:
             st.caption("↑ Raw DZ/NZ/OZ Start% values only appear in the table below "
                        "once **Zone Impact** (or **EDGE**) is tapped on.")
     if "EDGE" in display_fams:
-        st.markdown(
-            f"<div style='background:{PALETTE['panel']}; border:1px solid {PALETTE['border']}; "
-            f"border-radius:8px; padding:0.6rem 0.9rem; margin-bottom:0.6rem;'>"
-            f"<span style='color:{PALETTE['orange']}; font-weight:700;'>EDGE columns — "
-            f"a DIFFERENT basis than my Zone metrics.</span> "
-            f"<span style='color:{PALETTE['text']};'>NHL EDGE tracking data: measured by player "
-            f"<b>position</b> (not puck position), across <b>all-situations / even-strength "
-            f"TOI</b> (not strict 5v5 faceoff-started shifts). Do not read EDGE zone-time% as "
-            f"the same metric as NZI/DZI/OZI or the D/N/O Start% columns (on Zone Impact) — "
-            f"different data source, different definition. Each EDGE value shows a computed "
-            f"(league / team) rank, same convention as every other column — not NHL's own "
-            f"percentile. Pooled/2yr views are a games-played-weighted average across seasons "
-            f"— regular season only.</span></div>",
-            unsafe_allow_html=True,
-        )
         st.session_state.setdefault("players_edge_scope", "All Situations")
         st.radio("EDGE OZ% scope", list(_EDGE_OZ_SCOPE_COL.keys()), horizontal=True,
                  key="players_edge_scope",
