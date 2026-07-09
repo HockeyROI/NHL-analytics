@@ -2893,7 +2893,8 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
                          y_title: str, dl_name: str, caption: str,
                          team_scoped: bool, name_col: str = "Player",
                          extra_layer=None, color_col: str = None,
-                         color_title: str = None, highlight_name: str = None) -> None:
+                         color_title: str = None, highlight_name: str = None,
+                         domain_df: pd.DataFrame = None) -> None:
     """Shared scatter renderer for the 5 team-scatter charts: tight (non-zero)
     axis domains so points aren't clustered in a corner, player-name labels
     shown directly ONLY when team_scoped (a small, readable point count) —
@@ -2912,8 +2913,15 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
     if d.empty:
         return
     st.caption(caption)
-    _xdom = _tight_domain(d[x_col], pad_frac=0.15, min_pad=1e-6)
-    _ydom = _tight_domain(d[y_col], pad_frac=0.15, min_pad=1e-6)
+    # Axis domain source: by default the plotted points, but when domain_df is
+    # given (e.g. a 2-player trade comparison) scale to the full-league range so
+    # a couple of points aren't zoomed in to a corner — a small real gap (e.g.
+    # two elite skaters' top speed) then reads as small, not exaggerated.
+    _dom = domain_df if (domain_df is not None and not domain_df.empty) else d
+    _xdom = _tight_domain(_dom[x_col].dropna() if x_col in _dom else d[x_col],
+                          pad_frac=0.15, min_pad=1e-6)
+    _ydom = _tight_domain(_dom[y_col].dropna() if y_col in _dom else d[y_col],
+                          pad_frac=0.15, min_pad=1e-6)
     _use_color = (team_scoped and color_col is not None and color_col in d.columns
                   and d[color_col].notna().any())
     _tooltip = [alt.Tooltip(f"{name_col}:N"), alt.Tooltip(f"{x_col}:Q", format=".2f"),
@@ -2970,7 +2978,8 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
     _show_chart(chart, dl_name=dl_name)
 
 
-def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None) -> None:
+def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
+                    domain_df: pd.DataFrame = None) -> None:
     import altair as alt
     if not {"PDO", "xG%"}.issubset(df.columns):
         return
@@ -2985,10 +2994,12 @@ def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", hi
         "**OZ Start%** (my PBP data), team-scoped views only — light = easier/more "
         "sheltered zone starts, dark = harder.",
         team_scoped, extra_layer=rule100, color_col="OZ Start%",
-        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name)
+        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
+        domain_df=domain_df)
 
 
-def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None) -> None:
+def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
+                        domain_df: pd.DataFrame = None) -> None:
     if not {"DZ Start%", "OZ Start%"}.issubset(df.columns):
         return
     _scatter_with_labels(
@@ -2996,10 +3007,11 @@ def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
         f"zone-start-scatter{dl_suffix}",
         "**Source: my PBP data** (faceoff-started 5v5 shifts) — D-zone vs "
         "O-zone faceoff-start share, one point per player.",
-        team_scoped, highlight_name=highlight_name)
+        team_scoped, highlight_name=highlight_name, domain_df=domain_df)
 
 
-def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None) -> None:
+def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
+                       domain_df: pd.DataFrame = None) -> None:
     if not {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
         return
     _scatter_with_labels(
@@ -3010,10 +3022,12 @@ def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "",
         "scoped views only — light = easier/more sheltered zone starts, dark = "
         "harder.",
         team_scoped, color_col="OZ Start%",
-        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name)
+        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
+        domain_df=domain_df)
 
 
-def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None) -> None:
+def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
+                        domain_df: pd.DataFrame = None) -> None:
     if not {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(df.columns):
         return
     _scatter_with_labels(
@@ -3021,10 +3035,11 @@ def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
         "Speed Bursts (20+ mph)", f"EDGE-speed-burst-vs-top-speed{dl_suffix}",
         "**Source: NHL EDGE tracking** (not my PBP data) — top skating speed vs "
         "20+ mph speed-burst count.",
-        team_scoped, highlight_name=highlight_name)
+        team_scoped, highlight_name=highlight_name, domain_df=domain_df)
 
 
-def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None) -> None:
+def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
+                    domain_df: pd.DataFrame = None) -> None:
     import altair as alt
     if not {"NFI%", "xG%"}.issubset(df.columns):
         return
@@ -3035,7 +3050,8 @@ def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", hi
         "per player. Color = **OZ Start%** (my PBP data), team-scoped views only — "
         "light = easier/more sheltered zone starts, dark = harder.",
         team_scoped, color_col="OZ Start%",
-        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name)
+        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
+        domain_df=domain_df)
 
 
 def render_players() -> None:
@@ -4973,42 +4989,50 @@ def render_trade_analyzer() -> None:
     # Raw xG% | Rel xG% side by side in one faceted image. Axis convention
     # matches the leaderboard scatters (xG on x, the paired metric on y).
     if sel:
-        _sf = _team_scatter_frame(season_label or "4yr (2022-2026)")
-        if not _sf.empty:
-            _sf = _sf[_sf["player_id"].isin([int(p) for p in sel])]
+        # Full league-wide frame (unfiltered) drives the axis DOMAINS so a
+        # 2-player comparison is placed in real context — the same axis numbers
+        # the leaderboard/team scatters use — instead of auto-zooming to just the
+        # picked players and exaggerating a small real gap. _sf is the subset
+        # actually plotted.
+        _full = _team_scatter_frame(season_label or "4yr (2022-2026)")
+        _sf = (_full[_full["player_id"].isin([int(p) for p in sel])]
+               if not _full.empty else _full)
         st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>Selected "
                     "Players — Scatters</h3>", unsafe_allow_html=True)
-        st.caption("Only the selected players are plotted. The xG-based scatters show "
-                   "**Raw xG%** vs **Rel xG%** side by side; the others have no "
-                   "relative variant, so they show once.")
+        st.caption("Only the selected players are plotted, but the axes span the full "
+                   "league range (same scale as the leaderboard) so a small real gap "
+                   "isn't exaggerated. The xG-based scatters show **Raw xG%** vs **Rel "
+                   "xG%** side by side; the others have no relative variant.")
         if {"PDO", "xG%", "RelxG%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs "
                         "xG%</h4>", unsafe_allow_html=True)
-            _trade_rawrel_scatter(_sf, "PDO", "PDO", "Trade-PDO-vs-xG")
+            _trade_rawrel_scatter(_sf, "PDO", "PDO", "Trade-PDO-vs-xG", _full)
         if {"NFI%", "xG%", "RelxG%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
                         "xG%</h4>", unsafe_allow_html=True)
-            _trade_rawrel_scatter(_sf, "NFI%", "NFI%", "Trade-NFI-vs-xG")
+            _trade_rawrel_scatter(_sf, "NFI%", "NFI%", "Trade-NFI-vs-xG", _full)
         if {"EDGE DZ%", "EDGE OZ%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: "
                         "D-Zone vs O-Zone Time%</h4>", unsafe_allow_html=True)
-            _edge_zone_scatter(_sf, True, dl_suffix="-trade")
+            _edge_zone_scatter(_sf, True, dl_suffix="-trade", domain_df=_full)
         if {"DZ Start%", "OZ Start%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone "
                         "Starts: D-Zone vs O-Zone</h4>", unsafe_allow_html=True)
-            _zone_start_scatter(_sf, True, dl_suffix="-trade")
+            _zone_start_scatter(_sf, True, dl_suffix="-trade", domain_df=_full)
         if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: "
                         "Speed Bursts vs Top Speed</h4>", unsafe_allow_html=True)
-            _edge_speed_scatter(_sf, True, dl_suffix="-trade")
+            _edge_speed_scatter(_sf, True, dl_suffix="-trade", domain_df=_full)
 
 
 def _trade_rawrel_scatter(df_sel: pd.DataFrame, y_col: str, y_title: str,
-                          dl_name: str) -> None:
+                          dl_name: str, full_df: pd.DataFrame = None) -> None:
     """Faceted Raw xG% | Rel xG% scatter for the selected trade players: x = the
     xG measure (raw xG% left, RelxG% right), y = y_col (PDO or NFI%). Matches the
     leaderboard scatters' xG-on-x orientation. x-scales are independent because
-    raw xG% (~40-60) and RelxG% (~±5) differ hugely; y (PDO or NFI%) is shared."""
+    raw xG% (~40-60) and RelxG% (~±5) differ hugely; y (PDO or NFI%) is shared.
+    full_df (the league-wide frame) sets every axis domain so the picked players
+    sit in real context rather than auto-zoomed to their own span."""
     import altair as alt
     if df_sel is None or df_sel.empty or not {y_col, "xG%", "RelxG%", "Player"}.issubset(df_sel.columns):
         st.caption("No data for the selected players in this scope.")
@@ -5026,9 +5050,31 @@ def _trade_rawrel_scatter(df_sel: pd.DataFrame, y_col: str, y_title: str,
         st.caption("No data for the selected players in this scope.")
         return
     d = pd.DataFrame(rows)
-    base = alt.Chart(d).encode(
+    # League-wide domains: y (shared across facets) set explicitly; x differs per
+    # facet (raw vs rel), so hold each facet's range with transparent anchor
+    # points at the league min/max of that measure (independent-x facets can't
+    # take a single explicit x-domain).
+    _dom = full_df if (full_df is not None and not full_df.empty) else d
+    _ydom = _tight_domain(_dom[y_col].dropna() if y_col in _dom else d["yv"],
+                          pad_frac=0.15, min_pad=1e-6)
+    _anchor_rows = []
+    for meas, col in (("Raw xG%", "xG%"), ("Rel xG%", "RelxG%")):
+        _src = _dom[col].dropna() if col in _dom else d.loc[d["Measure"] == meas, "xv"]
+        _xd = _tight_domain(_src, pad_frac=0.15, min_pad=1e-6)
+        if _xd:
+            _ymid = (_ydom[0] + _ydom[1]) / 2 if _ydom else float(d["yv"].iloc[0])
+            _anchor_rows += [{"Player": "", "yv": _ymid, "Measure": meas, "xv": _xd[0],
+                              "_label": "", "_anchor": True},
+                             {"Player": "", "yv": _ymid, "Measure": meas, "xv": _xd[1],
+                              "_label": "", "_anchor": True}]
+    d["_anchor"] = False
+    d_all = pd.concat([d, pd.DataFrame(_anchor_rows)], ignore_index=True) if _anchor_rows else d
+    base = alt.Chart(d_all).encode(
         x=alt.X("xv:Q", title=None, scale=alt.Scale(zero=False)),
-        y=alt.Y("yv:Q", title=y_title, scale=alt.Scale(zero=False)))
+        y=alt.Y("yv:Q", title=y_title, scale=alt.Scale(domain=_ydom, zero=False)))
+    # Invisible anchor points expand each facet's auto x-domain to the league span.
+    anchors = base.transform_filter("datum._anchor == true").mark_point(opacity=0)
+    base = base.transform_filter("datum._anchor != true")
     pts = base.mark_circle(size=150, opacity=0.8, color=PALETTE["blue"]).encode(
         tooltip=[alt.Tooltip("Player:N"), alt.Tooltip("Measure:N"),
                  alt.Tooltip("xv:Q", format=".2f", title="xG measure"),
@@ -5037,7 +5083,7 @@ def _trade_rawrel_scatter(df_sel: pd.DataFrame, y_col: str, y_title: str,
                          color=PALETTE["orange"]).encode(text="_label:N")
     # Header at the BOTTOM (orient="bottom") so "Raw xG%" / "Rel xG%" sit next to
     # the x-axis they label, rather than reading like a title at the top.
-    chart = (pts + txt).properties(width=340, height=320).facet(
+    chart = (anchors + pts + txt).properties(width=340, height=320).facet(
         column=alt.Column("Measure:N", sort=["Raw xG%", "Rel xG%"], title=None,
                           header=alt.Header(labelFontWeight="bold", labelFontSize=13,
                                             orient="bottom"))
