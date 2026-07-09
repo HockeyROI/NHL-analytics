@@ -2677,12 +2677,16 @@ def _team_scatter_frame(season_label: str, team: str = None) -> pd.DataFrame:
 def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
                          y_title: str, dl_name: str, caption: str,
                          team_scoped: bool, name_col: str = "Player",
-                         extra_layer=None) -> None:
+                         extra_layer=None, size_col: str = None,
+                         size_title: str = None) -> None:
     """Shared scatter renderer for the 4 team-scatter charts: tight (non-zero)
     axis domains so points aren't clustered in a corner, player-name labels
     shown directly ONLY when team_scoped (a small, readable point count) —
     otherwise names are hover-only (league-wide would be unreadable). Dots
-    are always orange, labels always blue — consistent across all 4 charts."""
+    are always orange, labels always blue — consistent across all 4 charts.
+    size_col (optional): bubble size by a 3rd metric (bigger = higher value);
+    silently falls back to a fixed dot size if that column isn't available
+    for the current scope."""
     import altair as alt
     d = df.dropna(subset=[x_col, y_col]).copy()
     if d.empty:
@@ -2690,12 +2694,24 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
     st.caption(caption)
     _xdom = _tight_domain(d[x_col], pad_frac=0.15, min_pad=1e-6)
     _ydom = _tight_domain(d[y_col], pad_frac=0.15, min_pad=1e-6)
-    points = alt.Chart(d).mark_circle(size=90, opacity=0.75, color=PALETTE["orange"]).encode(
-        x=alt.X(f"{x_col}:Q", title=x_title, scale=alt.Scale(domain=_xdom, zero=False)),
-        y=alt.Y(f"{y_col}:Q", title=y_title, scale=alt.Scale(domain=_ydom, zero=False)),
-        tooltip=[alt.Tooltip(f"{name_col}:N"), alt.Tooltip(f"{x_col}:Q", format=".2f"),
-                 alt.Tooltip(f"{y_col}:Q", format=".2f")],
-    )
+    _use_size = size_col is not None and size_col in d.columns and d[size_col].notna().any()
+    _tooltip = [alt.Tooltip(f"{name_col}:N"), alt.Tooltip(f"{x_col}:Q", format=".2f"),
+                alt.Tooltip(f"{y_col}:Q", format=".2f")]
+    if _use_size:
+        _tooltip.append(alt.Tooltip(f"{size_col}:Q", title=size_title or size_col, format=".1f"))
+        points = alt.Chart(d).mark_circle(opacity=0.7, color=PALETTE["orange"]).encode(
+            x=alt.X(f"{x_col}:Q", title=x_title, scale=alt.Scale(domain=_xdom, zero=False)),
+            y=alt.Y(f"{y_col}:Q", title=y_title, scale=alt.Scale(domain=_ydom, zero=False)),
+            size=alt.Size(f"{size_col}:Q", title=size_title or size_col,
+                          scale=alt.Scale(range=[40, 400]), legend=alt.Legend(orient="bottom")),
+            tooltip=_tooltip,
+        )
+    else:
+        points = alt.Chart(d).mark_circle(size=90, opacity=0.75, color=PALETTE["orange"]).encode(
+            x=alt.X(f"{x_col}:Q", title=x_title, scale=alt.Scale(domain=_xdom, zero=False)),
+            y=alt.Y(f"{y_col}:Q", title=y_title, scale=alt.Scale(domain=_ydom, zero=False)),
+            tooltip=_tooltip,
+        )
     chart = points + extra_layer if extra_layer is not None else points
     if team_scoped:
         labels = alt.Chart(d).mark_text(align="left", dx=6, dy=-6, fontSize=10,
@@ -2721,8 +2737,11 @@ def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") ->
         f"pdo-vs-xg-differential{dl_suffix}",
         "**Descriptive luck lens — not a ranking.** PDO (my 5v5 SOG-based shot-events "
         "computation) against xG differential (MoneyPuck-derived). Above the dashed "
-        "PDO=100 line = running hot; below = running cold.",
-        team_scoped, extra_layer=rule100)
+        "PDO=100 line = running hot; below = running cold. Bubble size = **OZ Start%** "
+        "(my PBP data) — bigger bubble = easier/more sheltered zone starts (pooled "
+        "seasons only; fixed-size dot elsewhere).",
+        team_scoped, extra_layer=rule100, size_col="OZ Start%",
+        size_title="OZ Start% (bigger = easier)")
 
 
 def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
@@ -3948,10 +3967,12 @@ def _goalie_consistency_bar(row, qg_label: str, sv_baseline) -> None:
 
 
 def _goalie_gsax_bar(row) -> None:
-    """One-year GSAx bar, its own chart: total (left) and per-60 (right), plotted as
-    the goalie's GSAx MINUS that season's STARTER-tier average — so bars go above/
-    below the starter-average line (blue at 0 = starter avg), not all above 0.
-    NFI-GSAx = net-front, MP-GSAx = all-shot (MoneyPuck)."""
+    """One-year GSAx bar, its own chart: total (left) and per-60 (right). Bars
+    span from that season's STARTER-tier average (not 0) to the goalie's raw
+    GSAx — same y/y2 floating-bar encoding as _goalie_consistency_bar's sQS%
+    bar, so a bar that's just above its starter-avg baseline reads as small,
+    not as "starting from zero". NFI-GSAx = net-front, MP-GSAx = all-shot
+    (MoneyPuck)."""
     import altair as alt
     _avg = load_gsax_league_avg()
     _ssn = str(int(row["season"])) if pd.notna(row.get("season")) else None
@@ -3961,23 +3982,24 @@ def _goalie_gsax_bar(row) -> None:
         for m in metrics:
             if m in row and pd.notna(row[m]):
                 base = _avg.get((_ssn, m), 0.0) if _ssn else 0.0
-                dev = float(row[m]) - base
-                rows.append({"Metric": m, "dev": dev, "raw": float(row[m]),
-                             "avg": base,
-                             "color": _BAR_BLUE_STRONG if dev >= 0 else _BAR_ORG_STRONG})
+                raw = float(row[m])
+                rows.append({"Metric": m, "raw": raw, "avg": base,
+                             "color": _BAR_BLUE_STRONG if raw >= base else _BAR_ORG_STRONG})
         if not rows:
             return None
         d = pd.DataFrame(rows)
         order = [r["Metric"] for r in rows]
+        _vals = [r["raw"] for r in rows] + [r["avg"] for r in rows]
+        _pad = max(0.1, (max(_vals) - min(_vals)) * 0.15) if len(_vals) > 1 else max(0.1, abs(_vals[0]) * 0.2)
+        dom = [min(_vals) - _pad, max(_vals) + _pad]
         bars = alt.Chart(d).mark_bar(size=44).encode(
             x=alt.X("Metric:N", sort=order, axis=alt.Axis(labelAngle=-20, title=None)),
-            y=alt.Y("dev:Q", title=title),
+            y=alt.Y("avg:Q", title=title, scale=alt.Scale(domain=dom)), y2="raw:Q",
             color=alt.Color("color:N", scale=None, legend=None),
             tooltip=["Metric:N", alt.Tooltip("raw:Q", title="GSAx", format=fmt),
-                     alt.Tooltip("avg:Q", title="starter avg", format=fmt),
-                     alt.Tooltip("dev:Q", title="vs avg", format=fmt)])
-        line = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
-            color=_CHART_THIRD, strokeDash=[4, 4]).encode(y="y:Q")
+                     alt.Tooltip("avg:Q", title="starter avg", format=fmt)])
+        cuts = pd.DataFrame({"y": sorted({r["avg"] for r in rows})})
+        line = alt.Chart(cuts).mark_rule(color=_CHART_THIRD, strokeDash=[4, 4]).encode(y="y:Q")
         return (bars + line).properties(width=320, height=300)
 
     total = _panel(["NFI-GSAx", "MP-GSAx"], "GSAx vs starter avg (total)", ".2f")
