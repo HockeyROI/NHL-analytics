@@ -2057,6 +2057,20 @@ def _brand_layer(lift: int = 6):
     return alt.layer(u_h, h_h, r_h, u_f, h_f, r_f)
 
 
+def _strip_tooltips(obj) -> None:
+    """Recursively drop 'tooltip' from every encoding block so charts don't show a
+    hover popup (not needed — the Save button is right below)."""
+    if isinstance(obj, dict):
+        enc = obj.get("encoding")
+        if isinstance(enc, dict):
+            enc.pop("tooltip", None)
+        for v in obj.values():
+            _strip_tooltips(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            _strip_tooltips(v)
+
+
 def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 6) -> None:
     """Render an Altair chart + a 'Save PNG' download button. Non-faceted charts
     carry the two-colour HockeyROI wordmark + site URL embedded inside the plot
@@ -2070,7 +2084,10 @@ def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 
     _cd = chart.to_dict()
     _multi = any(k in _cd for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
     disp = chart if _multi else alt.layer(chart, _brand_layer(brand_lift))
-    st.altair_chart(disp, use_container_width=True)
+    # On-screen: strip hover tooltips (the Save button below covers "more data").
+    _on_screen = disp.to_dict()
+    _strip_tooltips(_on_screen)
+    st.vega_lite_chart(_on_screen, use_container_width=True)
     if _multi:
         _chart_brand(brand_width)
     png = _alt_png(disp.to_json())
