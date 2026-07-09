@@ -2374,6 +2374,33 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         _chart("EDGE Speed Bursts (20+ mph)", ["EDGE Bursts 20+"])
         _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])
 
+    # 3 team scatters — ALWAYS shown here regardless of which family pills are
+    # selected above, auto-scoped to this player's own team, so a drill-in
+    # gives an immediate team-context view without needing the main
+    # leaderboard's own Team filter set.
+    _my_team = None
+    if "Team" in trend.columns:
+        for _t in trend["Team"].dropna().iloc[::-1]:   # most recent season first
+            if isinstance(_t, str) and _t:
+                _my_team = _t.split(" / ")[0]           # traded mid-season: first team listed
+                break
+    if _my_team:
+        _team_frame = _team_scatter_frame(season_label or "4yr (2022-2026)", team=_my_team)
+        if not _team_frame.empty:
+            st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>{_my_team} Team "
+                        f"Scatters</h3>", unsafe_allow_html=True)
+            st.caption(f"Auto-scoped to **{_my_team}** (this player's team) — shown regardless of "
+                       "which metric families are selected above.")
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
+                        f"vs O-Zone</h4>", unsafe_allow_html=True)
+            _zone_start_scatter(_team_frame, True, dl_suffix="-drill")
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG "
+                        f"Differential</h4>", unsafe_allow_html=True)
+            _pdo_xg_scatter(_team_frame, True, dl_suffix="-drill")
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
+                        f"vs Top Speed</h4>", unsafe_allow_html=True)
+            _edge_speed_scatter(_team_frame, True, dl_suffix="-drill")
+
 
 # ===========================================================================
 # Playoff loaders — every producer wrote per playoff season PLUS an
@@ -2598,6 +2625,93 @@ PLAYER_FAMILY_COLS = {
     # under the EDGE pill implies an EDGE-API source it doesn't have.
     "EDGE": _EDGE_VALUE_DISP,
 }
+
+
+def _team_scatter_frame(season_label: str, team: str = None) -> pd.DataFrame:
+    """Player-level frame with everything the 3 team-scatter charts need (PDO,
+    xG, D/N/O Start%, EDGE speed/bursts) — one shared build so the main
+    leaderboard and the drill-in's auto team-scatters use identical data.
+    Optionally filtered to one team."""
+    base, _ = _build_players_frame(season_label)
+    if base.empty:
+        return pd.DataFrame()
+    base = base.rename(columns={"player_name": "Player", "team": "Team"})
+    if team:
+        base = base[base["Team"] == team]
+    return base
+
+
+def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
+                         y_title: str, color: str, dl_name: str, caption: str,
+                         team_scoped: bool, name_col: str = "Player",
+                         extra_layer=None) -> None:
+    """Shared scatter renderer for the 3 team-scatter charts: tight (non-zero)
+    axis domains so points aren't clustered in a corner, player-name labels
+    shown directly ONLY when team_scoped (a small, readable point count) —
+    otherwise names are hover-only (league-wide would be unreadable)."""
+    import altair as alt
+    d = df.dropna(subset=[x_col, y_col]).copy()
+    if d.empty:
+        return
+    st.caption(caption)
+    _xdom = _tight_domain(d[x_col], pad_frac=0.15, min_pad=1e-6)
+    _ydom = _tight_domain(d[y_col], pad_frac=0.15, min_pad=1e-6)
+    points = alt.Chart(d).mark_circle(size=90, opacity=0.75, color=color).encode(
+        x=alt.X(f"{x_col}:Q", title=x_title, scale=alt.Scale(domain=_xdom, zero=False)),
+        y=alt.Y(f"{y_col}:Q", title=y_title, scale=alt.Scale(domain=_ydom, zero=False)),
+        tooltip=[alt.Tooltip(f"{name_col}:N"), alt.Tooltip(f"{x_col}:Q", format=".2f"),
+                 alt.Tooltip(f"{y_col}:Q", format=".2f")],
+    )
+    chart = points + extra_layer if extra_layer is not None else points
+    if team_scoped:
+        labels = alt.Chart(d).mark_text(align="left", dx=6, dy=-6, fontSize=10,
+                                        color=PALETTE["text"]).encode(
+            x=alt.X(f"{x_col}:Q", scale=alt.Scale(domain=_xdom, zero=False)),
+            y=alt.Y(f"{y_col}:Q", scale=alt.Scale(domain=_ydom, zero=False)),
+            text=f"{name_col}:N",
+        )
+        chart = chart + labels
+    _show_chart(chart, dl_name=dl_name)
+
+
+def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
+    import altair as alt
+    if not {"PDO", "xGF/60", "xGA/60"}.issubset(df.columns):
+        return
+    d = df.copy()
+    d["xG Diff/60"] = d["xGF/60"] - d["xGA/60"]
+    rule100 = alt.Chart(pd.DataFrame({"y": [100]})).mark_rule(
+        color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
+    _scatter_with_labels(
+        d, "xG Diff/60", "PDO", "xG Differential /60 (xGF − xGA)", "PDO",
+        PALETTE["blue"], f"pdo-vs-xg-differential{dl_suffix}",
+        "**Descriptive luck lens — not a ranking.** PDO (my 5v5 SOG-based shot-events "
+        "computation) against xG differential (MoneyPuck-derived). Above the dashed "
+        "PDO=100 line = running hot; below = running cold.",
+        team_scoped, extra_layer=rule100)
+
+
+def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
+    if not {"DZ Start%", "OZ Start%"}.issubset(df.columns):
+        return
+    _scatter_with_labels(
+        df, "DZ Start%", "OZ Start%", "DZ Start%", "OZ Start%", PALETTE["orange"],
+        f"zone-start-scatter{dl_suffix}",
+        "**Source: my PBP data** (faceoff-started 5v5 shifts, pooled) — D-zone vs "
+        "O-zone faceoff-start share, one point per player.",
+        team_scoped)
+
+
+def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "") -> None:
+    if not {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(df.columns):
+        return
+    _scatter_with_labels(
+        df, "EDGE Top Speed", "EDGE Bursts 20+", "Top Speed (mph)",
+        "Speed Bursts (20+ mph)", PALETTE["orange"],
+        f"EDGE-speed-burst-vs-top-speed{dl_suffix}",
+        "**Source: NHL EDGE tracking** (not my PBP data) — top skating speed vs "
+        "20+ mph speed-burst count.",
+        team_scoped)
 
 
 def render_players() -> None:
@@ -2952,55 +3066,21 @@ def render_players() -> None:
     )
 
     import altair as alt
-    if "Zone Impact" in _shown and is_pooled and "DZ Start%" in disp.columns:
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone-Start Deployment</h4>",
-                    unsafe_allow_html=True)
-        st.caption("**Source: my PBP data** (faceoff-started 5v5 shifts, pooled) — distribution of "
-                   "D/N/O faceoff-start share across the current filtered player set. Alongside "
-                   "NZI/DZI/OZI above.")
-        dep_long = disp.melt(value_vars=["DZ Start%", "NZ Start%", "OZ Start%"],
-                              var_name="Zone", value_name="Start%")
-        dep_long["Zone"] = dep_long["Zone"].str.replace(" Start%", "", regex=False)
-        hist2 = alt.Chart(dep_long.dropna()).mark_bar(opacity=0.65).encode(
-            x=alt.X("Start%:Q", bin=alt.Bin(maxbins=30), title="Faceoff-Start Share (%)"),
-            y=alt.Y("count():Q", title="Players", stack=None),
-            color=alt.Color("Zone:N", scale=alt.Scale(domain=["DZ", "NZ", "OZ"],
-                             range=[PALETTE["blue"], PALETTE["text_secondary"], PALETTE["orange"]]),
-                             legend=alt.Legend(title=None)),
-        ).properties(height=340)
-        _show_chart(hist2, dl_name="zone-start-deployment-distribution")
+    _team_scoped = team_sel != "All"
+    if "Zone Impact" in _shown and is_pooled and {"DZ Start%", "OZ Start%"}.issubset(disp.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone vs "
+                    f"O-Zone</h4>", unsafe_allow_html=True)
+        _zone_start_scatter(disp, _team_scoped)
 
     if "xG" in _shown and {"PDO", "xGF/60", "xGA/60"}.issubset(disp.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG Differential</h4>",
                     unsafe_allow_html=True)
-        st.caption("**Descriptive luck lens — not a ranking.** PDO (my 5v5 SOG-based shot-events "
-                   "computation) against xG differential (xGF/60 − xGA/60, MoneyPuck-derived). "
-                   "Players above the PDO=100 line are running hot; below are running cold.")
-        diff_df = disp.copy()
-        diff_df["xG Diff/60"] = diff_df["xGF/60"] - diff_df["xGA/60"]
-        scatter2 = alt.Chart(diff_df.dropna(subset=["PDO", "xG Diff/60"])).mark_circle(
-            size=70, opacity=0.7, color=PALETTE["blue"]).encode(
-            x=alt.X("xG Diff/60:Q", title="xG Differential /60 (xGF − xGA)"),
-            y=alt.Y("PDO:Q", title="PDO", scale=alt.Scale(zero=False)),
-            tooltip=["Player:N", alt.Tooltip("xG Diff/60:Q", format="+.2f"), alt.Tooltip("PDO:Q", format=".1f")],
-        ).properties(height=380)
-        rule100 = alt.Chart(pd.DataFrame({"y": [100]})).mark_rule(
-            color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
-        _show_chart(scatter2 + rule100, dl_name="pdo-vs-xg-differential")
+        _pdo_xg_scatter(disp, _team_scoped)
 
     if "EDGE" in _shown and {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(disp.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts vs "
                     f"Top Speed</h4>", unsafe_allow_html=True)
-        st.caption("**Source: NHL EDGE tracking** (not my PBP data) — top skating speed vs 20+ mph "
-                   "speed-burst count, current filtered player set.")
-        edge_sc = disp.dropna(subset=["EDGE Top Speed", "EDGE Bursts 20+"])
-        scatter3 = alt.Chart(edge_sc).mark_circle(size=70, opacity=0.7, color=PALETTE["orange"]).encode(
-            x=alt.X("EDGE Top Speed:Q", title="Top Speed (mph)"),
-            y=alt.Y("EDGE Bursts 20+:Q", title="Speed Bursts (20+ mph)"),
-            tooltip=["Player:N", "Team:N", alt.Tooltip("EDGE Top Speed:Q", format=".1f"),
-                     "EDGE Bursts 20+:Q"],
-        ).properties(height=380)
-        _show_chart(scatter3, dl_name="EDGE-speed-burst-vs-top-speed")
+        _edge_speed_scatter(disp, _team_scoped)
 
     if "EDGE" in _shown and {"EDGE OZ%", "EDGE NZ%", "EDGE DZ%"}.issubset(disp.columns):
         edge_zone_long = disp.melt(value_vars=["EDGE OZ%", "EDGE NZ%", "EDGE DZ%"],
