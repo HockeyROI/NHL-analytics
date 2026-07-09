@@ -5035,9 +5035,12 @@ def _trade_rawrel_scatter(df_sel: pd.DataFrame, y_col: str, y_title: str,
                  alt.Tooltip("yv:Q", format=".3f", title=y_title)])
     txt = base.mark_text(align="left", dx=8, dy=-4, fontSize=12, fontWeight="bold",
                          color=PALETTE["orange"]).encode(text="_label:N")
+    # Header at the BOTTOM (orient="bottom") so "Raw xG%" / "Rel xG%" sit next to
+    # the x-axis they label, rather than reading like a title at the top.
     chart = (pts + txt).properties(width=340, height=320).facet(
         column=alt.Column("Measure:N", sort=["Raw xG%", "Rel xG%"], title=None,
-                          header=alt.Header(labelFontWeight="bold", labelFontSize=13))
+                          header=alt.Header(labelFontWeight="bold", labelFontSize=13,
+                                            orient="bottom"))
         ).resolve_scale(x="independent")
     _show_chart(chart, dl_name=dl_name, brand_width=340 * 2 + 80)
 
