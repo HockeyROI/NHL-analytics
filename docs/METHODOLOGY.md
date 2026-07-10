@@ -313,13 +313,18 @@ Both scripts default to regular-season scope when `QG_SCOPE` is unset; playoff s
 
 ### What Zone Impact measures
 
-Zone Impact is a player-evaluation framework measuring how a player's on-ice deployment after each type of faceoff translates into offensive-zone time. Its three published metrics — DZI, NZI, OZI — are independent lenses, not a hierarchy. A complete player rates well on all three.
+Zone Impact is a player-evaluation framework measuring how a player's on-ice deployment after each type of faceoff translates into offensive-zone time. Its four published metrics — OZI, DZI, NZI, TZI — are independent lenses, not a hierarchy. A complete player rates above average on all four.
 
+- **OZI — Offensive Zone Impact.** Share of offensive-zone time on shifts that begin with an offensive-zone faceoff. Captures whether OZ starts get converted to sustained pressure.
 - **DZI — Defensive Zone Impact.** Share of offensive-zone time on shifts that begin with a defensive-zone faceoff. Captures whether the player escapes their own zone cleanly.
 - **NZI — Neutral Zone Impact.** Share of offensive-zone time on shifts that begin with a neutral-zone faceoff. Captures transition play.
-- **OZI — Offensive Zone Impact.** Share of offensive-zone time on shifts that begin with an offensive-zone faceoff. Captures whether OZ starts get converted to sustained pressure.
+- **TZI — Transitional Zone Impact.** The neutral-zone transition *split*: offensive-zone time **minus** defensive-zone time on shifts that begin with a neutral-zone faceoff. Reads how a player tilts play out of the neutral zone (positive = pushes toward the O-zone, negative = gets pushed back). Internally this is the metric previously labelled TNZI.
 
 Zone Impact metrics are **zone-time share** measures, not shot-differential. The earlier description in this document as "Fenwick-based shot differential" was inaccurate — corrected May 2026 to match what the code computes.
+
+### The 0–100 index (50 = average)
+
+Each metric is published as a **0–100 index where 50 is the position-group league average** — above 50 means more offensive-zone time (or, for TZI, more forward tilt) than an average forward/defenseman, below 50 means less. It is built by taking each player's raw per-shift zone-time percentage and **recentring it on the league-average percentage for their position**: `index = 50 + (player% − league-average%)`, clipped to [0, 100], forwards and defense normalised separately. The natural spread of the underlying (bounded) percentage sets the spread of the index — there is **no artificial stretch** — so most players sit in a tight band around 50 and only genuine outliers approach the extremes, the same way NHL save percentages cluster between roughly .880 and .920 rather than spanning 0–100. Because each scope (single season, 2-year, 4-year pool, playoffs) is recentred on *its own* average, 50 always means "average for that scope." Built by `Zones/scripts/build_zone_index100.py` (regular seasons + pools) and `build_zone_index100_playoffs.py` (playoff pool), reusing the exact V1 event/faceoff-anchor methodology of `compute_zone_variations.py`.
 
 ### Construction
 
@@ -327,16 +332,16 @@ Zone Impact metrics are **zone-time share** measures, not shot-differential. The
 2. Bucket each shift by its starting faceoff zone (NZ, OZ, DZ).
 3. Within each bucket, sum seconds in each zone; compute share of time spent in the offensive zone.
 4. Apply Wilson interval shrinkage to handle small-sample variance.
-5. Position-normalize: rank forwards vs forwards and defense vs defense separately. Rescale to 0–10 within each position group.
+5. Position-normalize each metric within its group (forwards vs forwards, defense vs defense) by recentring on the group's league-average percentage → the 0–100 index (50 = average) described above. (For TZI the underlying quantity is OZ%−DZ% off neutral draws rather than a single zone share.)
 
-### Why three metrics rather than one
+### Why four metrics rather than one
 
 Different deployment contexts produce different ice-tilt patterns for the same player. A defensively-deployed player who excels at DZ exits may have strong DZI but unremarkable OZI; a finisher who feasts on OZ starts may show the inverse profile. Collapsing these into a single "zone-impact" number loses the deployment-specific signal.
 
 ### Sample thresholds
 
-- 50 faceoff-start shifts minimum per metric (NZ-FO for NZI, OZ-FO for OZI, DZ-FO for DZI)
-- 20 games played minimum
+- 50 faceoff-start shifts minimum per metric (NZ-FO for NZI and TZI, OZ-FO for OZI, DZ-FO for DZI)
+- 20 games played minimum (regular-season scopes; the playoff pool waives the GP floor and qualifies on the 50-shift gate alone, since playoff samples are short)
 - Stricter publication floor: 100 GP forwards / 130 GP defense (4-year pooled); 60 GP forwards / 70 GP defense (2-year recent)
 
 ### Linemate adjustment

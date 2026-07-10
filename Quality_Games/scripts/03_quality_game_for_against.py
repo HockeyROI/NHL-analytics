@@ -121,9 +121,52 @@ for _out, _base, _hi, _tie in METRICS:
     log(f"  is_{_out}: flag-rate {np.nanmean(qk[f'is_{_out}']):.3f} "
         f"(valid {int(qk[f'is_{_out}'].notna().sum()):,})")
 
+# ---- Relative (on/off) For/Against QG flags ----
+# Same team-without-player baseline as the overall Rel-QG in step 02, applied to
+# the For / Against per-60 rate rather than the for/(for+ag) share: a game is a
+# positive Rel game when the player's rate beats his OWN TEAM WITHOUT HIM that
+# game (higher for "For", lower for "Against"). Share of positive games is the
+# Rel-QG-For/Against rate, on the same 0-1 scale as the absolute QG splits.
+log()
+log("  Relative (team-without-player, on/off) For/Against flags:")
+_tg = df.groupby(["game_id", "season", "team_abbrev"]).agg(
+    tNFI_for=("NFI_for", lambda x: x.sum() / 5.0),
+    tNFI_ag=("NFI_ag", lambda x: x.sum() / 5.0),
+    txG_for=("xG_for", lambda x: x.sum() / 5.0),
+    txG_ag=("xG_ag", lambda x: x.sum() / 5.0),
+    tTOI=("TOI_on_sec", lambda x: x.sum() / 5.0),
+).reset_index()
+qk = qk.merge(_tg, on=["game_id", "season", "team_abbrev"], how="left")
+_wo_toi = (qk.tTOI - qk.TOI_on_sec).astype(float)
+_TCOL = {"NFI_for": "tNFI_for", "NFI_ag": "tNFI_ag",
+         "xG_for": "txG_for", "xG_ag": "txG_ag"}
+for _out, _base, _hi, _tie in METRICS:
+    wo_num = (qk[_TCOL[_base]] - qk[_base]).astype(float)
+    wo_60 = np.where(_wo_toi > 0, wo_num / _wo_toi * 3600.0, np.nan)
+    rate = qk[f"{_base}_60"].astype(float)
+    invalid = rate.isna().values | np.isnan(wo_60)
+    if _hi:                       # For: higher rate than team-without-me is better
+        if _tie:
+            flag = np.where(invalid, np.nan,
+                    np.where(rate > wo_60, 1.0, np.where(rate == wo_60, 0.5, 0.0)))
+        else:
+            flag = np.where(invalid, np.nan, (rate.values >= wo_60).astype(float))
+    else:                         # Against: lower rate than team-without-me is better
+        if _tie:
+            flag = np.where(invalid, np.nan,
+                    np.where(rate < wo_60, 1.0, np.where(rate == wo_60, 0.5, 0.0)))
+        else:
+            flag = np.where(invalid, np.nan, (rate.values <= wo_60).astype(float))
+    qk[f"is_Rel{_out}"] = flag
+    log(f"  is_Rel{_out}: flag-rate {np.nanmean(qk[f'is_Rel{_out}']):.3f} "
+        f"(valid {int(qk[f'is_Rel{_out}'].notna().sum()):,})")
+
+# Absolute + relative output names share the same aggregation shape.
+OUT_NAMES = [m[0] for m in METRICS] + [f"Rel{m[0]}" for m in METRICS]
+
 # ---- Per (player, season, team) counts ----
 agg_spec = {}
-for _out, _b, _h, _t in METRICS:
+for _out in OUT_NAMES:
     agg_spec[f"{_out}_count"] = (f"is_{_out}", "sum")
     agg_spec[f"{_out}_qual_GP"] = (f"is_{_out}", lambda x: x.notna().sum())
 pst = qk.groupby(["player_id", "season", "team_abbrev"]).agg(**agg_spec).reset_index()
@@ -142,13 +185,13 @@ def _pct(g, out):
 def _player_agg(keys, season_label=None):
     spec = {"GP": ("GP", "sum"), "TOI_total_sec": ("TOI_total_sec", "sum"),
             "position": ("position", lambda x: x.mode().iloc[0] if not x.mode().empty else "")}
-    for _out, _b, _h, _t in METRICS:
+    for _out in OUT_NAMES:
         spec[f"{_out}_count"] = (f"{_out}_count", "sum")
         spec[f"{_out}_qual_GP"] = (f"{_out}_qual_GP", "sum")
     g = pst.groupby(keys).agg(**spec).reset_index()
     if season_label is not None:
         g["season"] = season_label
-    for _out, _b, _h, _t in METRICS:
+    for _out in OUT_NAMES:
         g[f"{_out}_pct"] = _pct(g, _out)
     return g
 
@@ -158,11 +201,11 @@ if _IS_PLAYOFF:
     ps = pd.concat([ps, _player_agg(["player_id"], "all_playoffs")], ignore_index=True)
 ps = ps[ps.position.isin(["F", "D"])].copy()
 
-_pcols = [f"{_out}_pct" for _out, _b, _h, _t in METRICS]
+_pcols = [f"{_out}_pct" for _out in OUT_NAMES]
 # Emit counts + qual_GP too so the app can pool multi-season views by ratio-of-sums
 # (sum counts / sum qual_GP), matching the existing QG pooling in step 02 / the app.
 _ccols = []
-for _out, _b, _h, _t in METRICS:
+for _out in OUT_NAMES:
     _ccols += [f"{_out}_count", f"{_out}_qual_GP"]
 ps_out = ps[["player_id", "season", "position", "GP", "TOI_total_sec"] + _ccols + _pcols]
 ps_out.to_csv(f"{OUT_DIR}/per_player_qg_fa{_SUF}.csv", index=False)

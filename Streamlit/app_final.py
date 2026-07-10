@@ -159,6 +159,7 @@ _CHART_COLORS = {
     "RelNFI%": _CHART_PRIMARY, "RelNFI-A%": _CHART_SECOND, "RelNFI-S%": _CHART_THIRD,
     "NFI-A/60": _CHART_SECOND, "NFI-S/60": _CHART_THIRD,
     "NZI": _CHART_PRIMARY, "DZI": _CHART_SECOND, "OZI": _CHART_THIRD,
+    "TZI": _CHART_FOURTH,
     "NFI-QG%": _CHART_PRIMARY, "xG-QG%": _CHART_SECOND,
     "RelNFI-QG%": _CHART_PRIMARY, "RelxG-QG%": _CHART_SECOND, "RelxG%": _CHART_PRIMARY,
     "NFI-GSAx/60": _CHART_PRIMARY, "QNFG%": _CHART_PRIMARY, "QG%": _CHART_SECOND,
@@ -470,11 +471,79 @@ def _sort_hint() -> None:
                "2nd descending, 3rd clears.")
 
 
+# Abbreviation → full name, shown as a hover tooltip on the column header of any
+# data table (via st.column_config help). Covers the metric abbreviations used
+# across the Players, Goalies, Teams and Referees tables. PDO is deliberately
+# just "Luck" — the whole point of the metric is that it's a luck proxy.
+_ABBR_FULL = {
+    # Zone Impact index (0–100, 50 = position-group average)
+    "OZI": "Offensive Zone Impact — O-zone time after offensive-zone faceoffs (0–100, 50 = average)",
+    "DZI": "Defensive Zone Impact — O-zone time after defensive-zone faceoffs (0–100, 50 = average)",
+    "NZI": "Neutral Zone Impact — O-zone time after neutral-zone faceoffs (0–100, 50 = average)",
+    "TZI": "Transitional Zone Impact — O-zone minus D-zone time after neutral-zone faceoffs (0–100, 50 = average)",
+    "OZ Start%": "Offensive-Zone Start % — share of faceoff-started shifts beginning in the O-zone",
+    "DZ Start%": "Defensive-Zone Start % — share of faceoff-started shifts beginning in the D-zone",
+    "NZ Start%": "Neutral-Zone Start % — share of faceoff-started shifts beginning in the N-zone",
+    # Net Front Impact family
+    "NFI%": "Net Front Impact %",
+    "NFI-A/60": "Net Front Impact — Attack per 60 minutes",
+    "NFI-S/60": "Net Front Impact — Suppress per 60 minutes",
+    "RelNFI%": "Relative Net Front Impact % (vs own team)",
+    "RelNFI-A%": "Relative Net Front Impact — Attack % (vs own team)",
+    "RelNFI-S%": "Relative Net Front Impact — Suppress % (vs own team)",
+    # Quality Games family
+    "NFI-QG%": "Net Front Impact — Quality Games %",
+    "NFI-QG-A%": "Net Front Impact — Quality Games (Attack) %",
+    "NFI-QG-S%": "Net Front Impact — Quality Games (Suppress) %",
+    "RelNFI-QG%": "Relative Net Front Impact — Quality Games %",
+    "xG-QG%": "Expected Goals — Quality Games %",
+    "xG-QG-F%": "Expected Goals — Quality Games (For) %",
+    "xG-QG-A%": "Expected Goals — Quality Games (Against) %",
+    "RelxG-QG%": "Relative Expected Goals — Quality Games %",
+    "RelxG-QG-F%": "Relative Expected Goals — Quality Games (For) %, vs own team",
+    "RelxG-QG-A%": "Relative Expected Goals — Quality Games (Against) %, vs own team",
+    "RelNFI-QG-A%": "Relative Net Front Impact — Quality Games (Attack) %, vs own team",
+    "RelNFI-QG-S%": "Relative Net Front Impact — Quality Games (Suppress) %, vs own team",
+    # xG family
+    "xGF/60": "Expected Goals For per 60 minutes",
+    "xGA/60": "Expected Goals Against per 60 minutes",
+    "xG%": "Expected Goals % (share of on-ice expected goals that are for)",
+    "RelxG%": "Relative Expected Goals % (vs own team)",
+    "RelxG-F%": "Relative Expected Goals — For % (vs own team)",
+    "RelxG-A%": "Relative Expected Goals — Against % (vs own team)",
+    "PDO": "Luck",
+    # NHL EDGE tracking
+    "EDGE OZ%": "NHL EDGE — Offensive-Zone time %",
+    "EDGE OZ% (EV)": "NHL EDGE — Offensive-Zone time % (even strength)",
+    "EDGE NZ%": "NHL EDGE — Neutral-Zone time %",
+    "EDGE DZ%": "NHL EDGE — Defensive-Zone time %",
+    "EDGE Top Speed": "NHL EDGE — Top skating speed (mph)",
+    "EDGE Bursts 20+": "NHL EDGE — Number of 20+ mph speed bursts",
+    "EDGE Bursts/min": "NHL EDGE — 20+ mph speed bursts per minute played",
+    "EDGE Distance (mi)": "NHL EDGE — Distance skated (miles)",
+    "EDGE Distance/min": "NHL EDGE — Distance skated per minute (miles)",
+    # Goalies
+    "NFI-GSAx": "Net Front Impact — Goals Saved Above Expected (net-front shots)",
+    "NFI-GSAx/60": "Net Front Impact — Goals Saved Above Expected per 60 minutes",
+    "NFI SV%": "Net Front Impact — Save % (on the net-front shot set)",
+    "QNFG%": "Quality Net-Front Games % — share of games beating expected on net-front shots",
+    "QG": "Quality Games — share of games with all-shot Goals Saved Above Expected ≥ 0",
+    "QGx": "Quality Games (GSAx-based) — share of games with GSAx ≥ 0",
+    "sQS%": "Starter Quality Start % — share of games clearing that season's starter-tier save% baseline",
+    "QG%s": "Quality Start % vs Starter-tier save% baseline",
+    "QG%b": "Quality Start % vs Backup-tier save% baseline",
+    "MP-GSAx": "MoneyPuck Goals Saved Above Expected",
+    "MP-GSAx/60": "MoneyPuck Goals Saved Above Expected per 60 minutes",
+}
+
+
 def _show_df(obj, **kwargs) -> None:
     """st.dataframe with the leading identity column pinned (frozen on the left)
     and columns sized to their content so numbers aren't clipped — the table
     scrolls horizontally instead of squeezing every column. Works for plain
-    DataFrames and Stylers (Styler.data holds the underlying frame)."""
+    DataFrames and Stylers (Styler.data holds the underlying frame). Any column
+    whose name is a known abbreviation (_ABBR_FULL) gets a hover-tooltip on its
+    header spelling out the full metric name."""
     cols = obj.data.columns if hasattr(obj, "data") else obj.columns
     if len(cols):
         cc = dict(kwargs.pop("column_config", {}) or {})
@@ -489,7 +558,18 @@ def _show_df(obj, **kwargs) -> None:
             _w = min(190, max(50, round(_maxlen * 7.0) + 12))
         else:
             _w = None   # other leading columns stay content-sized
-        cc.setdefault(cols[0], st.column_config.Column(pinned=True, width=_w))
+        def _abbr_help(name):
+            """Full name for a column, matching the bare abbrev or a suffixed one
+            like 'OZI (4yr)' → look up 'OZI'."""
+            s = str(name)
+            return _ABBR_FULL.get(s) or _ABBR_FULL.get(s.split(" (")[0])
+        cc.setdefault(cols[0], st.column_config.Column(
+            pinned=True, width=_w, help=_abbr_help(cols[0])))
+        # Header hover-tooltips: spell out each abbreviation's full name.
+        for _c in cols[1:]:
+            _full = _abbr_help(_c)
+            if _full and _c not in cc:
+                cc[_c] = st.column_config.Column(help=_full)
         kwargs["column_config"] = cc
     kwargs["width"] = "content"   # size to content (no clipping) rather than stretch
     return st.dataframe(obj, **kwargs)   # returns selection state when on_select set
@@ -718,12 +798,22 @@ def render_methodology() -> None:
         )
         + _meth_framework(
             "Zone Impact",
-            "DZI / NZI / OZI — three position-normalized 0–10 lenses for offensive-zone time after "
-            "defensive / neutral / offensive faceoffs. Independent lenses, not a hierarchy; a complete "
-            "player rates well across all three. <b>D/N/O Start%</b> sits alongside them — the plain "
-            "share of a player's faceoff-started shifts that began in each zone (my own play-by-play "
-            "data, pooled across seasons). It's a presentation layer showing deployment context, not "
-            "a new metric — it doesn't feed into or alter DZI/NZI/OZI.",
+            "<b>OZI / DZI / NZI / TZI</b> — four lenses for a player's offensive-zone time after 5v5 "
+            "faceoffs, expressed as a <b>0–100 index where 50 = the position-group average</b> "
+            "(above 50 = more O-zone time than an average forward / defenseman, below = less). "
+            "OZI / DZI / NZI measure O-zone time after <b>o</b>ffensive / <b>d</b>efensive / "
+            "<b>n</b>eutral-zone draws; <b>TZI</b> (Transitional Zone Impact) is the neutral-zone "
+            "transition split — O-zone minus D-zone time after neutral draws — so it reads how a "
+            "player tilts play out of the neutral zone. The index is built by taking each player's "
+            "raw per-shift zone-time percentage and recentring it on the league-average percentage "
+            "for their position; the natural spread of the underlying stat sets the spread of the "
+            "index (no artificial stretch), so most players sit in a tight band around 50 and only "
+            "genuine outliers reach the extremes — the same idea as a save% that lives between .880 "
+            "and .920. Independent lenses, not a hierarchy; a complete player rates above 50 across "
+            "all four. <b>D/N/O Start%</b> sits alongside them — the plain share of a player's "
+            "faceoff-started shifts that began in each zone (my own play-by-play data). It's a "
+            "presentation layer showing deployment context, not a new metric — it doesn't feed into "
+            "or alter OZI/DZI/NZI/TZI.",
         )
         + _meth_framework(
             "PDO",
@@ -873,17 +963,19 @@ def load_team_rosters() -> dict:
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_zone_pooled() -> pd.DataFrame:
-    """Pooled NZI / DZI / OZI (0–10) from tnzi_adjusted_{forwards,defense}.csv.
-    Name-keyed (the zone files carry no player_id); a `_pos_group` column is
-    added so the merge to NFI is on (player_name, pos-group) — this guards the
-    rare same-name / different-position case (e.g. the two Sebastian Ahos)."""
+    """Pooled OZI / DZI / NZI / TZI (0–100 index, 50 = position-group average)
+    from zone_index100/pooled_{forwards,defense}.csv. Name-keyed (a `_pos_group`
+    column is added so the merge to NFI is on (player_name, pos-group) — this
+    guards the rare same-name / different-position case, e.g. the two Sebastian
+    Ahos). See build_zone_index100.py for the 50=average rescale."""
     frames = []
     for pos_file, grp in (("forwards", "F"), ("defense", "D")):
-        fp = ADJ / f"tnzi_adjusted_{pos_file}.csv"
+        fp = ADJ / "zone_index100" / f"pooled_{pos_file}.csv"
         if not fp.exists():
             continue
         d = pd.read_csv(fp)
-        keep = [c for c in ("player_name", "NZI", "DZI", "OZI") if c in d.columns]
+        keep = [c for c in ("player_name", "OZI", "DZI", "NZI", "TZI")
+                if c in d.columns]
         d = d[keep].copy()
         d["_pos_group"] = grp
         frames.append(d)
@@ -895,39 +987,22 @@ def load_zone_pooled() -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_zone_2yr() -> pd.DataFrame:
-    """2-year (2024-25 + 2025-26) pooled NZI/DZI/OZI (0–10) from the uncapped
-    2yr_recent_{NZI,DZI,OZI}_{forwards,defense}.csv files. Lens is in the
-    filename; `raw_score` is the 0–10 value. Name-keyed (no player_id), so the
-    merge mirrors load_zone_pooled exactly: on (player_name, _pos_group).
-
-    DUPLICATE-NAME GUARD: a name can repeat within a position group (two
-    distinct players, e.g. Sam/Samuel splits). Within each lens file we keep the
-    higher-GP_in_scope row deterministically before merging the three lenses, so
-    the final frame is unique per (player_name, _pos_group) and a left-join to
-    the Players frame never multiplies rows or attaches the wrong player's zone.
-    """
-    sub = ADJ / "per_season"
+    """2-year (2024-25 + 2025-26) pooled OZI/DZI/NZI/TZI (0–100 index, 50 =
+    position-group average) from zone_index100/2yr_{forwards,defense}.csv.
+    Name-keyed, so the merge mirrors load_zone_pooled exactly: on
+    (player_name, _pos_group). The 2yr index is recentred on the 2yr pool's own
+    per-position average (not carried over from the 4-yr pool)."""
     frames = []
     for pos_file, grp in (("forwards", "F"), ("defense", "D")):
-        merged = None
-        for m in ("NZI", "DZI", "OZI"):
-            fp = sub / f"2yr_recent_{m}_{pos_file}.csv"
-            if not fp.exists():
-                continue
-            d = pd.read_csv(fp)
-            if "player_name" not in d.columns or "raw_score" not in d.columns:
-                continue
-            gp = d["GP_in_scope"] if "GP_in_scope" in d.columns else 0
-            d = pd.DataFrame({"player_name": d["player_name"], "_gp": gp,
-                              m: d["raw_score"]})
-            d = (d.sort_values("_gp", ascending=False)
-                   .drop_duplicates("player_name", keep="first")
-                   .drop(columns="_gp"))
-            merged = d if merged is None else merged.merge(d, on="player_name",
-                                                           how="outer")
-        if merged is not None:
-            merged["_pos_group"] = grp
-            frames.append(merged)
+        fp = ADJ / "zone_index100" / f"2yr_{pos_file}.csv"
+        if not fp.exists():
+            continue
+        d = pd.read_csv(fp)
+        keep = [c for c in ("player_name", "OZI", "DZI", "NZI", "TZI")
+                if c in d.columns]
+        d = d[keep].copy()
+        d["_pos_group"] = grp
+        frames.append(d)
     if not frames:
         return pd.DataFrame()
     z = pd.concat(frames, ignore_index=True)
@@ -1122,12 +1197,14 @@ _EDGE_REN = {
     "speed_bursts_over_20mph_percentile": "EDGE Bursts %ile",
     "distance_skated_miles": "EDGE Distance (mi)", "distance_skated_percentile": "EDGE Distance %ile",
     "edge_distance_per_min": "EDGE Distance/min",
+    "edge_bursts_per_min": "EDGE Bursts/min",
 }
 # Value-only columns (excludes the raw NHL percentile columns) — displayed with
 # a computed (league / team) rank bracket instead, same convention as every
 # other ranked column in this table.
 _EDGE_VALUE_RAW = [c for c in _EDGE_COLS if "percentile" not in c]
-_EDGE_VALUE_DISP = [_EDGE_REN[c] for c in _EDGE_VALUE_RAW] + ["EDGE Distance/min"]
+_EDGE_VALUE_DISP = ([_EDGE_REN[c] for c in _EDGE_VALUE_RAW]
+                    + ["EDGE Distance/min", "EDGE Bursts/min"])
 
 # EDGE OZ%-scope toggle — the ONLY EDGE stat with an even-strength split from
 # NHL is offensive-zone time; NZ%/DZ% have just the one (all-situations)
@@ -1213,6 +1290,33 @@ def _edge_distance_rate(scope_key: str) -> pd.DataFrame:
     return g[["player_id", "edge_distance_per_min"]]
 
 
+def _edge_bursts_rate(scope_key: str) -> pd.DataFrame:
+    """EDGE 20+ mph speed bursts, normalized to a per-minute-played rate. Same
+    ratio-of-sums construction and all-situations-vs-ES caveat as
+    _edge_distance_rate (speed_bursts_over_20mph is a season TOTAL)."""
+    edge = load_edge_player_season()
+    nfi = load_nfi_player()
+    if edge.empty or nfi.empty:
+        return pd.DataFrame()
+    e = edge[["player_id", "season", "speed_bursts_over_20mph"]].dropna()
+    n = nfi[["player_id", "season", "toi_min"]].copy()
+    n["season"] = n["season"].astype(str)
+    m = e.merge(n, on=["player_id", "season"], how="inner")
+    if scope_key == "pooled":
+        sub = m[m["season"].isin(POOLED_SEASONS)]
+    elif scope_key == "pooled_2yr":
+        sub = m[m["season"].isin(POOLED_2YR_SEASONS)]
+    else:
+        sub = m[m["season"] == scope_key]
+    if sub.empty:
+        return pd.DataFrame()
+    g = sub.groupby("player_id").agg(_bursts=("speed_bursts_over_20mph", "sum"),
+                                     _toi=("toi_min", "sum")).reset_index()
+    ok = g["_toi"] > 0
+    g["edge_bursts_per_min"] = np.where(ok, g["_bursts"] / g["_toi"], np.nan)
+    return g[["player_id", "edge_bursts_per_min"]]
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def _load_xg_game(playoffs: bool = False) -> pd.DataFrame:
     """Per-game on-ice xG For/Against + on-ice TOI, from the MoneyPuck-derived
@@ -1260,7 +1364,11 @@ def _xg_onice_rates(scope_key: str, playoffs: bool = False) -> pd.DataFrame:
 # share of a player's games where OFFENSE (For) or DEFENSE (Against) was quality,
 # for xG and NFI. Display names → source count/qual_GP column stems.
 _QG_FA = {"xG-QG-F%": "xG_QG_F", "xG-QG-A%": "xG_QG_A",
-          "NFI-QG-A%": "NFI_QG_F", "NFI-QG-S%": "NFI_QG_A"}
+          "NFI-QG-A%": "NFI_QG_F", "NFI-QG-S%": "NFI_QG_A",
+          # Relative (on/off, team-without-player) counterparts of the four
+          # For/Against splits — same 0-1 Quality-Games scale as the raw splits.
+          "RelxG-QG-F%": "RelxG_QG_F", "RelxG-QG-A%": "RelxG_QG_A",
+          "RelNFI-QG-A%": "RelNFI_QG_F", "RelNFI-QG-S%": "RelNFI_QG_A"}
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -1353,38 +1461,31 @@ SEASON_DISPLAY = {"20222023": "2022-23", "20232024": "2023-24",
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_zone_per_season(season: str | None = None) -> pd.DataFrame:
-    """Per-season NZI/DZI/OZI (0–10), name-keyed. Same higher-GP duplicate-name
-    guard and (player_name, _pos_group) keying as load_zone_2yr.
+    """Per-season OZI/DZI/NZI/TZI (0–100 index, 50 = position-group average),
+    name-keyed on (player_name, _pos_group). Each season's index is recentred on
+    that season's own per-position average, so 50 always means league-average.
 
     season=None → long multi-season frame (season, player_name, _pos_group,
-    NZI, DZI, OZI) used by the per-player trend. season="20252026" → just that
-    season's rows keyed on (player_name, _pos_group), season column dropped, for
-    a single-season leaderboard join (mirrors load_zone_pooled's shape)."""
-    sub = ADJ / "per_season"
+    OZI, DZI, NZI, TZI) used by the per-player trend. season="20252026" → just
+    that season's rows keyed on (player_name, _pos_group), season column dropped,
+    for a single-season leaderboard join (mirrors load_zone_pooled's shape)."""
+    sub = ADJ / "zone_index100"
     out = []
     seasons = [season] if season is not None else PROFILE_SEASONS
     for ssn in seasons:
+        label = SEASON_DISPLAY.get(ssn, ssn)   # files are named "2024-25" etc.
         for pos_file, grp in (("forwards", "F"), ("defense", "D")):
-            merged = None
-            for m in ("NZI", "DZI", "OZI"):
-                fp = sub / f"{ssn}_{m}_{pos_file}.csv"
-                if not fp.exists():
-                    continue
-                d = pd.read_csv(fp)
-                if "player_name" not in d.columns or "raw_score" not in d.columns:
-                    continue
-                gp = d["GP_in_scope"] if "GP_in_scope" in d.columns else 0
-                d = pd.DataFrame({"player_name": d["player_name"], "_gp": gp,
-                                  m: d["raw_score"]})
-                d = (d.sort_values("_gp", ascending=False)
-                       .drop_duplicates("player_name", keep="first")
-                       .drop(columns="_gp"))
-                merged = d if merged is None else merged.merge(d, on="player_name",
-                                                               how="outer")
-            if merged is not None:
-                merged["season"] = ssn
-                merged["_pos_group"] = grp
-                out.append(merged)
+            fp = sub / f"{label}_{pos_file}.csv"
+            if not fp.exists():
+                continue
+            d = pd.read_csv(fp)
+            keep = [c for c in ("player_name", "OZI", "DZI", "NZI", "TZI")
+                    if c in d.columns]
+            d = d[keep].copy()
+            d = d.drop_duplicates("player_name", keep="first")
+            d["season"] = ssn
+            d["_pos_group"] = grp
+            out.append(d)
     if not out:
         return pd.DataFrame()
     full = pd.concat(out, ignore_index=True)
@@ -1442,7 +1543,8 @@ def _player_trend(pid: int) -> pd.DataFrame:
     if not z.empty:
         zz = z[(z["player_name"] == name) & (z["_pos_group"] == pos_group)]
         if not zz.empty:
-            zcols = ["season"] + [c for c in ("NZI", "DZI", "OZI") if c in zz.columns]
+            zcols = ["season"] + [c for c in ("OZI", "DZI", "NZI", "TZI")
+                                  if c in zz.columns]
             trend = trend.merge(zz[zcols], on="season", how="outer")
 
     # Quality Games per season.
@@ -1510,15 +1612,21 @@ def _player_trend(pid: int) -> pd.DataFrame:
             # rename below — same ratio (distance / toi_min, this player's own
             # season rows) that _edge_distance_rate uses league-wide, so the
             # per-season and pooled 2yr-avg rows land on an identical basis.
-            _dist_toi = ea[["season", "distance_skated_miles"]].merge(
+            # Per-min EDGE rates (distance, 20+ mph bursts) on the same
+            # ratio basis as their league-wide _edge_*_rate counterparts.
+            _rate_src = ea[["season", "distance_skated_miles",
+                            "speed_bursts_over_20mph"]].merge(
                 p[["season", "toi_min"]], on="season", how="left")
-            _ok_toi = _dist_toi["toi_min"] > 0
-            _dist_toi["EDGE Distance/min"] = np.where(
-                _ok_toi, _dist_toi["distance_skated_miles"] / _dist_toi["toi_min"], np.nan)
+            _ok_toi = _rate_src["toi_min"] > 0
+            _rate_src["EDGE Distance/min"] = np.where(
+                _ok_toi, _rate_src["distance_skated_miles"] / _rate_src["toi_min"], np.nan)
+            _rate_src["EDGE Bursts/min"] = np.where(
+                _ok_toi, _rate_src["speed_bursts_over_20mph"] / _rate_src["toi_min"], np.nan)
             ea = ea[["season"] + _EDGE_VALUE_RAW].rename(columns=_EDGE_REN)
             trend = trend.merge(ea, on="season", how="outer")
-            trend = trend.merge(_dist_toi[["season", "EDGE Distance/min"]],
-                                on="season", how="outer")
+            trend = trend.merge(
+                _rate_src[["season", "EDGE Distance/min", "EDGE Bursts/min"]],
+                on="season", how="outer")
 
     # D/N/O Start% — real per-season data (Zones/output/zone_start_per_season.csv).
     _zs = load_zone_start_per_season_raw()
@@ -1650,7 +1758,7 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
         prow = nfi[nfi["player_id"] == pid]
         if len(prow):
             name = prow["player_name"].iloc[0]
-            for m in ("NZI", "DZI", "OZI"):
+            for m in ("OZI", "DZI", "NZI", "TZI"):
                 if m not in z.columns:
                     continue
                 d = {}
@@ -1732,7 +1840,8 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
 # Storage→display column map for the appended 2yr pooled row.
 _P2YR_MAP = {"NFI%": "NFI_pct", "RelNFI%": "RelNFI_pct", "RelNFI-A%": "RelNFI_F_pct",
              "RelNFI-S%": "RelNFI_A_pct", "NFI-A/60": "NFI_A_rate", "NFI-S/60": "NFI_S_rate",
-             "NZI": "NZI", "DZI": "DZI", "OZI": "OZI", "NFI-QG%": "NFI_QG_pct",
+             "NZI": "NZI", "DZI": "DZI", "OZI": "OZI", "TZI": "TZI",
+             "NFI-QG%": "NFI_QG_pct",
              "xG-QG%": "xG_QG_pct", "RelNFI-QG%": "RelNFI_QG_pct",
              "RelxG-QG%": "RelxG_QG_pct", "RelxG%": "RelxG_pct",
              # xG family + QG For/Against — the 2yr frame carries these under their
@@ -1741,6 +1850,9 @@ _P2YR_MAP = {"NFI%": "NFI_pct", "RelNFI%": "RelNFI_pct", "RelNFI-A%": "RelNFI_F_
              "xGF/60": "xGF/60", "xGA/60": "xGA/60", "xG%": "xG%",
              "xG-QG-F%": "xG-QG-F%", "xG-QG-A%": "xG-QG-A%",
              "NFI-QG-A%": "NFI-QG-A%", "NFI-QG-S%": "NFI-QG-S%",
+             # Relative QG For/Against splits (2yr frame carries display names).
+             "RelxG-QG-F%": "RelxG-QG-F%", "RelxG-QG-A%": "RelxG-QG-A%",
+             "RelNFI-QG-A%": "RelNFI-QG-A%", "RelNFI-QG-S%": "RelNFI-QG-S%",
              "PDO": "PDO",
              "DZ Start%": "DZ Start%", "NZ Start%": "NZ Start%", "OZ Start%": "OZ Start%",
              # EDGE — the 2yr frame carries these under their RAW column names
@@ -1769,9 +1881,13 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
         return pd.DataFrame(), trend, []
     share_cols = ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%"]
     rate_cols = ["NFI-A/60", "NFI-S/60"]
-    zone_cols = ["DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI"]
-    qg_cols = ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
-               "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%"]
+    zone_cols = ["DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI"]
+    # Grouped raw+rel so the table above the charts mirrors the paired bars:
+    # each Quality-Games metric sits next to its relative (on/off) counterpart.
+    qg_cols = ["NFI-QG%", "RelNFI-QG%", "NFI-QG-A%", "RelNFI-QG-A%",
+               "NFI-QG-S%", "RelNFI-QG-S%",
+               "xG-QG%", "RelxG-QG%", "xG-QG-F%", "RelxG-QG-F%",
+               "xG-QG-A%", "RelxG-QG-A%"]
     xg_cols = ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO"]
     edge_cols = _EDGE_VALUE_DISP
     metric_cols = [c for c in qg_cols + xg_cols + share_cols + rate_cols + zone_cols + edge_cols
@@ -1792,11 +1908,12 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     team_ranks = _player_season_ranks(pid, same_pos=same_pos, team=team) if team else {}
     _b = {}
     for c in ("NFI%", "NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%",
-              "xG-QG-F%", "xG-QG-A%", "NFI-QG-A%", "NFI-QG-S%"):
+              "xG-QG-F%", "xG-QG-A%", "NFI-QG-A%", "NFI-QG-S%",
+              "RelxG-QG-F%", "RelxG-QG-A%", "RelNFI-QG-A%", "RelNFI-QG-S%"):
         _b[c] = lambda v: f"{v * 100:.1f}%"
     for c in ("RelNFI%", "RelNFI-A%", "RelNFI-S%", "RelxG%", "RelxG-F%", "RelxG-A%"):
         _b[c] = lambda v: f"{v:+.2f}"
-    for c in ("NFI-A/60", "NFI-S/60", "NZI", "DZI", "OZI"):
+    for c in ("NFI-A/60", "NFI-S/60", "OZI", "DZI", "NZI", "TZI"):
         _b[c] = lambda v: f"{v:.1f}"
     for c in ("DZ Start%", "NZ Start%", "OZ Start%"):
         _b[c] = lambda v: f"{v:.1f}%"
@@ -1808,6 +1925,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
         _b[c] = lambda v: f"{v * 100:.1f}%"
     _b["EDGE Top Speed"] = lambda v: f"{v:.1f} mph"
     _b["EDGE Bursts 20+"] = lambda v: f"{v:.0f}"
+    _b["EDGE Bursts/min"] = lambda v: f"{v:.3f}/min"
     _b["EDGE Distance (mi)"] = lambda v: f"{v:.1f} mi"
     _b["EDGE Distance/min"] = lambda v: f"{v:.3f} mi/min"
     has_team = "Team" in trend.columns
@@ -1876,7 +1994,21 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
 
 
 _QG_BAR_METRICS = ["NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
-                   "xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%"]
+                   "RelNFI-QG-A%", "RelNFI-QG-S%",
+                   "xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
+                   "RelxG-QG-F%", "RelxG-QG-A%"]
+
+# The two paired-bar panels: (concept label, raw QG metric, relative QG metric).
+# Each concept renders a Raw+Rel pair grouped together, spaced from the next
+# concept. NFI panel and xG panel go side by side.
+_QG_PAIR_PANELS = {
+    "NFI": [("Overall", "NFI-QG%", "RelNFI-QG%"),
+            ("Attack", "NFI-QG-A%", "RelNFI-QG-A%"),
+            ("Suppress", "NFI-QG-S%", "RelNFI-QG-S%")],
+    "xG": [("Overall", "xG-QG%", "RelxG-QG%"),
+           ("For", "xG-QG-F%", "RelxG-QG-F%"),
+           ("Against", "xG-QG-A%", "RelxG-QG-A%")],
+}
 _BRAND_DEEP = "#0A1A2F"          # "Hockey" — deeper than the chart navy
 _BRAND_ROI = PALETTE["orange"]   # "ROI" — brand orange (#FF6B35)
 
@@ -2162,6 +2294,29 @@ def _player_qg_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
                 and pd.notna(_tr[m].iloc[0]) else np.nan) for m in _QG_BAR_METRICS}
 
 
+# The four Zone-Impact index metrics for the hard-locked zone bar (0-100 scale,
+# 50 = position-group average). Already on a 0-100 basis (unlike the QG metrics,
+# which are stored as 0-1 fractions), so these values are read straight through
+# with NO ×100 rescale.
+_ZONE_BAR_METRICS = ["OZI", "DZI", "NZI", "TZI"]
+
+
+def _player_zone_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
+    """The 4 Zone-Impact index values (0-100) for one player at a season label or
+    the 2yr row. 50 = league-average for that position group."""
+    if label == "2yr avg (24-26)":
+        _p2 = _players_2yr_frame()
+        _pr = _p2[_p2["player_id"] == int(pid)] if not _p2.empty else _p2
+        return {m: (float(_pr[m].iloc[0])
+                    if len(_pr) and m in _pr.columns
+                    and pd.notna(_pr[m].iloc[0]) else np.nan)
+                for m in _ZONE_BAR_METRICS}
+    _tr = trend[trend["Season"].astype(str) == str(label)]
+    return {m: (float(_tr[m].iloc[0]) if len(_tr) and m in _tr.columns
+                and pd.notna(_tr[m].iloc[0]) else np.nan)
+            for m in _ZONE_BAR_METRICS}
+
+
 def _default_qg_year(season_label, seasons) -> str:
     """Row label to default the bar to, from the global Season filter."""
     key = SEASON_KEY.get(season_label) if season_label else None
@@ -2204,6 +2359,48 @@ def _qg_bar_chart(vals: dict, label: str, caption: str = None,
         y2="value:Q",
         color=alt.Color("color:N", scale=None, legend=None),
         tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f", title="%")])
+    rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
+        strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
+    _show_chart(bars + rule, dl_name=f"{dl_prefix}-{label}")
+
+
+def _qg_paired_bar_chart(panels: list[tuple], vals: dict, label: str,
+                         caption: str, dl_prefix: str) -> None:
+    """Grouped diverging bar chart of Quality-Games % vs the 50% baseline, where
+    each CONCEPT (e.g. Attack) shows its Raw bar next to its Relative (on/off)
+    bar — pairs grouped together, spaced from the next concept. panels is a list
+    of (concept_label, raw_metric, rel_metric); vals maps metric → 0-100 value.
+    Bar colour = diverging (blue above 50, orange below); Raw is full opacity,
+    Rel is faded so the pair reads at a glance."""
+    import altair as alt
+    rows = []
+    for concept, raw_m, rel_m in panels:
+        for variant, m in (("Raw", raw_m), ("Rel", rel_m)):
+            v = vals.get(m)
+            if pd.notna(v):
+                rows.append({"Concept": concept, "Variant": variant, "Metric": m,
+                             "value": float(v), "base": 50.0, "color": _bar_color(v)})
+    if not rows:
+        st.caption("No values for this selection.")
+        return
+    d = pd.DataFrame(rows)
+    _dom = _qg_axis_domain([r["value"] for r in rows])
+    st.caption(caption)
+    _concepts = [c for c, _, _ in panels]
+    bars = alt.Chart(d).mark_bar().encode(
+        x=alt.X("Concept:N", sort=_concepts,
+                axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold",
+                              labelFontSize=12)),
+        xOffset=alt.XOffset("Variant:N", sort=["Raw", "Rel"]),
+        y=alt.Y("base:Q", scale=alt.Scale(domain=_dom), title="%"),
+        y2="value:Q",
+        color=alt.Color("color:N", scale=None, legend=None),
+        opacity=alt.Opacity("Variant:N", sort=["Raw", "Rel"],
+                            scale=alt.Scale(domain=["Raw", "Rel"], range=[1.0, 0.5]),
+                            legend=alt.Legend(title=None, orient="bottom")),
+        tooltip=[alt.Tooltip("Metric:N", title="Metric"),
+                 alt.Tooltip("Variant:N"),
+                 alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
     _show_chart(bars + rule, dl_name=f"{dl_prefix}-{label}")
@@ -2397,10 +2594,11 @@ def _qg_line_chart_compare(players: dict, cols: list[str] = None, caption: str =
 
 
 def _zone_line_chart_compare(players: dict) -> None:
-    """Side-by-side Zone Impact (NZI/DZI/OZI, 0-10) line charts, one panel per
-    player. players: {name: trend}. Mirrors the QG line comparison."""
+    """Side-by-side Zone Impact index (OZI/DZI/NZI/TZI, 0-100, 50 = average) line
+    charts, one panel per player. players: {name: trend}. Mirrors the QG line
+    comparison."""
     import altair as alt
-    zcols = ["NZI", "DZI", "OZI"]
+    zcols = ["OZI", "DZI", "NZI", "TZI"]
     parts = []
     for name, tr in players.items():
         cols = [c for c in zcols if c in tr.columns and tr[c].notna().any()]
@@ -2416,10 +2614,11 @@ def _zone_line_chart_compare(players: dict) -> None:
     ys = [c for c in zcols if c in set(d["Metric"])]
     _n = max(1, len(players))
     _w = int(max(200, 1040 / _n))
-    st.caption("Zone Impact 0–10 over time, per player — **NZI** / **DZI** / **OZI**.")
+    st.caption("Zone Impact index 0–100 over time, per player — **OZI** / **DZI** / "
+               "**NZI** / **TZI** (50 = league-average for the position).")
     base = alt.Chart(d).mark_line(point=True, strokeWidth=2).encode(
         x=alt.X("Season:N", title=None, axis=alt.Axis(labelAngle=-30)),
-        y=alt.Y("value:Q", title=None),
+        y=alt.Y("value:Q", title=None, scale=alt.Scale(domain=[30, 70])),
         color=alt.Color("Metric:N", sort=ys, legend=alt.Legend(
             orient="bottom", title=None, symbolType="stroke", symbolStrokeWidth=2.5),
             scale=alt.Scale(domain=ys,
@@ -2512,15 +2711,31 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             if _wd:
                 _yr = _wd[-1]
     _all_qg_vals = _player_qg_vals(pid, trend, _yr)
-    _nfi_vals = {m: v for m, v in _all_qg_vals.items() if m in _QG_LINE_ORDER_NFI}
-    _xg_vals = {m: v for m, v in _all_qg_vals.items() if m in _QG_LINE_ORDER_XG}
-    _qg_bar_chart(_nfi_vals, _yr,
-                 caption=f"**{_yr}** — **NFI** Quality Games % vs the **50% baseline**.",
-                 dl_prefix="QG-bars-NFI")
-    _qg_bar_chart(_xg_vals, _yr,
-                 caption=f"**{_yr}** — **xG (MoneyPuck)** Quality Games % vs the "
-                         "**50% baseline**.",
-                 dl_prefix="QG-bars-xG")
+    # Two paired-bar panels side by side: NFI (Overall/Attack/Suppress) and xG
+    # (Overall/For/Against). Each concept shows its Raw bar next to its Relative
+    # (on/off, vs own team) bar — all on the same 0-100 / 50-baseline scale.
+    _bar_nfi, _bar_xg = st.columns(2)
+    with _bar_nfi:
+        _qg_paired_bar_chart(
+            _QG_PAIR_PANELS["NFI"], _all_qg_vals, _yr,
+            caption=f"**{_yr}** — **NFI** Quality Games % vs the **50% baseline** "
+                    "(faded bar = **relative** / on-ice-vs-own-team version).",
+            dl_prefix="QG-bars-NFI")
+    with _bar_xg:
+        _qg_paired_bar_chart(
+            _QG_PAIR_PANELS["xG"], _all_qg_vals, _yr,
+            caption=f"**{_yr}** — **xG (MoneyPuck)** Quality Games % vs the "
+                    "**50% baseline** (faded bar = **relative** version).",
+            dl_prefix="QG-bars-xG")
+    # Zone Impact index bar — hard-locked (always shown, independent of the metric-
+    # family filter, exactly like the Quality-Games bars above). 50 = position-group
+    # average, above = more offensive-zone time than average, below = less.
+    _zone_vals = _player_zone_vals(pid, trend, _yr)
+    _qg_bar_chart(_zone_vals, _yr,
+                 caption=f"**{_yr}** — **Zone Impact** index (OZI / DZI / NZI / TZI) "
+                         "vs the **50 baseline** (50 = league-average for the "
+                         "position; above = more O-zone time, below = less).",
+                 dl_prefix="Zone-bars")
     st.caption("↕ Click a different year (or the 2yr row) above to change the bars.")
 
     def _chart(title: str, cols: list[str], ydomain=None) -> None:
@@ -2548,34 +2763,28 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
 
     # Line (year-over-year) charts are opt-in via a toggle — off by default so
     # the drill-in leads with the bar + team-scatter charts, not a wall of
-    # line charts. When on, each still follows the family filter (selected
-    # families only; none selected = all). One chart per scale so none
-    # flattens; y-axes zoom to each chart's own data range (zero=False) so
-    # season-to-season movement is visible instead of flattened by a wide
-    # fixed domain.
-    st.checkbox("Show year-over-year graphs", key="players_show_yoy", value=False)
+    # line charts. When on, ALL of them show regardless of which metric-family
+    # pills are selected above (the pills only filter the table + team scatters).
+    # One chart per scale so none flattens; y-axes zoom to each chart's own data
+    # range so season-to-season movement is visible.
+    st.checkbox("**Show year-over-year graphs**", key="players_show_yoy", value=False)
     if st.session_state.get("players_show_yoy"):
-        if "Quality Games" in _show_fams:
-            _qg_combined_line(trend)
-        if "xG" in _show_fams:
-            _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])
-            _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
-                   ["RelxG%", "RelxG-F%", "RelxG-A%"])
-            _chart("PDO (5v5)", ["PDO"])
-        if "Net Front Impact" in _show_fams:
-            _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
-                   ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
-        if "Zone Impact" in _show_fams:
-            _chart("Zone Impact 0–10 (NZI, DZI, OZI)", ["NZI", "DZI", "OZI"])
-            _chart("D/O Zone Start% (faceoff-started 5v5 shifts)", ["OZ Start%", "DZ Start%"])
-        if "Net Front Impact" in _show_fams:
-            _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
-            _chart("NFI% (net-front share)", ["NFI%"])
-        if "EDGE" in _show_fams:
-            _chart("EDGE Zone-Time % (OZ, DZ)", ["EDGE OZ%", "EDGE DZ%"])
-            _chart("EDGE Top Speed (mph)", ["EDGE Top Speed"])
-            _chart("EDGE Speed Bursts (20+ mph)", ["EDGE Bursts 20+"])
-            _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])
+        _qg_combined_line(trend)
+        _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])
+        _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
+               ["RelxG%", "RelxG-F%", "RelxG-A%"])
+        _chart("PDO (5v5)", ["PDO"])
+        _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
+               ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
+        _chart("Zone Impact index 0–100 (OZI, DZI, NZI, TZI) — 50 = average",
+               ["OZI", "DZI", "NZI", "TZI"], ydomain=[30, 70])
+        _chart("D/O Zone Start% (faceoff-started 5v5 shifts)", ["OZ Start%", "DZ Start%"])
+        _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
+        _chart("NFI% (net-front share)", ["NFI%"])
+        _chart("EDGE Zone-Time % (OZ, DZ)", ["EDGE OZ%", "EDGE DZ%"])
+        _chart("EDGE Top Speed (mph)", ["EDGE Top Speed"])
+        _chart("EDGE Speed Bursts (20+ mph) per min", ["EDGE Bursts/min"])
+        _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])
 
     # Team scatters — ALWAYS shown here regardless of which family pills are
     # selected above, auto-scoped to this player's own team, so a drill-in
@@ -2704,18 +2913,19 @@ def load_as_counts_playoffs() -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_zone_playoffs() -> pd.DataFrame:
-    """Name-keyed playoff NZI/DZI/OZI for the all_playoffs pool, (player_name,
-    _pos_group)-keyed exactly like load_zone_pooled."""
-    zp = ZONES / "output" / "playoffs"
+    """Name-keyed playoff OZI/DZI/NZI/TZI (0–100 index, 50 = position-group
+    average) pooled across all playoff games, (player_name, _pos_group)-keyed
+    exactly like load_zone_pooled. Built by build_zone_index100_playoffs.py.
+    Playoff samples are short, so qualifying is by the 50-shift gate (no 20-GP
+    floor) — a smaller set of players than the regular-season pool."""
     frames = []
     for pos_file, grp in (("forwards", "F"), ("defense", "D")):
-        fp = zp / f"tnzi_adjusted_{pos_file}_playoffs.csv"
+        fp = ADJ / "zone_index100" / f"playoffs_{pos_file}.csv"
         if not fp.exists():
             continue
         d = pd.read_csv(fp)
-        d["season"] = d["season"].astype(str)
-        d = d[d["season"] == PLAYOFF_SCOPE]
-        keep = [c for c in ("player_name", "NZI", "DZI", "OZI") if c in d.columns]
+        keep = [c for c in ("player_name", "OZI", "DZI", "NZI", "TZI")
+                if c in d.columns]
         d = d[keep].copy()
         d["_pos_group"] = grp
         frames.append(d)
@@ -2886,6 +3096,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     edge_dist_rate = _edge_distance_rate(key)
     if not edge_dist_rate.empty and not base.empty:
         base = base.merge(edge_dist_rate, on="player_id", how="left")
+    # EDGE 20+ mph speed bursts per minute played (same ratio-of-sums basis).
+    edge_bursts_rate = _edge_bursts_rate(key)
+    if not edge_bursts_rate.empty and not base.empty:
+        base = base.merge(edge_bursts_rate, on="player_id", how="left")
     # Quality-Games For/Against (xG-QG-F/A%, NFI-QG-F/A%), ratio-of-sums pooling.
     qgfa = _qg_fa_rates(key)
     if not qgfa.empty and not base.empty:
@@ -2899,12 +3113,15 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
 PLAYER_FAMILY_COLS = {
     # Quality Games = the "-QG%" metrics only (share of games that were "quality").
     "Quality Games": ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
-                      "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%"],
+                      "RelxG-QG-F%", "RelxG-QG-A%",
+                      "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
+                      "RelNFI-QG-A%", "RelNFI-QG-S%"],
     # xG = the raw + relative expected-goals rate metrics (split out of QG).
     "xG": ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO"],
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
-    "Zone Impact": ["DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI"],
+    "Zone Impact": ["DZ Start%", "NZ Start%", "OZ Start%",
+                    "OZI", "DZI", "NZI", "TZI"],
     # NHL EDGE tracking — a separate basis than NZI/DZI/OZI (player-position,
     # all-situations/EV tracking vs strict 5v5 faceoff-started PBP). See
     # edge/README.md. D/N/O Start% is NOT EDGE data (it's my own PBP faceoff
@@ -3076,13 +3293,16 @@ def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "",
 
 def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
                         domain_df: pd.DataFrame = None) -> None:
-    if not {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(df.columns):
+    # Y axis is 20+ mph speed bursts PER MINUTE PLAYED (rate), not the raw
+    # season count — so heavy-TOI players don't top it purely on volume.
+    _y = "EDGE Bursts/min" if "EDGE Bursts/min" in df.columns else "EDGE Bursts 20+"
+    if not {"EDGE Top Speed", _y}.issubset(df.columns):
         return
     _scatter_with_labels(
-        df, "EDGE Top Speed", "EDGE Bursts 20+", "Top Speed (mph)",
-        "Speed Bursts (20+ mph)", f"EDGE-speed-burst-vs-top-speed{dl_suffix}",
+        df, "EDGE Top Speed", _y, "Top Speed (mph)",
+        "Speed Bursts (20+ mph) / min", f"EDGE-speed-burst-vs-top-speed{dl_suffix}",
         "**Source: NHL EDGE tracking** (not my PBP data) — top skating speed vs "
-        "20+ mph speed-burst count.",
+        "20+ mph speed bursts per minute played.",
         team_scoped, highlight_name=highlight_name, domain_df=domain_df)
 
 
@@ -3314,7 +3534,7 @@ def render_players() -> None:
             "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
             "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
-            "DZ Start%", "NZ Start%", "OZ Start%", "NZI", "DZI", "OZI",
+            "DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI",
             *_EDGE_VALUE_DISP]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
@@ -3350,7 +3570,7 @@ def render_players() -> None:
         fmt["xG%"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
     if "PDO" in disp.columns:
         fmt["PDO"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
-    for c in ("NZI", "DZI", "OZI"):
+    for c in ("OZI", "DZI", "NZI", "TZI"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     for c in ("OZ Start%", "DZ Start%", "NZ Start%"):
@@ -3367,6 +3587,8 @@ def render_players() -> None:
         fmt["EDGE Distance (mi)"] = lambda x: "—" if pd.isna(x) else f"{x:.1f} mi"
     if "EDGE Distance/min" in disp.columns:
         fmt["EDGE Distance/min"] = lambda x: "—" if pd.isna(x) else f"{x:.3f} mi/min"
+    if "EDGE Bursts/min" in disp.columns:
+        fmt["EDGE Bursts/min"] = lambda x: "—" if pd.isna(x) else f"{x:.3f}/min"
     if "TOI" in disp.columns:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     for c in ("GP",):
@@ -3374,7 +3596,8 @@ def render_players() -> None:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
-                    "NFI-S/60", "NZI", "DZI", "OZI", "DZ Start%", "NZ Start%", "OZ Start%",
+                    "NFI-S/60", "OZI", "DZI", "NZI", "TZI",
+                    "DZ Start%", "NZ Start%", "OZ Start%",
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
                     "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
                     "xG-QG-F%", "xG-QG-A%", "NFI-QG-A%", "NFI-QG-S%",
@@ -3420,13 +3643,16 @@ def render_players() -> None:
                       key=f"players_tbl_{_gen}")
 
     if playoffs:
-        zone_note = " · NZI/DZI/OZI pooled across playoffs"
+        zone_note = " · OZI/DZI/NZI/TZI (0–100, 50 = avg) pooled across playoffs"
     elif SEASON_KEY.get(season_label) == "pooled_2yr":
-        zone_note = " · NZI/DZI/OZI and D/N/O Start% pooled 2024-25 + 2025-26"
+        zone_note = (" · OZI/DZI/NZI/TZI (0–100, 50 = avg) and D/N/O Start% "
+                     "pooled 2024-25 + 2025-26")
     elif is_pooled:
-        zone_note = " · NZI/DZI/OZI and D/N/O Start% pooled across all seasons"
+        zone_note = (" · OZI/DZI/NZI/TZI (0–100, 50 = avg) and D/N/O Start% "
+                     "pooled across all seasons")
     else:
-        zone_note = " · NZI/DZI/OZI and D/N/O Start% for this season"
+        zone_note = (" · OZI/DZI/NZI/TZI (0–100, 50 = avg) and D/N/O Start% "
+                     "for this season")
     st.caption(
         f"{len(disp):,} players (≥ {min_toi:,} ES min) · {scope_label} · sorted by "
         f"RelNFI% descending · ranked at ≥ {rank_floor:,} ES min (else UR){zone_note}"
@@ -3613,9 +3839,10 @@ def _team_attack_suppress(key: str) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_team_zone() -> pd.DataFrame:
-    """Team Zone Impact (NZI/OZI/DZI + composite) per window from
-    NFI/output/team_zone.csv (built by NFI/scripts/build_team_zone.py).
-    Windows: '4y_pool' (2022-26), '2y_2426' (2024-26). TOI-weighted."""
+    """Team Zone Impact (OZI/DZI/NZI/TZI + composite, 0–100 index, 50 = average
+    team) per window from NFI/output/team_zone.csv (built by
+    NFI/scripts/build_team_zone.py). Windows: '4y_pool' (2022-26), '2y_2426'
+    (2024-26). TOI-weighted mean of the per-player 0-100 index."""
     fp = REPO_ROOT / "NFI" / "output" / "team_zone.csv"
     if not fp.exists():
         return pd.DataFrame()
@@ -3698,10 +3925,10 @@ def _render_teams_playoffs(season_label: str) -> None:
                      "team_xG_QG_pct": "xG-QG%", "team_NFI_QG_pct": "NFI-QG%"})
         team = team.merge(q, on="team", how="left")
 
-    zcols = ["NZI", "DZI", "OZI"]
+    zcols = ["OZI", "DZI", "NZI", "TZI"]
     tz = load_team_zone_playoffs()
     if not tz.empty:
-        team = team.merge(tz[["team", "NZI", "DZI", "OZI"]], on="team", how="left")
+        team = team.merge(tz[["team"] + zcols], on="team", how="left")
 
     for c in ["TOI", "xG-QG%", "NFI-QG%"] + zcols:
         if c not in team.columns:
@@ -3722,7 +3949,7 @@ def _render_teams_playoffs(season_label: str) -> None:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
     for c in zcols:
         if c in disp:
-            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "TOI" in disp:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     if "GP" in disp:
@@ -3737,7 +3964,8 @@ def _render_teams_playoffs(season_label: str) -> None:
     _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
     st.caption(
         f"{len(disp)} teams · all playoffs (2022-2025 pooled) · sorted by NFI% "
-        "(CNFI+MNFI share) descending · Zone Impact (NZI/DZI/OZI) is TOI-weighted."
+        "(CNFI+MNFI share) descending · Zone Impact (OZI/DZI/NZI/TZI, 0–100 index "
+        "where 50 = the average team) is TOI-weighted."
     )
 
 
@@ -3813,16 +4041,17 @@ def render_teams() -> None:
     if not a.empty:
         team = team.merge(a, on="team", how="left")
 
-    # Team Zone Impact (NZI/DZI/OZI). Single seasons show their pooled window —
-    # no raw single-season team zone (2024-25 is hit-distorted). Headers carry
-    # the window suffix so the displayed pool is unambiguous.
+    # Team Zone Impact (OZI/DZI/NZI/TZI, 0–100 index, 50 = average team). Single
+    # seasons show their pooled window — no raw single-season team zone (2024-25
+    # is hit-distorted). Headers carry the window suffix so the pool is unambiguous.
     zwin = _team_zone_window(key)
     zsfx = "2yr" if zwin == "2y_2426" else "4yr"
-    zcols = [f"NZI ({zsfx})", f"DZI ({zsfx})", f"OZI ({zsfx})"]
+    _zbase = ["OZI", "DZI", "NZI", "TZI"]
+    zcols = [f"{m} ({zsfx})" for m in _zbase]
     tz = load_team_zone()
     if not tz.empty:
-        tzw = (tz[tz["window"] == zwin][["team", "NZI", "DZI", "OZI"]]
-               .rename(columns={"NZI": zcols[0], "DZI": zcols[1], "OZI": zcols[2]}))
+        tzw = (tz[tz["window"] == zwin][["team"] + _zbase]
+               .rename(columns=dict(zip(_zbase, zcols))))
         team = team.merge(tzw, on="team", how="left")
 
     _fa_disp = list(_TEAM_QG_FA.values())   # xG-QG-F%, xG-QG-A%, NFI-QG-A%, NFI-QG-S%
@@ -3847,7 +4076,7 @@ def render_teams() -> None:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
     for c in zcols:
         if c in disp:
-            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "TOI" in disp:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     if "GP" in disp:
@@ -3863,9 +4092,10 @@ def render_teams() -> None:
 
     zwin_label = "4-year pool (2022-26)" if zwin == "4y_pool" else "2-year pool (2024-26)"
     cap = (f"{len(disp)} teams · {season_label} · sorted by NFI% (CNFI+MNFI share) "
-           f"descending · Zone Impact (NZI/DZI/OZI) is TOI-weighted, shown as the "
-           f"{zwin_label}; single seasons display their pooled window "
-           f"(2022-24 → 4yr, 2024-26 → 2yr) since single-season team zone isn't published.")
+           f"descending · Zone Impact (OZI/DZI/NZI/TZI, 0–100 index where 50 = the "
+           f"average team) is TOI-weighted, shown as the {zwin_label}; single seasons "
+           f"display their pooled window (2022-24 → 4yr, 2024-26 → 2yr) since "
+           f"single-season team zone isn't published.")
     st.caption(cap)
 
 
@@ -5508,12 +5738,11 @@ def main() -> None:
         initial_sidebar_state="collapsed",
     )
     inject_css()
-    # Charts use the '⬇ Save PNG' button, so drop the chart fullscreen button
-    # (scoped to charts — data tables keep their toolbar) and the Vega menu.
-    _css = ("[data-testid='stElementContainer']:has([data-testid='stVegaLiteChart']) "
-            "[data-testid='StyledFullScreenButton']{display:none !important;}")
-    if _HAS_VLC:
-        _css += ".vega-embed details,.vega-embed .vega-actions{display:none !important;}"
+    # Fullscreen (expand) on charts is fine and kept. Only the Vega "···" actions
+    # menu — which offers "View Source / Compiled Vega / Open in Vega Editor" and
+    # a raw-data view on hover — is hidden, so hovering a chart doesn't expose the
+    # underlying data/spec. Scoped to charts; data-table toolbars are untouched.
+    _css = ".vega-embed details,.vega-embed summary,.vega-embed .vega-actions{display:none !important;}"
     st.markdown(f"<style>{_css}</style>", unsafe_allow_html=True)
     render_header()
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
