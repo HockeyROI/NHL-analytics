@@ -396,6 +396,12 @@ On-ice attribution is a fresh pass (`NFI/scripts/build_pdo_sog.py`) that reuses 
 
 Spot-checks against Natural Stat Trick found meaningful player-level gaps in some cases (e.g. several percentage points on individual skaters) that the known shift-data gap does not fully explain by itself — verified via an independent from-scratch re-derivation from raw shot events + shift data, which reproduced this pipeline's own numbers exactly, and via team-level goal reconciliation, which showed no broader attribution bug. The remaining gap's source is unresolved; it may reflect a genuine difference in underlying shot/shift data between this pipeline's NHL API pull and Natural Stat Trick's source. Treat PDO as descriptive and directionally useful, not as a value guaranteed to reconcile exactly with third-party sites.
 
+### PDOxG
+
+PDO's luck signal, net of shot quality. Standard PDO treats every on-ice shot as an equal-quality attempt, so a player whose team consistently generates/allows better chances will run a high (or low) PDO from shot quality alone — not luck. PDOxG isolates the actual luck component by netting SH%/SV% against an xG model (shot distance/angle/type):
+
+`PDOxG = (SH% − xSH%) + (SV% − xSV%)`, where `xSH% = on-ice xGF ÷ on-ice SOG-for` and `xSV% = 1 − (on-ice xGA ÷ on-ice SOG-against)`. Reported ×100, 0-centered (positive = finishing/goaltending running hotter than shot quality predicts, negative = colder). Same 5v5/all-situations toggle and ≥200-min floor as PDO. Descriptive, not a ranking — note it does **not** decompose PDO exactly, since PDO's SH%/SV% are Fenwick/Corsi-free (shots-on-goal-based) while the xG model underneath PDOxG is itself derived from a broader shot-attempt set; treat the two as related but not arithmetically reconcilable to the decimal.
+
 ---
 
 ## NHL EDGE
@@ -406,8 +412,8 @@ Added 2026-07: NHL's own player-tracking data (radio-frequency + camera-based, t
 
 - **Zone time %** — OZ/NZ/DZ time share while the player is on the ice. OZ% has a toggle-able even-strength/all-situations scope (NHL only publishes an even-strength split for the offensive-zone stat specifically; NZ%/DZ% have just the one all-situations number regardless of the toggle).
 - **Top skating speed** (mph) — the player's single fastest recorded moment that season.
-- **Speed bursts (20+ mph)** — count of times the player exceeded 20 mph. No finer speed bands are published for skating bursts (unlike shot speed, which NHL does band).
-- **Distance skated** (miles) — total for the season.
+- **Speed bursts (20+ mph)** — count of times the player exceeded 20 mph. No finer speed bands are published for skating bursts (unlike shot speed, which NHL does band). Also shown as **EDGE Bursts/min** — bursts ÷ ES TOI minutes, a ratio-of-sums rate so heavy-TOI players don't top the raw count purely on volume (used by the Speed-Bursts-vs-Top-Speed scatter).
+- **Distance skated** (miles) — total for the season. Also shown as **EDGE Distance/min**, same ratio-of-sums construction.
 
 ### Source and scrape
 

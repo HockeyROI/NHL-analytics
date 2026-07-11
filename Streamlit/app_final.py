@@ -842,8 +842,9 @@ def render_methodology() -> None:
         + _meth_framework(
             "NHL EDGE",
             "NHL's own player-tracking data (by player position, not puck position) — offensive / "
-            "neutral / defensive-zone time share, top skating speed, 20+ mph speed-burst count, and "
-            "distance skated. A <b>different measurement basis</b> than the zone metrics above: EDGE "
+            "neutral / defensive-zone time share, top skating speed, 20+ mph speed-burst count "
+            "(also shown per-minute-played), and distance skated (also per-minute). "
+            "A <b>different measurement basis</b> than the zone metrics above: EDGE "
             "tracks continuously across all-situations or even-strength TOI (toggle-able for OZ%); "
             "NZI/DZI/OZI and D/N/O Start% track puck/faceoff position after strict-5v5 faceoffs only "
             "— do not read EDGE zone-time% as the same metric as those, different data source and "
@@ -2045,9 +2046,9 @@ _QG_PAIR_PANELS = {
     "NFI": [("Overall", "NFI-QG%", "RelNFI-QG%"),
             ("Attack", "NFI-QG-A%", "RelNFI-QG-A%"),
             ("Suppress", "NFI-QG-S%", "RelNFI-QG-S%")],
-    "xG": [("Overall", "xG-QG%", "RelxG-QG%"),
-           ("For", "xG-QG-F%", "RelxG-QG-F%"),
-           ("Against", "xG-QG-A%", "RelxG-QG-A%")],
+    "xG": [("For", "xG-QG-F%", "RelxG-QG-F%"),
+           ("Against", "xG-QG-A%", "RelxG-QG-A%"),
+           ("Overall", "xG-QG%", "RelxG-QG%")],
 }
 _BRAND_DEEP = "#0A1A2F"          # "Hockey" — deeper than the chart navy
 _BRAND_ROI = PALETTE["orange"]   # "ROI" — brand orange (#FF6B35)
@@ -2368,12 +2369,18 @@ def _default_qg_year(season_label, seasons) -> str:
     return _non2[-1] if _non2 else (seasons[-1] if seasons else None)
 
 
+# Fixed y-axis range for every bar chart on the player-profile page (QG pairs +
+# Zone Impact) so they're visually comparable at a glance instead of each
+# auto-zooming to its own data.
+_PROFILE_BAR_YDOM = [30, 75]
+
+
 def _qg_bar_chart(vals: dict, label: str, caption: str = None,
-                  dl_prefix: str = "QG-bars") -> None:
+                  dl_prefix: str = "QG-bars", ydomain: list = None) -> None:
     """Diverging bar of metric %s vs a 50% baseline (50% = league-median: bar up
     when above, down when below). vals maps display-metric → value on a 0-100
     scale. caption overrides the default (player NFI%+QG) caption; dl_prefix names
-    the download file."""
+    the download file. ydomain fixes the y-axis range (defaults to auto-fit)."""
     import altair as alt
     rows = [{"Metric": m, "value": float(v), "base": 50.0, "color": _bar_color(v)}
             for m, v in vals.items() if pd.notna(v)]
@@ -2381,7 +2388,7 @@ def _qg_bar_chart(vals: dict, label: str, caption: str = None,
         st.caption("No values for this selection.")
         return
     d = pd.DataFrame(rows)
-    _dom = _qg_axis_domain([r["value"] for r in rows])
+    _dom = ydomain or _qg_axis_domain([r["value"] for r in rows])
     st.caption(caption or (f"**{label}** — Quality-Games % vs the **50% "
                "baseline** (bar up = above 50%, down = below; darker = further from 50%). "
                "**NFI** family in blue, **xG** family in orange."))
@@ -2391,7 +2398,7 @@ def _qg_bar_chart(vals: dict, label: str, caption: str = None,
                                   if r["Metric"].startswith("xG")) + "]"
     _label_color = {"expr": f"indexof({_orange_lbls}, datum.value) >= 0 "
                             f"? '{PALETTE['orange']}' : '{PALETTE['text']}'"}
-    bars = alt.Chart(d).mark_bar(size=40).encode(
+    bars = alt.Chart(d).mark_bar(size=30, clip=True).encode(
         x=alt.X("Metric:N", sort=[r["Metric"] for r in rows],
                 axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold",
                               labelFontSize=12, labelColor=_label_color)),
@@ -2404,46 +2411,54 @@ def _qg_bar_chart(vals: dict, label: str, caption: str = None,
     _show_chart(bars + rule, dl_name=f"{dl_prefix}-{label}")
 
 
-def _qg_paired_bar_chart(panels: list[tuple], vals: dict, label: str,
-                         caption: str, dl_prefix: str) -> None:
-    """Grouped diverging bar chart of Quality-Games % vs the 50% baseline, where
-    each CONCEPT (e.g. Attack) shows its Raw bar next to its Relative (on/off)
-    bar — pairs grouped together, spaced from the next concept. panels is a list
-    of (concept_label, raw_metric, rel_metric); vals maps metric → 0-100 value.
-    Bar colour = diverging (blue above 50, orange below); Raw is full opacity,
-    Rel is faded so the pair reads at a glance."""
+def _qg_panel_chart(panels: list[tuple], vals: dict, title: str):
+    """Build (not render) one panel's diverging-bar Altair chart: each concept's
+    Raw bar sits directly next to its Rel bar, groups spaced apart via blank
+    spacer categories on the x-axis. Every bar keeps its OWN x-axis tick label
+    (the metric's display name) — no opacity/legend distinction between Raw and
+    Rel; colour is purely the original distance-from-50 diverging scale (darker
+    = further from 50, blue above / orange below). Returns an Altair chart
+    object (caller combines panels + calls _show_chart once)."""
     import altair as alt
+    order: list[str] = []
     rows = []
-    for concept, raw_m, rel_m in panels:
-        for variant, m in (("Raw", raw_m), ("Rel", rel_m)):
+    for i, (_concept, raw_m, rel_m) in enumerate(panels):
+        for m in (raw_m, rel_m):
+            order.append(m)
             v = vals.get(m)
             if pd.notna(v):
-                rows.append({"Concept": concept, "Variant": variant, "Metric": m,
-                             "value": float(v), "base": 50.0, "color": _bar_color(v)})
-    if not rows:
-        st.caption("No values for this selection.")
-        return
-    d = pd.DataFrame(rows)
-    _dom = _qg_axis_domain([r["value"] for r in rows])
-    st.caption(caption)
-    _concepts = [c for c, _, _ in panels]
-    bars = alt.Chart(d).mark_bar().encode(
-        x=alt.X("Concept:N", sort=_concepts,
-                axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold",
-                              labelFontSize=12)),
-        xOffset=alt.XOffset("Variant:N", sort=["Raw", "Rel"]),
-        y=alt.Y("base:Q", scale=alt.Scale(domain=_dom), title="%"),
+                rows.append({"Metric": m, "value": float(v), "base": 50.0,
+                            "color": _bar_color(v)})
+        if i < len(panels) - 1:
+            order.append(f"__spacer_{i}__")   # blank slot, no bar, no label
+    d = pd.DataFrame(rows) if rows else pd.DataFrame(
+        {"Metric": [], "value": [], "base": [], "color": []})
+    bars = alt.Chart(d).mark_bar(size=22, clip=True).encode(
+        x=alt.X("Metric:N", sort=order, scale=alt.Scale(domain=order),
+                axis=alt.Axis(title=None, labelAngle=-40, labelFontSize=10,
+                              labelFontWeight="bold",
+                              labelExpr="test('^__spacer', datum.value) ? '' : datum.value")),
+        y=alt.Y("base:Q", scale=alt.Scale(domain=_PROFILE_BAR_YDOM), title="%"),
         y2="value:Q",
         color=alt.Color("color:N", scale=None, legend=None),
-        opacity=alt.Opacity("Variant:N", sort=["Raw", "Rel"],
-                            scale=alt.Scale(domain=["Raw", "Rel"], range=[1.0, 0.5]),
-                            legend=alt.Legend(title=None, orient="bottom")),
-        tooltip=[alt.Tooltip("Metric:N", title="Metric"),
-                 alt.Tooltip("Variant:N"),
-                 alt.Tooltip("value:Q", format=".1f", title="%")])
+        tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
-    _show_chart(bars + rule, dl_name=f"{dl_prefix}-{label}")
+    return (bars + rule).properties(
+        width=max(260, 40 * len(order)), height=300,
+        title=alt.TitleParams(text=title, color=PALETTE["text"], fontSize=13))
+
+
+def _qg_paired_bar_chart(vals: dict, label: str, caption: str, dl_prefix: str) -> None:
+    """The NFI and xG Quality-Games panels combined into ONE chart (one download
+    button covers both) — each panel shows Raw+Rel bars paired per concept,
+    spaced between concepts, on a shared fixed y-axis so the two panels line up."""
+    import altair as alt
+    nfi_chart = _qg_panel_chart(_QG_PAIR_PANELS["NFI"], vals, "NFI")
+    xg_chart = _qg_panel_chart(_QG_PAIR_PANELS["xG"], vals, "xG (MoneyPuck)")
+    st.caption(caption)
+    combined = alt.hconcat(nfi_chart, xg_chart, spacing=40)
+    _show_chart(combined, dl_name=f"{dl_prefix}-{label}", brand_width=1000)
 
 
 def _qg_bar_chart_compare(players_vals: dict, label: str, metrics: list[str] = None,
@@ -2750,33 +2765,22 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                    if any(pd.notna(v) for v in _player_qg_vals(pid, trend, s).values())]
             if _wd:
                 _yr = _wd[-1]
-    _all_qg_vals = _player_qg_vals(pid, trend, _yr)
-    # Two paired-bar panels side by side: NFI (Overall/Attack/Suppress) and xG
-    # (Overall/For/Against). Each concept shows its Raw bar next to its Relative
-    # (on/off, vs own team) bar — all on the same 0-100 / 50-baseline scale.
-    _bar_nfi, _bar_xg = st.columns(2)
-    with _bar_nfi:
-        _qg_paired_bar_chart(
-            _QG_PAIR_PANELS["NFI"], _all_qg_vals, _yr,
-            caption=f"**{_yr}** — **NFI** Quality Games % vs the **50% baseline** "
-                    "(faded bar = **relative** / on-ice-vs-own-team version).",
-            dl_prefix="QG-bars-NFI")
-    with _bar_xg:
-        _qg_paired_bar_chart(
-            _QG_PAIR_PANELS["xG"], _all_qg_vals, _yr,
-            caption=f"**{_yr}** — **xG (MoneyPuck)** Quality Games % vs the "
-                    "**50% baseline** (faded bar = **relative** version).",
-            dl_prefix="QG-bars-xG")
-    # Zone Impact index bar — hard-locked (always shown, independent of the metric-
-    # family filter, exactly like the Quality-Games bars above). 50 = position-group
-    # average, above = more offensive-zone time than average, below = less.
-    _zone_vals = _player_zone_vals(pid, trend, _yr)
-    _qg_bar_chart(_zone_vals, _yr,
-                 caption=f"**{_yr}** — **Zone Impact** index (OZI / DZI / NZI / TZI) "
-                         "vs the **50 baseline** (50 = league-average for the "
-                         "position; above = more O-zone time, below = less).",
-                 dl_prefix="Zone-bars")
-    st.caption("↕ Click a different year (or the 2yr row) above to change the bars.")
+    # View-mode toggle — mutually exclusive, sits ABOVE the bar chart. "Show
+    # current year data" (default) renders the bar charts for the selected row;
+    # "Year over year" replaces them with the season-by-season line charts.
+    with st.container(key="players_view_mode_box"):
+        st.markdown(
+            f"<div style='color:{PALETTE['text']}; font-size:1.15rem; "
+            "font-weight:700; margin-bottom:0.2rem;'>View</div>",
+            unsafe_allow_html=True)
+        st.markdown(
+            "<style>.st-key-players_view_mode_box "
+            "[data-testid='stRadio'] label p{font-size:1.05rem !important; "
+            "font-weight:600;}</style>",
+            unsafe_allow_html=True)
+        view_mode = st.radio(
+            "View", ["Show current year data", "Year over year"],
+            horizontal=True, key="players_view_mode", label_visibility="collapsed")
 
     def _chart(title: str, cols: list[str], ydomain=None) -> None:
         import altair as alt
@@ -2801,14 +2805,11 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             ).properties(height=300)
         _show_chart(ch, dl_name=title.split(" (")[0].replace(" ", "-"))
 
-    # Line (year-over-year) charts are opt-in via a toggle — off by default so
-    # the drill-in leads with the bar + team-scatter charts, not a wall of
-    # line charts. When on, ALL of them show regardless of which metric-family
-    # pills are selected above (the pills only filter the table + team scatters).
-    # One chart per scale so none flattens; y-axes zoom to each chart's own data
-    # range so season-to-season movement is visible.
-    st.checkbox("**Show year-over-year graphs**", key="players_show_yoy", value=False)
-    if st.session_state.get("players_show_yoy"):
+    if view_mode == "Year over year":
+        # Line charts — ALL of them show regardless of which metric-family pills
+        # are selected above (the pills only filter the table + team scatters).
+        # One chart per scale so none flattens; y-axes zoom to each chart's own
+        # data range so season-to-season movement is visible.
         _qg_combined_line(trend)
         _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])
         _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
@@ -2825,6 +2826,21 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         _chart("EDGE Top Speed (mph)", ["EDGE Top Speed"])
         _chart("EDGE Speed Bursts (20+ mph) per min", ["EDGE Bursts/min"])
         _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])
+    else:
+        # Current-year bars: the combined NFI+xG Quality-Games panel (one
+        # download covers both) and the hard-locked Zone Impact bar — both on
+        # the same fixed 30–75 y-axis. 50 = baseline; above = better/more
+        # O-zone time, below = worse/less.
+        _all_qg_vals = _player_qg_vals(pid, trend, _yr)
+        _qg_paired_bar_chart(
+            _all_qg_vals, _yr,
+            caption=f"**{_yr}** — Quality Games % vs **50** — NFI (left) / xG (right).",
+            dl_prefix="QG-bars")
+        _zone_vals = _player_zone_vals(pid, trend, _yr)
+        _qg_bar_chart(_zone_vals, _yr,
+                     caption=f"**{_yr}** — Zone Impact index vs **50** (league average).",
+                     dl_prefix="Zone-bars", ydomain=_PROFILE_BAR_YDOM)
+        st.caption("↕ Click a different year (or the 2yr row) above to change the bars.")
 
     # Team scatters — ALWAYS shown here regardless of which family pills are
     # selected above, auto-scoped to this player's own team, so a drill-in
@@ -2864,8 +2880,6 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
     _scope_txt = f" ({cohort})" if same_pos else ""
     st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>{heading_prefix}{_my_team} "
                 f"Team Scatters{_scope_txt}</h3>", unsafe_allow_html=True)
-    st.caption(f"Auto-scoped to **{_my_team}** (this player's team) — shown regardless of "
-               "which metric families are selected above.")
     if {"PDOxG", "xG%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                     f"xG%</h4>", unsafe_allow_html=True)
@@ -3293,12 +3307,8 @@ def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", hi
     _scatter_with_labels(
         df, "xG%", "PDOxG", "xG%", "PDOxG (luck net of shot quality)",
         f"pdoxg-vs-xg-pct{dl_suffix}",
-        "**Descriptive luck lens — not a ranking.** PDOxG (my 5v5 shot-events "
-        "computation) — on-ice SH% & SV% net of expected goals — against raw on-ice "
-        "xG% (xGF / (xGF+xGA), MoneyPuck-derived). Above the dashed PDOxG=0 line = "
-        "finishing/goaltending running hotter than shot quality predicts; below = "
-        "colder. Color = **OZ Start%** (my PBP data), team-scoped views only — light "
-        "= easier/more sheltered zone starts, dark = harder.",
+        "Descriptive, not a ranking — see Methodology. Color = **OZ Start%** "
+        "(light = easier, dark = harder).",
         team_scoped, extra_layer=rule0, color_col="OZ Start%",
         color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
         domain_df=domain_df)
@@ -3311,8 +3321,7 @@ def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
     _scatter_with_labels(
         df, "DZ Start%", "OZ Start%", "DZ Start%", "OZ Start%",
         f"zone-start-scatter{dl_suffix}",
-        "**Source: my PBP data** (faceoff-started 5v5 shifts) — D-zone vs "
-        "O-zone faceoff-start share, one point per player.",
+        "Faceoff-started 5v5 shifts, one point per player.",
         team_scoped, highlight_name=highlight_name, domain_df=domain_df)
 
 
@@ -3323,10 +3332,8 @@ def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "",
     _scatter_with_labels(
         df, "EDGE DZ%", "EDGE OZ%", "EDGE DZ%", "EDGE OZ%",
         f"EDGE-zone-scatter{dl_suffix}",
-        "**Source: NHL EDGE tracking** (not my PBP data) — D-zone vs O-zone time "
-        "share, one point per player. Color = **OZ Start%** (my PBP data), team-"
-        "scoped views only — light = easier/more sheltered zone starts, dark = "
-        "harder.",
+        "NHL EDGE tracking, one point per player. Color = **OZ Start%** "
+        "(light = easier, dark = harder).",
         team_scoped, color_col="OZ Start%",
         color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
         domain_df=domain_df)
@@ -3342,8 +3349,7 @@ def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
     _scatter_with_labels(
         df, "EDGE Top Speed", _y, "Top Speed (mph)",
         "Speed Bursts (20+ mph) / min", f"EDGE-speed-burst-vs-top-speed{dl_suffix}",
-        "**Source: NHL EDGE tracking** (not my PBP data) — top skating speed vs "
-        "20+ mph speed bursts per minute played.",
+        "NHL EDGE tracking, one point per player.",
         team_scoped, highlight_name=highlight_name, domain_df=domain_df)
 
 
@@ -3355,9 +3361,8 @@ def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", hi
     _scatter_with_labels(
         df, "xG%", "NFI%", "xG%", "NFI%",
         f"nfi-vs-xg-pct{dl_suffix}",
-        "Net-Front Impact share vs raw on-ice xG% (MoneyPuck-derived), one point "
-        "per player. Color = **OZ Start%** (my PBP data), team-scoped views only — "
-        "light = easier/more sheltered zone starts, dark = harder.",
+        "One point per player. Color = **OZ Start%** "
+        "(light = easier, dark = harder).",
         team_scoped, color_col="OZ Start%",
         color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
         domain_df=domain_df)
@@ -3790,26 +3795,50 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
         ("NFI%", _f("NFI_pct", "pct")),
         ("NFI-A/60", _f("NFI_A_rate", "rate")),
         ("NFI-S/60", _f("NFI_S_rate", "rate")),
-        ("NZI", _f("NZI", "rate")),
-        ("DZI", _f("DZI", "rate")),
         ("OZI", _f("OZI", "rate")),
+        ("DZI", _f("DZI", "rate")),
+        ("NZI", _f("NZI", "rate")),
+        ("TZI", _f("TZI", "rate")),
         ("ES TOI (min)", _f("toi_min", "toi")),
     ]
-    st.caption(f"**{r['player_name']} ({r['position']})** · pooled playoffs "
-               "(2022-23 → 2024-25).")
+    st.caption(f"**{r['player_name']} ({r['position']})** · pooled playoffs.")
     # Horizontal layout: metrics as columns, a single value row (matches the rest
     # of the app), rather than a tall two-column Metric/Value table.
     hdf = pd.DataFrame([{m: v for m, v in items}])[[m for m, _ in items]]
     _show_df(hdf, width="stretch", hide_index=True)
 
-    # Quality-Games diverging bar vs the 50% baseline — same chart as the regular
-    # season (NFI% + the four QG %), built from this player's pooled playoff row.
+    # Combined NFI+xG Quality-Games bar (Raw+Rel paired) and the Zone Impact bar
+    # — same charts as the regular-season drill-in, built from this player's
+    # pooled playoff row, both on the shared fixed 30–75 y-axis.
     qg_vals = {m: (float(r[_P2YR_MAP[m]]) * 100
                    if _P2YR_MAP.get(m) in r.index and pd.notna(r.get(_P2YR_MAP[m]))
                    else np.nan)
                for m in _QG_BAR_METRICS}
     if any(pd.notna(v) for v in qg_vals.values()):
-        _qg_bar_chart(qg_vals, "Playoffs (2022-25)")
+        _qg_paired_bar_chart(
+            qg_vals, "Playoffs",
+            caption="Quality Games % vs **50** — NFI (left) / xG (right).",
+            dl_prefix="QG-bars-playoffs")
+    zone_vals = {m: (float(r[m]) if m in r.index and pd.notna(r.get(m)) else np.nan)
+                 for m in _ZONE_BAR_METRICS}
+    if any(pd.notna(v) for v in zone_vals.values()):
+        _qg_bar_chart(zone_vals, "Playoffs",
+                     caption="Zone Impact index vs **50** (league average).",
+                     dl_prefix="Zone-bars-playoffs", ydomain=_PROFILE_BAR_YDOM)
+
+    # NFI% vs xG% scatter, scoped to this player's playoff team — the only one of
+    # the 5 team-scatter charts buildable from playoff data (PDOxG, EDGE, and
+    # zone-start% aren't computed for playoffs).
+    if {"NFI_pct", "xG%", "team"}.issubset(frame.columns):
+        _team = r.get("team")
+        if isinstance(_team, str) and _team:
+            _tf = (frame[frame["team"] == _team]
+                   .rename(columns={"player_name": "Player", "NFI_pct": "NFI%"}))
+            if {"Player", "NFI%", "xG%"}.issubset(_tf.columns):
+                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
+                            f"{_team} NFI% vs xG% (playoffs)</h4>", unsafe_allow_html=True)
+                _nfi_xg_scatter(_tf, True, dl_suffix="-playoffs",
+                               highlight_name=r.get("player_name"))
 
 
 # ---------------------------------------------------------------------------
@@ -4522,9 +4551,8 @@ def _goalie_consistency_bar(row, qg_label: str, sv_baseline) -> None:
     d = pd.DataFrame(rows)
     _vals = [r["value"] for r in rows] + [r["base"] for r in rows]
     dom = [int(np.floor(min(_vals))) - 2, int(np.ceil(max(_vals))) + 2]
-    st.caption(f"**{row['Season']}** — QNFG% / QG% / sQS% vs the **50%** line; "
-               "**NFI SV%** vs the season's **league-average save%** (both cut-offs "
-               "in blue). Bar up = above the line.")
+    st.caption(f"**{row['Season']}** — Consistency % vs **50** "
+               "(NFI SV% vs league-average save%).")
     bars = alt.Chart(d).mark_bar(size=40).encode(
         x=alt.X("Metric:N", sort=[r["Metric"] for r in rows],
                 axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold")),
@@ -4577,10 +4605,8 @@ def _goalie_gsax_bar(row, qg_scope_suffix: str = "") -> None:
     panels = [p for p in (total, per60) if p is not None]
     if not panels:
         return
-    st.caption(f"**{row['Season']}** — GSAx vs the season's **starter-tier average** "
-               "(blue line = starter avg): total (left) and per-60 (right). Bar up = "
-               "above the average starter. **NFI-GSAx** = net-front, **MP-GSAx** = "
-               "all-shot (MoneyPuck).")
+    st.caption(f"**{row['Season']}** — GSAx vs **starter-tier average**: "
+               "total (left) / per-60 (right).")
     # Note (blue) — the starter-average baseline for the open season, like the sQS% note.
     if _ssn:
         def _fmt(mtot, m60):
@@ -5140,18 +5166,42 @@ def _render_goalie_playoff_summary(gid: int, qg_scope_suffix: str = "", qg_start
             return f"{v * 100:.1f}%"
         return f"{int(v):,}"
 
+    # League rank (all playoff goalies, no floor) alongside each performance
+    # value, same "(rank)" convention as every other ranked column in the app.
+    def rk(df, col, val, lower=False):
+        if df.empty or col not in df.columns or pd.isna(val):
+            return None
+        return _league_rank(df[col], val, lower=lower)
+
+    v_gsax60 = pick(n, "GSAx_per60")
+    v_sv = pick(n, "NFI_save_pct")
+    v_qnfg = pick(q, "QNFS_pct")
+    v_qg = pick(s, "QS_GSAx_pct")
+    v_sqs = pick(g, qg_col)
+
+    def with_rank(txt, r):
+        return f"{txt} ({r})" if r is not None else txt
+
     items = [
-        ("NFI-GSAx/60", fmt(pick(n, "GSAx_per60"), "gsax")),
-        ("NFI SV%", fmt(pick(n, "NFI_save_pct"), "sv")),
-        ("QNFG%", fmt(pick(q, "QNFS_pct"), "pct")),
-        ("QG%", fmt(pick(s, "QS_GSAx_pct"), "pct")),
-        (qg_label, fmt(pick(g, qg_col), "pct")),
+        ("NFI-GSAx/60", with_rank(fmt(v_gsax60, "gsax"), rk(n, "GSAx_per60", v_gsax60))),
+        ("NFI SV%", with_rank(fmt(v_sv, "sv"), rk(n, "NFI_save_pct", v_sv))),
+        ("QNFG%", with_rank(fmt(v_qnfg, "pct"), rk(q, "QNFS_pct", v_qnfg))),
+        ("QG%", with_rank(fmt(v_qg, "pct"), rk(s, "QS_GSAx_pct", v_qg))),
+        (qg_label, with_rank(fmt(v_sqs, "pct"), rk(g, qg_col, v_sqs))),
         ("Games (GSAx)", fmt(pick(n, "games"), "int")),
         ("Shots faced", fmt(pick(n, "total_faced"), "int")),
     ]
-    st.caption(f"**{name}** · pooled playoffs (2022-23 → 2024-25).")
+    st.caption(f"**{name}** · pooled playoffs · **(rank)** among all playoff goalies.")
     _show_df(pd.DataFrame(items, columns=["Metric", "Value"]),
                  width="stretch", hide_index=True)
+
+    # Consistency % bar — QNFG%/QG%/sQS% vs the 50% league baseline, same chart
+    # as the regular-season goalie profile (no playoff league-average save%
+    # baseline is computed, so NFI SV% isn't included here).
+    if any(pd.notna(v) for v in (v_qnfg, v_qg, v_sqs)):
+        _row = pd.Series({"Season": "Playoffs", "QNFG%": v_qnfg,
+                          "QG%": v_qg, qg_label: v_sqs})
+        _goalie_consistency_bar(_row, qg_label, None)
 
 
 # ---------------------------------------------------------------------------
