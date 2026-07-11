@@ -512,6 +512,7 @@ _ABBR_FULL = {
     "RelxG-F%": "Relative Expected Goals — For % (vs own team)",
     "RelxG-A%": "Relative Expected Goals — Against % (vs own team)",
     "PDO": "Luck",
+    "PDOxG": "Luck, xG-adjusted — SH% & SV% net of expected goals (0-centered)",
     # NHL EDGE tracking
     "EDGE OZ%": "NHL EDGE — Offensive-Zone time %",
     "EDGE OZ% (EV)": "NHL EDGE — Offensive-Zone time % (even strength)",
@@ -823,6 +824,20 @@ def render_methodology() -> None:
             "conventional definition. Centers on ~100 league-wide; well above/below is usually "
             "unsustainable shooting or save luck rather than skill. A raw descriptive column shown "
             "beside xG — no relative or Quality-Games version, and it isn't used for ranking.",
+        )
+        + _meth_framework(
+            "PDOxG",
+            "PDO's luck signal net of shot quality. Standard PDO treats every on-ice shot as a "
+            "coin-flip against league-average conversion, but a player who generates (or concedes) "
+            "better chances will run a high (or low) PDO by shot quality alone — not luck. PDOxG "
+            "replaces the league-average baseline with an <b>expected</b> one from my SOG-conditional "
+            "xG model (shot distance/angle/type): PDOxG = (SH% − xSH%) + (SV% − xSV%), where xSH% = "
+            "on-ice xGF ÷ SOG-for and xSV% = 1 − (on-ice xGA ÷ SOG-against). <b>Centered on 0</b> — "
+            "positive = finishing/goaltending beyond what shot quality predicts (still likely luck, "
+            "but the shot-quality portion is removed); negative = the reverse. Same 5v5/all-"
+            "situations toggle and ≥200-min floor as PDO. Descriptive, not a ranking. Note it does "
+            "<b>not</b> adjust for the finishing talent of linemates or the goalie behind you — that "
+            "would be a further, teammate-relative step.",
         )
         + _meth_framework(
             "NHL EDGE",
@@ -1155,15 +1170,29 @@ def _pdo_rate(scope_key: str) -> pd.DataFrame:
         sub = g[g["season"] == scope_key]
     if sub.empty:
         return pd.DataFrame()
-    agg = sub.groupby("player_id").agg(
+    _agg_kw = dict(
         sog_for=("sog_for", "sum"), goals_for=("goals_for", "sum"),
         sog_against=("sog_against", "sum"), goals_against=("goals_against", "sum"),
-    ).reset_index()
+    )
+    # xgf/xga building blocks exist only if build_pdo_sog.py was rerun with the
+    # xG merge — pool them too when present so PDOxG uses the same ratio-of-sums.
+    _has_xg = {"xgf", "xga"}.issubset(g.columns)
+    if _has_xg:
+        _agg_kw.update(xgf=("xgf", "sum"), xga=("xga", "sum"))
+    agg = sub.groupby("player_id").agg(**_agg_kw).reset_index()
     ok = (agg["sog_for"] > 0) & (agg["sog_against"] > 0)
     sh = np.where(ok, agg["goals_for"] / agg["sog_for"], np.nan)
     sv = np.where(ok, 1 - agg["goals_against"] / agg["sog_against"], np.nan)
     agg["PDO"] = np.where(ok, (sh + sv) * 100, np.nan)
-    return agg[["player_id", "PDO"]]
+    out_cols = ["player_id", "PDO"]
+    if _has_xg:
+        # PDOxG: SH% & SV% net of expected (xG), 0-centered. Positive = finishing
+        # / goaltending luck beyond what shot quality predicts.
+        x_sh = np.where(ok, agg["xgf"] / agg["sog_for"], np.nan)
+        x_sv = np.where(ok, 1 - agg["xga"] / agg["sog_against"], np.nan)
+        agg["PDOxG"] = np.where(ok, ((sh - x_sh) + (sv - x_sv)) * 100, np.nan)
+        out_cols.append("PDOxG")
+    return agg[out_cols]
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -1596,8 +1625,10 @@ def _player_trend(pid: int) -> pd.DataFrame:
         pc = pdo_counts[(pdo_counts["player_id"] == pid)
                          & (pdo_counts["season"].isin(PROFILE_SEASONS))].copy()
         if not pc.empty:
-            trend = trend.merge(pc[["season", "pdo"]].rename(columns={"pdo": "PDO"}),
-                                on="season", how="outer")
+            _pcols = ["season", "pdo"] + (["pdoxg"] if "pdoxg" in pc.columns else [])
+            trend = trend.merge(
+                pc[_pcols].rename(columns={"pdo": "PDO", "pdoxg": "PDOxG"}),
+                on="season", how="outer")
 
     # NHL EDGE tracking per season (regular season only; see edge/README.md).
     edge_season = load_edge_player_season()
@@ -1816,6 +1847,14 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
             if len(pv) and pd.notna(pv.iloc[0]):
                 d[ssn] = _league_rank(sub["pdo"], pv.iloc[0])
         out["PDO"] = d
+        if "pdoxg" in pdo.columns:
+            dx = {}
+            for ssn in PROFILE_SEASONS:
+                sub = _byid(pdo[pdo["season"] == ssn], ssn)
+                pv = sub.loc[sub["player_id"] == pid, "pdoxg"]
+                if len(pv) and pd.notna(pv.iloc[0]):
+                    dx[ssn] = _league_rank(sub["pdoxg"], pv.iloc[0])
+            out["PDOxG"] = dx
     edge = load_edge_player_season()
     if not edge.empty:
         edge = edge.copy()
@@ -1853,7 +1892,7 @@ _P2YR_MAP = {"NFI%": "NFI_pct", "RelNFI%": "RelNFI_pct", "RelNFI-A%": "RelNFI_F_
              # Relative QG For/Against splits (2yr frame carries display names).
              "RelxG-QG-F%": "RelxG-QG-F%", "RelxG-QG-A%": "RelxG-QG-A%",
              "RelNFI-QG-A%": "RelNFI-QG-A%", "RelNFI-QG-S%": "RelNFI-QG-S%",
-             "PDO": "PDO",
+             "PDO": "PDO", "PDOxG": "PDOxG",
              "DZ Start%": "DZ Start%", "NZ Start%": "NZ Start%", "OZ Start%": "OZ Start%",
              # EDGE — the 2yr frame carries these under their RAW column names
              # (the display rename only happens in render_players' own table).
@@ -1888,7 +1927,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
                "NFI-QG-S%", "RelNFI-QG-S%",
                "xG-QG%", "RelxG-QG%", "xG-QG-F%", "RelxG-QG-F%",
                "xG-QG-A%", "RelxG-QG-A%"]
-    xg_cols = ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO"]
+    xg_cols = ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO", "PDOxG"]
     edge_cols = _EDGE_VALUE_DISP
     metric_cols = [c for c in qg_cols + xg_cols + share_cols + rate_cols + zone_cols + edge_cols
                    if c in trend.columns]
@@ -1921,6 +1960,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
         _b[c] = lambda v: f"{v:.2f}"
     _b["xG%"] = lambda v: f"{v:.1f}%"
     _b["PDO"] = lambda v: f"{v:.1f}"
+    _b["PDOxG"] = lambda v: f"{v:+.1f}"
     for c in ("EDGE OZ%", "EDGE OZ% (EV)", "EDGE NZ%", "EDGE DZ%"):
         _b[c] = lambda v: f"{v * 100:.1f}%"
     _b["EDGE Top Speed"] = lambda v: f"{v:.1f} mph"
@@ -2773,7 +2813,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])
         _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
                ["RelxG%", "RelxG-F%", "RelxG-A%"])
-        _chart("PDO (5v5)", ["PDO"])
+        _chart("PDOxG (5v5) — luck net of shot quality", ["PDOxG"])
         _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
                ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
         _chart("Zone Impact index 0–100 (OZI, DZI, NZI, TZI) — 50 = average",
@@ -2826,8 +2866,8 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
                 f"Team Scatters{_scope_txt}</h3>", unsafe_allow_html=True)
     st.caption(f"Auto-scoped to **{_my_team}** (this player's team) — shown regardless of "
                "which metric families are selected above.")
-    if {"PDO", "xG%"}.issubset(_team_frame.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs "
+    if {"PDOxG", "xG%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                     f"xG%</h4>", unsafe_allow_html=True)
         _pdo_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
     if {"NFI%", "xG%"}.issubset(_team_frame.columns):
@@ -3117,7 +3157,7 @@ PLAYER_FAMILY_COLS = {
                       "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
                       "RelNFI-QG-A%", "RelNFI-QG-S%"],
     # xG = the raw + relative expected-goals rate metrics (split out of QG).
-    "xG": ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO"],
+    "xG": ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO", "PDOxG"],
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
     "Zone Impact": ["DZ Start%", "NZ Start%", "OZ Start%",
@@ -3246,19 +3286,20 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
 def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
                     domain_df: pd.DataFrame = None) -> None:
     import altair as alt
-    if not {"PDO", "xG%"}.issubset(df.columns):
+    if not {"PDOxG", "xG%"}.issubset(df.columns):
         return
-    rule100 = alt.Chart(pd.DataFrame({"y": [100]})).mark_rule(
+    rule0 = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
         color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
     _scatter_with_labels(
-        df, "xG%", "PDO", "xG%", "PDO",
-        f"pdo-vs-xg-pct{dl_suffix}",
-        "**Descriptive luck lens — not a ranking.** PDO (my 5v5 shot-events "
-        "computation) against raw on-ice xG% (xGF / (xGF+xGA), MoneyPuck-derived). "
-        "Above the dashed PDO=100 line = running hot; below = running cold. Color = "
-        "**OZ Start%** (my PBP data), team-scoped views only — light = easier/more "
-        "sheltered zone starts, dark = harder.",
-        team_scoped, extra_layer=rule100, color_col="OZ Start%",
+        df, "xG%", "PDOxG", "xG%", "PDOxG (luck net of shot quality)",
+        f"pdoxg-vs-xg-pct{dl_suffix}",
+        "**Descriptive luck lens — not a ranking.** PDOxG (my 5v5 shot-events "
+        "computation) — on-ice SH% & SV% net of expected goals — against raw on-ice "
+        "xG% (xGF / (xGF+xGA), MoneyPuck-derived). Above the dashed PDOxG=0 line = "
+        "finishing/goaltending running hotter than shot quality predicts; below = "
+        "colder. Color = **OZ Start%** (my PBP data), team-scoped views only — light "
+        "= easier/more sheltered zone starts, dark = harder.",
+        team_scoped, extra_layer=rule0, color_col="OZ Start%",
         color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
         domain_df=domain_df)
 
@@ -3532,7 +3573,7 @@ def render_players() -> None:
     cols = ["Player", "Pos", "Team", "GP", "TOI",
             "xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
             "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
-            "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO",
+            "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO", "PDOxG",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI",
             *_EDGE_VALUE_DISP]
@@ -3570,6 +3611,8 @@ def render_players() -> None:
         fmt["xG%"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
     if "PDO" in disp.columns:
         fmt["PDO"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    if "PDOxG" in disp.columns:
+        fmt["PDOxG"] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
     for c in ("OZI", "DZI", "NZI", "TZI"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
@@ -3675,8 +3718,8 @@ def render_players() -> None:
     # which metric-family pills are toggled. Only genuine data-availability
     # gates remain (e.g. is_pooled for Start%, since that data has no
     # per-season cut).
-    if {"PDO", "xG%"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs xG%</h4>",
+    if {"PDOxG", "xG%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs xG%</h4>",
                     unsafe_allow_html=True)
         _pdo_xg_scatter(df, _team_scoped)
 
@@ -5274,8 +5317,9 @@ def render_trade_analyzer() -> None:
             _trade_line_compare(_trends, ["RelxG%", "RelxG-F%", "RelxG-A%"],
                 "Relative xG % (RelxG%, RelxG-F%, RelxG-A%) over time, per player.",
                 "Trade-RelxG")
-            _trade_line_compare(_trends, ["PDO"],
-                "PDO (5v5) over time, per player.", "Trade-PDO-line")
+            _trade_line_compare(_trends, ["PDOxG"],
+                "PDOxG (5v5) — luck net of shot quality — over time, per player.",
+                "Trade-PDOxG-line")
             # Net-Front Impact family
             _trade_line_compare(_trends, ["RelNFI%", "RelNFI-A%", "RelNFI-S%"],
                 "RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%) over time, per player.",
@@ -5319,10 +5363,10 @@ def render_trade_analyzer() -> None:
                    "league range (same scale as the leaderboard) so a small real gap "
                    "isn't exaggerated. The xG-based scatters show **Raw xG%** vs **Rel "
                    "xG%** side by side; the others have no relative variant.")
-        if {"PDO", "xG%", "RelxG%"}.issubset(_sf.columns):
-            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDO vs "
+        if {"PDOxG", "xG%", "RelxG%"}.issubset(_sf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                         "xG%</h4>", unsafe_allow_html=True)
-            _trade_rawrel_scatter(_sf, "PDO", "PDO", "Trade-PDO-vs-xG", _full)
+            _trade_rawrel_scatter(_sf, "PDOxG", "PDOxG", "Trade-PDOxG-vs-xG", _full)
         if {"NFI%", "xG%", "RelxG%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
                         "xG%</h4>", unsafe_allow_html=True)

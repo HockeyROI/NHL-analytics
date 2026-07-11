@@ -37,6 +37,7 @@ GAME_CSV = f"{ROOT}/Data/game_ids.csv"
 COUNTS_CSV = f"{ROOT}/NFI/output/player_counts_by_state_zone_per_season.csv"
 OUT_CSV = f"{ROOT}/NFI/output/player_pdo_5v5_per_season.csv"
 OUT_CSV_ALLSIT = f"{ROOT}/NFI/output/player_pdo_allsit_per_season.csv"
+SHOT_XG_CSV = f"{ROOT}/NFI/output/shot_xg_per_event.csv"  # per-event xG (build_xg.py)
 
 SEASONS = {"20212022", "20222023", "20232024", "20242025", "20252026"}
 TOI_FLOOR_MIN = 200.0
@@ -100,6 +101,17 @@ shots = shots[~empty_net].copy()
 shots["is_sog"] = shots["event_type"].isin(["shot-on-goal", "goal"])
 shots["is_goal_i"] = shots["is_goal"].astype(int)
 
+# Merge per-event SOG-conditional xG (build_xg.py). Only SOG events are scored
+# there; non-SOG rows (missed/blocked) stay NaN and are never read by the
+# SOG-based on-ice accumulation below. This adds the PDOxG building blocks
+# (on-ice xGF/xGA) without touching the existing PDO logic.
+print("Merging per-event xG...")
+xg_df = pd.read_csv(SHOT_XG_CSV, usecols=["game_id", "event_id", "xg"]).drop_duplicates(
+    ["game_id", "event_id"])
+shots = shots.merge(xg_df, on=["game_id", "event_id"], how="left")
+_n_missing = int(shots["is_sog"].sum() - shots.loc[shots["is_sog"], "xg"].notna().sum())
+print(f"  SOG events without an xG match (filled 0): {_n_missing:,}")
+
 print(f"  tagged shots: {len(shots):,}")
 shots_by_game = dict(tuple(shots.groupby("game_id")))
 valid_gids = set(shots_by_game.keys())
@@ -130,6 +142,8 @@ team_abbrevs = shots.groupby("game_id").agg(home_abbrev=("home_team_abbrev", "fi
 # on-ice SOG counters — the only new state this script accumulates
 plr_onice_for_sog_s = defaultdict(lambda: defaultdict(int))  # (pid, season) -> {state: count}
 plr_onice_ag_sog_s = defaultdict(lambda: defaultdict(int))
+plr_onice_for_xg_s = defaultdict(lambda: defaultdict(float))  # (pid, season) -> {state: sum xG}
+plr_onice_ag_xg_s = defaultdict(lambda: defaultdict(float))
 
 print("Per-game shift-shot join (SOG on-ice only)...")
 n_games = 0
@@ -185,10 +199,13 @@ for gid, gshots in shots_by_game.items():
         onice_shoot = [int(p) for p in onice_shoot if pos_map.get(int(p)) != "G"]
         onice_def = [int(p) for p in onice_def if pos_map.get(int(p)) != "G"]
 
+        xgv = float(s["xg"]) if pd.notna(s["xg"]) else 0.0
         for p in onice_shoot:
             plr_onice_for_sog_s[(p, season_str)][st] += 1
+            plr_onice_for_xg_s[(p, season_str)][st] += xgv
         for p in onice_def:
             plr_onice_ag_sog_s[(p, season_str)][st] += 1
+            plr_onice_ag_xg_s[(p, season_str)][st] += xgv
 
 print(f"Processed {n_games} games.")
 
@@ -229,15 +246,24 @@ def build_rows(gl_df: pd.DataFrame, sog_scope: str, toi_label: str) -> pd.DataFr
         if sog_scope == "ES":
             sog_for = plr_onice_for_sog_s.get((pid, season), {}).get("ES", 0)
             sog_ag = plr_onice_ag_sog_s.get((pid, season), {}).get("ES", 0)
+            xgf = plr_onice_for_xg_s.get((pid, season), {}).get("ES", 0.0)
+            xga = plr_onice_ag_xg_s.get((pid, season), {}).get("ES", 0.0)
         else:
             sog_for = sum(plr_onice_for_sog_s.get((pid, season), {}).values())
             sog_ag = sum(plr_onice_ag_sog_s.get((pid, season), {}).values())
+            xgf = sum(plr_onice_for_xg_s.get((pid, season), {}).values())
+            xga = sum(plr_onice_ag_xg_s.get((pid, season), {}).values())
         gf, ga, toi_min = r["onice_for_gl"], r["onice_ag_gl"], r["toi_min"]
         if toi_min < TOI_FLOOR_MIN or sog_for <= 0 or sog_ag <= 0:
             continue
         sh_pct = gf / sog_for
         sv_pct = 1 - ga / sog_ag
         pdo = (sh_pct + sv_pct) * 100
+        # PDOxG: SOG-based SH%/SV% net of expected (xG). Centered at 0 —
+        # positive = finishing/goaltending luck above what shot quality predicts.
+        x_sh_pct = xgf / sog_for
+        x_sv_pct = 1 - xga / sog_ag
+        pdoxg = ((sh_pct - x_sh_pct) + (sv_pct - x_sv_pct)) * 100
         rows.append({
             "player_id": pid, "season": season,
             toi_label: round(toi_min, 1),
@@ -246,6 +272,10 @@ def build_rows(gl_df: pd.DataFrame, sog_scope: str, toi_label: str) -> pd.DataFr
             "sh_pct": round(sh_pct * 100, 2),
             "sv_pct": round(sv_pct * 100, 2),
             "pdo": round(pdo, 2),
+            "xgf": round(xgf, 2), "xga": round(xga, 2),
+            "x_sh_pct": round(x_sh_pct * 100, 2),
+            "x_sv_pct": round(x_sv_pct * 100, 2),
+            "pdoxg": round(pdoxg, 2),
         })
     return pd.DataFrame(rows)
 
@@ -255,7 +285,8 @@ def finish_and_write(gl_df, sog_scope, toi_label, out_path, floor_desc):
     out = out.merge(names, on="player_id", how="left")
     out = out[["player_id", "player_name", "season", toi_label,
                "sog_for", "goals_for", "sog_against", "goals_against",
-               "sh_pct", "sv_pct", "pdo"]]
+               "sh_pct", "sv_pct", "pdo",
+               "xgf", "xga", "x_sh_pct", "x_sv_pct", "pdoxg"]]
     out = out.sort_values(["season", "pdo"], ascending=[True, False])
     out.to_csv(out_path, index=False)
     print(f"\nWrote {out_path}: {len(out)} player-season rows ({floor_desc})")
