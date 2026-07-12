@@ -386,7 +386,9 @@ Added 2026-07: a descriptive shooting%/save% luck proxy, shown as a raw column b
 
 Shots-on-goal based (`event_type in {shot-on-goal, goal}`), **not** Fenwick or Corsi — the conventional PDO definition used across the analytics community (Natural Stat Trick, Evolving Hockey, etc.), as opposed to a Fenwick/Corsi-denominator variant some sites compute instead.
 
-On-ice attribution is a fresh pass (`NFI/scripts/build_pdo_sog.py`) that reuses the exact validated shift-join / 5v5-state-derivation logic from `03_onice_attribution_pillars.py` (copied rather than imported, since that script executes top-to-bottom and would rewrite canonical NFI outputs as a side effect). On-ice goals-for/against and TOI are reused as-is from the existing `player_counts_by_state_zone_per_season.csv` — only the on-ice SOG-for/against counters are newly computed. Floor: ≥200 min TOI in the selected scope (5v5 or all-situations). Regular season only; no playoff PDO is computed.
+On-ice attribution is a fresh pass (`NFI/scripts/build_pdo_sog.py`) that reuses the exact validated shift-join / 5v5-state-derivation logic from `03_onice_attribution_pillars.py` (copied rather than imported, since that script executes top-to-bottom and would rewrite canonical NFI outputs as a side effect). On-ice goals-for/against and TOI are reused as-is from the existing `player_counts_by_state_zone_per_season.csv` — only the on-ice SOG-for/against counters are newly computed. Floor: ≥200 min TOI in the selected scope (5v5 or all-situations).
+
+**Playoffs:** `NFI/scripts/build_pdo_sog_playoffs.py` — the same logic filtered to playoff games and pooled into a single all-playoffs scope per player (same ≥200-min floor, applied to the pooled multi-year total). Output: `NFI/output/player_pdo_5v5_playoffs.csv` / `player_pdo_allsit_playoffs.csv`.
 
 ### Known limitation
 

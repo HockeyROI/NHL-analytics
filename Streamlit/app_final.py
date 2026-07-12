@@ -1155,6 +1155,29 @@ def load_pdo_counts(scope_label: str = "5v5") -> pd.DataFrame:
     return pd.read_csv(fp, dtype={"season": str})
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_pdo_counts_playoffs(scope_label: str = "5v5") -> pd.DataFrame:
+    """Playoff counterpart of load_pdo_counts — already pooled across all
+    playoff games (see NFI/scripts/build_pdo_sog_playoffs.py), one row per
+    qualifying player, so no further season aggregation is needed."""
+    fn = ("player_pdo_5v5_playoffs.csv" if scope_label == "5v5"
+          else "player_pdo_allsit_playoffs.csv")
+    fp = REPO_ROOT / "NFI" / "output" / fn
+    if not fp.exists():
+        return pd.DataFrame()
+    return pd.read_csv(fp)
+
+
+def _pdo_rate_playoffs() -> pd.DataFrame:
+    """PDO/PDOxG for the pooled all-playoffs scope — the file is already one
+    row per qualifying player (>=200 min 5v5 TOI pooled across every playoff
+    game), so this just picks the columns and renames to display names."""
+    g = load_pdo_counts_playoffs(_pdo_toggle_state())
+    if g.empty:
+        return pd.DataFrame()
+    return g[["player_id", "pdo", "pdoxg"]].rename(columns={"pdo": "PDO", "pdoxg": "PDOxG"})
+
+
 def _pdo_rate(scope_key: str) -> pd.DataFrame:
     """PDO for one scope, by ratio-of-sums on SOG/goals — same pooling
     convention as _as_rates. Regular season only (no playoff PDO computed).
@@ -1202,6 +1225,19 @@ def load_edge_player_season() -> pd.DataFrame:
     descriptive, source-separate from my zone metrics. See edge/README.md
     for scrape methodology and the basis-mismatch caveat vs TZI/NZI/DZI/OZI."""
     fp = EDGE_DIR / "edge_skater_stats.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp, dtype={"season": str})
+    df["player_id"] = df["player_id"].astype("Int64")
+    return df
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_edge_player_playoffs() -> pd.DataFrame:
+    """NHL EDGE per-player-PLAYOFF-season tracking stats — same schema as
+    load_edge_player_season, source edge_skater_stats_playoffs.csv (pulled by
+    the same edge/scripts/pull_edge_stats.py, game_type=3/playoffs)."""
+    fp = EDGE_DIR / "edge_skater_stats_playoffs.csv"
     if not fp.exists():
         return pd.DataFrame()
     df = pd.read_csv(fp, dtype={"season": str})
@@ -1285,6 +1321,37 @@ def _edge_rate(scope_key: str) -> pd.DataFrame:
     for c in _EDGE_COLS:
         agg[c] = np.where(agg["_wtot"] > 0, agg[f"_wsum_{c}"] / agg["_wtot"], np.nan)
     return agg[["player_id"] + _EDGE_COLS]
+
+
+def _edge_rate_playoffs() -> pd.DataFrame:
+    """EDGE tracking columns pooled across ALL playoff seasons a player
+    appears in — games-played-weighted average, same construction as
+    _edge_rate('pooled') but sourced from load_edge_player_playoffs()."""
+    g = load_edge_player_playoffs()
+    if g.empty:
+        return pd.DataFrame()
+    g = g.copy()
+    _oz_col, _oz_pct_col = _EDGE_OZ_SCOPE_COL[_edge_toggle_state()]
+    g["oz_time_pct"] = g[_oz_col]
+    g["oz_time_pct_percentile"] = g[_oz_pct_col]
+    g["_w"] = g["games_played"].clip(lower=1)
+    for c in _EDGE_COLS:
+        g[f"_wx_{c}"] = g[c] * g["_w"]
+    agg = g.groupby("player_id").agg(
+        **{f"_wsum_{c}": (f"_wx_{c}", "sum") for c in _EDGE_COLS},
+        _wtot=("_w", "sum"),
+    ).reset_index()
+    for c in _EDGE_COLS:
+        agg[c] = np.where(agg["_wtot"] > 0, agg[f"_wsum_{c}"] / agg["_wtot"], np.nan)
+    # Raw season totals (distance, bursts), summed across playoff seasons —
+    # under DISTINCT names so they don't collide with the games-weighted-average
+    # "distance_skated_miles"/"speed_bursts_over_20mph" columns above (those are
+    # the display totals, matching regular-season _edge_rate's convention; these
+    # _sum columns are only for the ratio-of-sum per-minute rates below).
+    raw = g.groupby("player_id").agg(
+        _dist_sum=("distance_skated_miles", "sum"),
+        _bursts_sum=("speed_bursts_over_20mph", "sum")).reset_index()
+    return agg[["player_id"] + _EDGE_COLS].merge(raw, on="player_id", how="left")
 
 
 def _edge_distance_rate(scope_key: str) -> pd.DataFrame:
@@ -2433,10 +2500,10 @@ def _qg_panel_chart(panels: list[tuple], vals: dict, title: str):
             order.append(f"__spacer_{i}__")   # blank slot, no bar, no label
     d = pd.DataFrame(rows) if rows else pd.DataFrame(
         {"Metric": [], "value": [], "base": [], "color": []})
-    bars = alt.Chart(d).mark_bar(size=22, clip=True).encode(
+    bars = alt.Chart(d).mark_bar(size=30, clip=True).encode(
         x=alt.X("Metric:N", sort=order, scale=alt.Scale(domain=order),
                 axis=alt.Axis(title=None, labelAngle=-40, labelFontSize=10,
-                              labelFontWeight="bold",
+                              labelFontWeight="bold", labelOverlap=False,
                               labelExpr="test('^__spacer', datum.value) ? '' : datum.value")),
         y=alt.Y("base:Q", scale=alt.Scale(domain=_PROFILE_BAR_YDOM), title="%"),
         y2="value:Q",
@@ -2444,8 +2511,10 @@ def _qg_panel_chart(panels: list[tuple], vals: dict, title: str):
         tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
+    # Widened so the two panels together spread toward the page's full content
+    # width (near the brand watermark), not a cramped narrow chart.
     return (bars + rule).properties(
-        width=max(260, 40 * len(order)), height=300,
+        width=max(340, 66 * len(order)), height=300,
         title=alt.TitleParams(text=title, color=PALETTE["text"], fontSize=13))
 
 
@@ -2458,7 +2527,9 @@ def _qg_paired_bar_chart(vals: dict, label: str, caption: str, dl_prefix: str) -
     xg_chart = _qg_panel_chart(_QG_PAIR_PANELS["xG"], vals, "xG (MoneyPuck)")
     st.caption(caption)
     combined = alt.hconcat(nfi_chart, xg_chart, spacing=40)
-    _show_chart(combined, dl_name=f"{dl_prefix}-{label}", brand_width=1000)
+    _panel_w = max(340, 66 * (2 * len(_QG_PAIR_PANELS["NFI"]) - 1))
+    _show_chart(combined, dl_name=f"{dl_prefix}-{label}",
+               brand_width=_panel_w * 2 + 40 + 55)
 
 
 def _qg_bar_chart_compare(players_vals: dict, label: str, metrics: list[str] = None,
@@ -3078,6 +3149,24 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         qgfa = _qg_fa_rates("pooled", playoffs=True)
         if not qgfa.empty and not base.empty:
             base = base.merge(qgfa, on="player_id", how="left")
+        # PDO / PDOxG — pooled across all playoff games (build_pdo_sog_playoffs.py).
+        pdo = _pdo_rate_playoffs()
+        if not pdo.empty and not base.empty:
+            base = base.merge(pdo, on="player_id", how="left")
+        # NHL EDGE tracking — pooled across all playoff seasons a player appears
+        # in (games-played-weighted average, raw totals ratio-of-summed).
+        edge = _edge_rate_playoffs()
+        if not edge.empty and not base.empty:
+            base = base.merge(edge.rename(columns=_EDGE_REN), on="player_id", how="left")
+            _ok_toi = base["toi_min"] > 0
+            if "_dist_sum" in base.columns:
+                base["EDGE Distance/min"] = np.where(
+                    _ok_toi, base["_dist_sum"] / base["toi_min"], np.nan)
+            if "_bursts_sum" in base.columns:
+                base["EDGE Bursts/min"] = np.where(
+                    _ok_toi, base["_bursts_sum"] / base["toi_min"], np.nan)
+            base = base.drop(columns=[c for c in ("_dist_sum", "_bursts_sum")
+                                      if c in base.columns])
         return base, True
 
     nfi = load_nfi_player()
@@ -3826,19 +3915,32 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
                      caption="Zone Impact index vs **50** (league average).",
                      dl_prefix="Zone-bars-playoffs", ydomain=_PROFILE_BAR_YDOM)
 
-    # NFI% vs xG% scatter, scoped to this player's playoff team — the only one of
-    # the 5 team-scatter charts buildable from playoff data (PDOxG, EDGE, and
-    # zone-start% aren't computed for playoffs).
-    if {"NFI_pct", "xG%", "team"}.issubset(frame.columns):
-        _team = r.get("team")
-        if isinstance(_team, str) and _team:
-            _tf = (frame[frame["team"] == _team]
-                   .rename(columns={"player_name": "Player", "NFI_pct": "NFI%"}))
-            if {"Player", "NFI%", "xG%"}.issubset(_tf.columns):
-                st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
-                            f"{_team} NFI% vs xG% (playoffs)</h4>", unsafe_allow_html=True)
-                _nfi_xg_scatter(_tf, True, dl_suffix="-playoffs",
-                               highlight_name=r.get("player_name"))
+    # Team scatters, scoped to this player's playoff team. Zone-start% still
+    # isn't computed for playoffs, so only 4 of the 5 regular-season scatters
+    # are buildable here.
+    _team = r.get("team")
+    if isinstance(_team, str) and _team and "team" in frame.columns:
+        _tf = (frame[frame["team"] == _team]
+               .rename(columns={"player_name": "Player", "NFI_pct": "NFI%"}))
+        _hi = r.get("player_name")
+        if {"Player", "PDOxG", "xG%"}.issubset(_tf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
+                        f"{_team} PDOxG vs xG% (playoffs)</h4>", unsafe_allow_html=True)
+            _pdo_xg_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi)
+        if {"Player", "NFI%", "xG%"}.issubset(_tf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
+                        f"{_team} NFI% vs xG% (playoffs)</h4>", unsafe_allow_html=True)
+            _nfi_xg_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi)
+        if {"Player", "EDGE DZ%", "EDGE OZ%"}.issubset(_tf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
+                        f"{_team} EDGE: D-Zone vs O-Zone Time% (playoffs)</h4>",
+                        unsafe_allow_html=True)
+            _edge_zone_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi)
+        if {"Player", "EDGE Top Speed"}.issubset(_tf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
+                        f"{_team} EDGE: Speed Bursts vs Top Speed (playoffs)</h4>",
+                        unsafe_allow_html=True)
+            _edge_speed_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi)
 
 
 # ---------------------------------------------------------------------------
@@ -5139,6 +5241,22 @@ def render_goalies() -> None:
             st.rerun()
 
 
+def _playoff_sv_baseline(n: pd.DataFrame) -> float:
+    """Simple shots-weighted average NFI save% across ALL playoff goalies (no
+    starter-tier subset) — playoffs are only 16 teams, so there's no
+    meaningful bench population to exclude the way the regular-season
+    top-32-GP starter tier does. Same weighting method as
+    load_nfi_sv_baseline(), just the whole playoff pool instead of one
+    regular season. Used as the cutoff line for both NFI SV% and (for display
+    only) the sQS% baseline note."""
+    if n.empty or "NFI_save_pct" not in n.columns:
+        return np.nan
+    w = pd.to_numeric(n.get("total_faced"), errors="coerce")
+    v = pd.to_numeric(n["NFI_save_pct"], errors="coerce")
+    m = v.notna() & (w > 0)
+    return float(np.average(v[m], weights=w[m])) if m.any() else np.nan
+
+
 def _render_goalie_playoff_summary(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) -> None:
     """Pooled all-playoffs metric summary for one goalie (playoff Detail view)."""
     qg_label = "sQS%"
@@ -5195,13 +5313,20 @@ def _render_goalie_playoff_summary(gid: int, qg_scope_suffix: str = "", qg_start
     _show_df(pd.DataFrame(items, columns=["Metric", "Value"]),
                  width="stretch", hide_index=True)
 
-    # Consistency % bar — QNFG%/QG%/sQS% vs the 50% league baseline, same chart
-    # as the regular-season goalie profile (no playoff league-average save%
-    # baseline is computed, so NFI SV% isn't included here).
-    if any(pd.notna(v) for v in (v_qnfg, v_qg, v_sqs)):
+    # Consistency % bar — QNFG%/QG%/sQS% vs the 50% league baseline, plus NFI
+    # SV% vs a simple all-playoff-goalie shots-weighted average save% (16
+    # teams' worth of playoff goalies — no top-N "starter tier" subset).
+    _sv_bl = _playoff_sv_baseline(n)
+    if pd.notna(_sv_bl):
+        st.markdown(
+            f"<div style='color:{_CHART_THIRD}; font-size:0.85rem; margin:0.1rem 0 0.4rem;'>"
+            f"<b>Playoff save% baseline</b> (shots-weighted average, all playoff "
+            f"goalies) — {_sv_bl * 100:.1f}%. Used as the cutoff for NFI SV% and "
+            f"as {qg_label}'s baseline for context.</div>", unsafe_allow_html=True)
+    if any(pd.notna(v) for v in (v_qnfg, v_qg, v_sqs, v_sv)):
         _row = pd.Series({"Season": "Playoffs", "QNFG%": v_qnfg,
-                          "QG%": v_qg, qg_label: v_sqs})
-        _goalie_consistency_bar(_row, qg_label, None)
+                          "QG%": v_qg, qg_label: v_sqs, "NFI SV%": v_sv})
+        _goalie_consistency_bar(_row, qg_label, _sv_bl)
 
 
 # ---------------------------------------------------------------------------
