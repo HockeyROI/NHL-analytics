@@ -520,7 +520,8 @@ _ABBR_FULL = {
     "EDGE DZ%": "NHL EDGE — Defensive-Zone time %",
     "EDGE Top Speed": "NHL EDGE — Top skating speed (mph)",
     "EDGE Bursts 20+": "NHL EDGE — Number of 20+ mph speed bursts",
-    "EDGE Bursts/min": "NHL EDGE — 20+ mph speed bursts per minute played",
+    "EDGE Bursts/60": "NHL EDGE — 20+ mph speed bursts per 60 minutes played",
+    "EZI": "EDGE Zone Impact — O-zone time earned above/below what O-zone faceoff starts predict (0–100, 50 = average)",
     "EDGE Distance (mi)": "NHL EDGE — Distance skated (miles)",
     "EDGE Distance/min": "NHL EDGE — Distance skated per minute (miles)",
     # Goalies
@@ -843,14 +844,20 @@ def render_methodology() -> None:
             "NHL EDGE",
             "NHL's own player-tracking data (by player position, not puck position) — offensive / "
             "neutral / defensive-zone time share, top skating speed, 20+ mph speed-burst count "
-            "(also shown per-minute-played), and distance skated (also per-minute). "
+            "(also shown per-60-minutes-played), and distance skated (also per-minute). "
             "A <b>different measurement basis</b> than the zone metrics above: EDGE "
             "tracks continuously across all-situations or even-strength TOI (toggle-able for OZ%); "
             "NZI/DZI/OZI and D/N/O Start% track puck/faceoff position after strict-5v5 faceoffs only "
             "— do not read EDGE zone-time% as the same metric as those, different data source and "
             "definition. Each EDGE value shows a computed (league / team) rank rather than NHL's own "
             "percentile, matching every other ranked column in the app. Pooled/2yr views are a "
-            "games-played-weighted average across seasons — regular season only.",
+            "games-played-weighted average across seasons — regular season only. "
+            "<b>EZI (EDGE Zone Impact)</b> relates the two: a 0–100 index (50 = position-group "
+            "average) built from <code>EDGE O-zone time% − OZ Start%</code> — positive means a "
+            "player earns more O-zone time than their O-zone faceoff starts alone would predict "
+            "(driving play beyond sheltered deployment); negative means sheltered starts aren't "
+            "converting into time. Recentred the same way as OZI/DZI/NZI/TZI. Regular season only "
+            "(no playoff zone-start data).",
         )
         + _meth_framework(
             "Referees",
@@ -1263,14 +1270,14 @@ _EDGE_REN = {
     "speed_bursts_over_20mph_percentile": "EDGE Bursts %ile",
     "distance_skated_miles": "EDGE Distance (mi)", "distance_skated_percentile": "EDGE Distance %ile",
     "edge_distance_per_min": "EDGE Distance/min",
-    "edge_bursts_per_min": "EDGE Bursts/min",
+    "edge_bursts_per60": "EDGE Bursts/60",
 }
 # Value-only columns (excludes the raw NHL percentile columns) — displayed with
 # a computed (league / team) rank bracket instead, same convention as every
 # other ranked column in this table.
 _EDGE_VALUE_RAW = [c for c in _EDGE_COLS if "percentile" not in c]
 _EDGE_VALUE_DISP = ([_EDGE_REN[c] for c in _EDGE_VALUE_RAW]
-                    + ["EDGE Distance/min", "EDGE Bursts/min"])
+                    + ["EDGE Distance/min", "EDGE Bursts/60", "EZI"])
 
 # EDGE OZ%-scope toggle — the ONLY EDGE stat with an even-strength split from
 # NHL is offensive-zone time; NZ%/DZ% have just the one (all-situations)
@@ -1388,8 +1395,8 @@ def _edge_distance_rate(scope_key: str) -> pd.DataFrame:
 
 
 def _edge_bursts_rate(scope_key: str) -> pd.DataFrame:
-    """EDGE 20+ mph speed bursts, normalized to a per-minute-played rate. Same
-    ratio-of-sums construction and all-situations-vs-ES caveat as
+    """EDGE 20+ mph speed bursts, normalized to a per-60-minutes-played rate.
+    Same ratio-of-sums construction and all-situations-vs-ES caveat as
     _edge_distance_rate (speed_bursts_over_20mph is a season TOTAL)."""
     edge = load_edge_player_season()
     nfi = load_nfi_player()
@@ -1410,8 +1417,53 @@ def _edge_bursts_rate(scope_key: str) -> pd.DataFrame:
     g = sub.groupby("player_id").agg(_bursts=("speed_bursts_over_20mph", "sum"),
                                      _toi=("toi_min", "sum")).reset_index()
     ok = g["_toi"] > 0
-    g["edge_bursts_per_min"] = np.where(ok, g["_bursts"] / g["_toi"], np.nan)
-    return g[["player_id", "edge_bursts_per_min"]]
+    g["edge_bursts_per60"] = np.where(ok, g["_bursts"] / g["_toi"] * 60.0, np.nan)
+    return g[["player_id", "edge_bursts_per60"]]
+
+
+_EZI_MIN_TOI = 200.0   # stability floor on the position-group AVERAGE only
+
+
+def _add_ezi(base: pd.DataFrame) -> pd.DataFrame:
+    """EZI (EDGE Zone Impact) — a 0-100 index (50 = position-group average)
+    measuring how much MORE (or less) EDGE offensive-zone TIME a player earns
+    than their O-zone faceoff STARTS alone would predict.
+
+    raw = EDGE OZ time% (0-100, toggle-aware) − OZ Start% (0-100, my PBP
+    faceoff-started 5v5 shifts). A straight DIFFERENCE, not a sum against
+    (DZ Start% + NZ Start%) — since OZ+DZ+NZ Start% always sum to 100%, that
+    alternate form is algebraically identical to (OZ time% + OZ Start% − 100),
+    which rewards a player high on BOTH (heavily sheltered AND producing) —
+    not the signal we want. The difference form isolates a real mismatch:
+    positive = more O-zone time than the starts alone would suggest (driving
+    play beyond sheltered deployment); negative = O-zone starts aren't
+    converting into O-zone time; near zero = time tracks starts.
+
+    Recentred exactly like OZI/DZI/NZI/TZI: EZI = clip(50 + (raw − position-
+    group average raw), 0, 100), forwards and defense normalised separately —
+    natural spread, no artificial stretch. The group AVERAGE is computed only
+    over players clearing a >=200 ES-min stability floor; every player with
+    both source columns still gets a displayed EZI value regardless of their
+    own TOI. Requires "oz_time_pct" (raw EDGE fraction, pre-rename) and
+    "OZ Start%"; no-ops if either is missing (e.g. playoffs, which has no
+    zone-start data)."""
+    if not {"oz_time_pct", "OZ Start%", "position", "toi_min"}.issubset(base.columns):
+        return base
+    base = base.copy()
+    raw = base["oz_time_pct"] * 100.0 - base["OZ Start%"]
+    pos_group = np.where(base["position"] == "D", "D", "F")
+    floor_ok = base["toi_min"].fillna(0) >= _EZI_MIN_TOI
+    ezi = pd.Series(np.nan, index=base.index)
+    for grp in ("F", "D"):
+        m = (pos_group == grp) & raw.notna()
+        if not m.any():
+            continue
+        grp_avg = raw[m & floor_ok].mean()
+        if pd.isna(grp_avg):
+            grp_avg = raw[m].mean()   # fall back if the floor empties the group
+        ezi.loc[m] = (50.0 + (raw[m] - grp_avg)).clip(0, 100)
+    base["EZI"] = ezi.round(1)
+    return base
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -1707,24 +1759,22 @@ def _player_trend(pid: int) -> pd.DataFrame:
             _oz_col, _oz_pct_col = _EDGE_OZ_SCOPE_COL[_edge_toggle_state()]
             ea["oz_time_pct"] = ea[_oz_col]
             ea["oz_time_pct_percentile"] = ea[_oz_pct_col]
-            # EDGE distance skated, normalized to a per-minute rate BEFORE the
-            # rename below — same ratio (distance / toi_min, this player's own
-            # season rows) that _edge_distance_rate uses league-wide, so the
-            # per-season and pooled 2yr-avg rows land on an identical basis.
-            # Per-min EDGE rates (distance, 20+ mph bursts) on the same
-            # ratio basis as their league-wide _edge_*_rate counterparts.
+            # Per-min/per-60 EDGE rates (distance, 20+ mph bursts) BEFORE the
+            # rename below — same ratio (this player's own season rows) that
+            # the league-wide _edge_*_rate functions use, so the per-season
+            # and pooled 2yr-avg rows land on an identical basis.
             _rate_src = ea[["season", "distance_skated_miles",
                             "speed_bursts_over_20mph"]].merge(
                 p[["season", "toi_min"]], on="season", how="left")
             _ok_toi = _rate_src["toi_min"] > 0
             _rate_src["EDGE Distance/min"] = np.where(
                 _ok_toi, _rate_src["distance_skated_miles"] / _rate_src["toi_min"], np.nan)
-            _rate_src["EDGE Bursts/min"] = np.where(
-                _ok_toi, _rate_src["speed_bursts_over_20mph"] / _rate_src["toi_min"], np.nan)
+            _rate_src["EDGE Bursts/60"] = np.where(
+                _ok_toi, _rate_src["speed_bursts_over_20mph"] / _rate_src["toi_min"] * 60.0, np.nan)
             ea = ea[["season"] + _EDGE_VALUE_RAW].rename(columns=_EDGE_REN)
             trend = trend.merge(ea, on="season", how="outer")
             trend = trend.merge(
-                _rate_src[["season", "EDGE Distance/min", "EDGE Bursts/min"]],
+                _rate_src[["season", "EDGE Distance/min", "EDGE Bursts/60"]],
                 on="season", how="outer")
 
     # D/N/O Start% — real per-season data (Zones/output/zone_start_per_season.csv).
@@ -2033,7 +2083,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
         _b[c] = lambda v: f"{v * 100:.1f}%"
     _b["EDGE Top Speed"] = lambda v: f"{v:.1f} mph"
     _b["EDGE Bursts 20+"] = lambda v: f"{v:.0f}"
-    _b["EDGE Bursts/min"] = lambda v: f"{v:.3f}/min"
+    _b["EDGE Bursts/60"] = lambda v: f"{v:.2f}/60"
     _b["EDGE Distance (mi)"] = lambda v: f"{v:.1f} mi"
     _b["EDGE Distance/min"] = lambda v: f"{v:.3f} mi/min"
     has_team = "Team" in trend.columns
@@ -2895,7 +2945,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         _chart("NFI% (net-front share)", ["NFI%"])
         _chart("EDGE Zone-Time % (OZ, DZ)", ["EDGE OZ%", "EDGE DZ%"])
         _chart("EDGE Top Speed (mph)", ["EDGE Top Speed"])
-        _chart("EDGE Speed Bursts (20+ mph) per min", ["EDGE Bursts/min"])
+        _chart("EDGE Speed Bursts (20+ mph) per 60", ["EDGE Bursts/60"])
         _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])
     else:
         # Current-year bars: the combined NFI+xG Quality-Games panel (one
@@ -2955,6 +3005,10 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                     f"xG%</h4>", unsafe_allow_html=True)
         _pdo_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+    if {"PDOxG", "NFI%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
+                    f"NFI%</h4>", unsafe_allow_html=True)
+        _pdo_nfi_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
     if {"NFI%", "xG%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
                     f"xG%</h4>", unsafe_allow_html=True)
@@ -2967,6 +3021,10 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
                     f"vs O-Zone</h4>", unsafe_allow_html=True)
         _zone_start_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+    if {"EDGE OZ%", "DZ Start%", "NZ Start%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EZI: EDGE O-Zone "
+                    f"Time vs Non-O-Zone Starts</h4>", unsafe_allow_html=True)
+        _ezi_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
     if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
                     f"vs Top Speed</h4>", unsafe_allow_html=True)
@@ -3163,8 +3221,8 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
                 base["EDGE Distance/min"] = np.where(
                     _ok_toi, base["_dist_sum"] / base["toi_min"], np.nan)
             if "_bursts_sum" in base.columns:
-                base["EDGE Bursts/min"] = np.where(
-                    _ok_toi, base["_bursts_sum"] / base["toi_min"], np.nan)
+                base["EDGE Bursts/60"] = np.where(
+                    _ok_toi, base["_bursts_sum"] / base["toi_min"] * 60.0, np.nan)
             base = base.drop(columns=[c for c in ("_dist_sum", "_bursts_sum")
                                       if c in base.columns])
         return base, True
@@ -3234,12 +3292,15 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     edge = _edge_rate(key)
     if not edge.empty and not base.empty:
         base = base.merge(edge, on="player_id", how="left")
+    # EZI (EDGE Zone Impact) — how much more/less EDGE O-zone TIME a player
+    # gets than their O-zone faceoff STARTS predict. See _add_ezi docstring.
+    base = _add_ezi(base)
     # EDGE distance skated, normalized to a per-minute rate (ratio-of-sums,
     # not games-weighted averaging — see _edge_distance_rate docstring).
     edge_dist_rate = _edge_distance_rate(key)
     if not edge_dist_rate.empty and not base.empty:
         base = base.merge(edge_dist_rate, on="player_id", how="left")
-    # EDGE 20+ mph speed bursts per minute played (same ratio-of-sums basis).
+    # EDGE 20+ mph speed bursts per 60 minutes played (same ratio-of-sums basis).
     edge_bursts_rate = _edge_bursts_rate(key)
     if not edge_bursts_rate.empty and not base.empty:
         base = base.merge(edge_bursts_rate, on="player_id", how="left")
@@ -3328,6 +3389,14 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
                           pad_frac=0.15, min_pad=1e-6)
     _use_color = (team_scoped and color_col is not None and color_col in d.columns
                   and d[color_col].notna().any())
+    # Trim to only the columns this chart actually plots/tooltips — the caller
+    # often passes a wide leaderboard/team frame with dozens of unrelated
+    # metrics, and embedding all of them would let Streamlit's chart-hover
+    # "Show data" button (and any Vega data export) expose columns that were
+    # never drawn on this chart.
+    _keep = [c for c in (name_col, x_col, y_col, color_col if _use_color else None)
+             if c is not None]
+    d = d[_keep].copy()
     _tooltip = [alt.Tooltip(f"{name_col}:N"), alt.Tooltip(f"{x_col}:Q", format=".2f"),
                 alt.Tooltip(f"{y_col}:Q", format=".2f")]
     if _use_color:
@@ -3403,6 +3472,23 @@ def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", hi
         domain_df=domain_df)
 
 
+def _pdo_nfi_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
+                     domain_df: pd.DataFrame = None) -> None:
+    import altair as alt
+    if not {"PDOxG", "NFI%"}.issubset(df.columns):
+        return
+    rule0 = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
+        color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
+    _scatter_with_labels(
+        df, "NFI%", "PDOxG", "NFI%", "PDOxG (luck net of shot quality)",
+        f"pdoxg-vs-nfi-pct{dl_suffix}",
+        "Descriptive, not a ranking — see Methodology. Color = **OZ Start%** "
+        "(light = easier, dark = harder).",
+        team_scoped, extra_layer=rule0, color_col="OZ Start%",
+        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
+        domain_df=domain_df)
+
+
 def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
                         domain_df: pd.DataFrame = None) -> None:
     if not {"DZ Start%", "OZ Start%"}.issubset(df.columns):
@@ -3428,16 +3514,38 @@ def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "",
         domain_df=domain_df)
 
 
+def _ezi_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
+                 domain_df: pd.DataFrame = None) -> None:
+    """EDGE O-zone TIME vs non-O-zone faceoff STARTS (DZ Start% + NZ Start%) —
+    the two raw ingredients behind EZI, plotted directly so a mismatch (low
+    starts, high time, or the reverse) is visible as distance from the
+    diagonal rather than collapsed into the single EZI number."""
+    if not {"EDGE OZ%", "DZ Start%", "NZ Start%"}.issubset(df.columns):
+        return
+    d = df.copy()
+    d["D/N Start%"] = d["DZ Start%"] + d["NZ Start%"]
+    if domain_df is not None and not domain_df.empty and {"DZ Start%", "NZ Start%"}.issubset(domain_df.columns):
+        domain_df = domain_df.copy()
+        domain_df["D/N Start%"] = domain_df["DZ Start%"] + domain_df["NZ Start%"]
+    _scatter_with_labels(
+        d, "EDGE OZ%", "D/N Start%", "EDGE O-Zone Time%", "D/N-Zone Start% (100 − OZ Start%)",
+        f"ezi-scatter{dl_suffix}",
+        "NHL EDGE O-zone time vs non-O-zone faceoff starts — top-right = EZI "
+        "outperformers (low O-zone starts, high O-zone time); bottom-left = "
+        "underperformers (sheltered starts that aren't converting to time).",
+        team_scoped, highlight_name=highlight_name, domain_df=domain_df)
+
+
 def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
                         domain_df: pd.DataFrame = None) -> None:
-    # Y axis is 20+ mph speed bursts PER MINUTE PLAYED (rate), not the raw
+    # Y axis is 20+ mph speed bursts PER 60 MINUTES PLAYED (rate), not the raw
     # season count — so heavy-TOI players don't top it purely on volume.
-    _y = "EDGE Bursts/min" if "EDGE Bursts/min" in df.columns else "EDGE Bursts 20+"
+    _y = "EDGE Bursts/60" if "EDGE Bursts/60" in df.columns else "EDGE Bursts 20+"
     if not {"EDGE Top Speed", _y}.issubset(df.columns):
         return
     _scatter_with_labels(
         df, "EDGE Top Speed", _y, "Top Speed (mph)",
-        "Speed Bursts (20+ mph) / min", f"EDGE-speed-burst-vs-top-speed{dl_suffix}",
+        "Speed Bursts (20+ mph) / 60", f"EDGE-speed-burst-vs-top-speed{dl_suffix}",
         "NHL EDGE tracking, one point per player.",
         team_scoped, highlight_name=highlight_name, domain_df=domain_df)
 
@@ -3724,8 +3832,10 @@ def render_players() -> None:
         fmt["EDGE Distance (mi)"] = lambda x: "—" if pd.isna(x) else f"{x:.1f} mi"
     if "EDGE Distance/min" in disp.columns:
         fmt["EDGE Distance/min"] = lambda x: "—" if pd.isna(x) else f"{x:.3f} mi/min"
-    if "EDGE Bursts/min" in disp.columns:
-        fmt["EDGE Bursts/min"] = lambda x: "—" if pd.isna(x) else f"{x:.3f}/min"
+    if "EDGE Bursts/60" in disp.columns:
+        fmt["EDGE Bursts/60"] = lambda x: "—" if pd.isna(x) else f"{x:.2f}/60"
+    if "EZI" in disp.columns:
+        fmt["EZI"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "TOI" in disp.columns:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     for c in ("GP",):
@@ -3817,6 +3927,11 @@ def render_players() -> None:
                     unsafe_allow_html=True)
         _pdo_xg_scatter(df, _team_scoped)
 
+    if {"PDOxG", "NFI%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs NFI%</h4>",
+                    unsafe_allow_html=True)
+        _pdo_nfi_scatter(df, _team_scoped)
+
     if {"NFI%", "xG%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG%</h4>",
                     unsafe_allow_html=True)
@@ -3831,6 +3946,11 @@ def render_players() -> None:
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone vs "
                     f"O-Zone</h4>", unsafe_allow_html=True)
         _zone_start_scatter(df, _team_scoped)
+
+    if {"EDGE OZ%", "DZ Start%", "NZ Start%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EZI: EDGE O-Zone "
+                    f"Time vs Non-O-Zone Starts</h4>", unsafe_allow_html=True)
+        _ezi_scatter(df, _team_scoped)
 
     if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts vs "
@@ -3927,6 +4047,10 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
                         f"{_team} PDOxG vs xG% (playoffs)</h4>", unsafe_allow_html=True)
             _pdo_xg_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi)
+        if {"Player", "PDOxG", "NFI%"}.issubset(_tf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
+                        f"{_team} PDOxG vs NFI% (playoffs)</h4>", unsafe_allow_html=True)
+            _pdo_nfi_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi)
         if {"Player", "NFI%", "xG%"}.issubset(_tf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
                         f"{_team} NFI% vs xG% (playoffs)</h4>", unsafe_allow_html=True)
@@ -5554,6 +5678,10 @@ def render_trade_analyzer() -> None:
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone "
                         "Starts: D-Zone vs O-Zone</h4>", unsafe_allow_html=True)
             _zone_start_scatter(_sf, True, dl_suffix="-trade", domain_df=_full)
+        if {"EDGE OZ%", "DZ Start%", "NZ Start%"}.issubset(_sf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EZI: "
+                        "EDGE O-Zone Time vs Non-O-Zone Starts</h4>", unsafe_allow_html=True)
+            _ezi_scatter(_sf, True, dl_suffix="-trade", domain_df=_full)
         if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: "
                         "Speed Bursts vs Top Speed</h4>", unsafe_allow_html=True)
@@ -5957,11 +6085,21 @@ def main() -> None:
         initial_sidebar_state="collapsed",
     )
     inject_css()
-    # Fullscreen (expand) on charts is fine and kept. Only the Vega "···" actions
-    # menu — which offers "View Source / Compiled Vega / Open in Vega Editor" and
-    # a raw-data view on hover — is hidden, so hovering a chart doesn't expose the
-    # underlying data/spec. Scoped to charts; data-table toolbars are untouched.
-    _css = ".vega-embed details,.vega-embed summary,.vega-embed .vega-actions{display:none !important;}"
+    # Fullscreen (expand) on charts is fine and kept. Two separate "show the
+    # underlying data" affordances are hidden: (1) the Vega "···" actions menu
+    # (View Source / Compiled Vega / Vega Editor), and (2) Streamlit's OWN
+    # native chart-hover toolbar button (aria-label="Show data") — a distinct
+    # feature that renders the chart's full source DataFrame as a table,
+    # including every column passed to alt.Chart(d) even when only 2-4 of them
+    # are actually plotted/tooltipped. Both hidden so hovering a chart never
+    # exposes more than what's drawn. Scoped to charts; data-table toolbars
+    # (st.dataframe) are untouched.
+    _css = (
+        ".vega-embed details,.vega-embed summary,.vega-embed .vega-actions"
+        "{display:none !important;}"
+        "[data-testid='stElementContainer']:has([data-testid='stVegaLiteChart']) "
+        "button[aria-label='Show data']{display:none !important;}"
+    )
     st.markdown(f"<style>{_css}</style>", unsafe_allow_html=True)
     render_header()
     st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)

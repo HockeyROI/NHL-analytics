@@ -414,7 +414,7 @@ Added 2026-07: NHL's own player-tracking data (radio-frequency + camera-based, t
 
 - **Zone time %** — OZ/NZ/DZ time share while the player is on the ice. OZ% has a toggle-able even-strength/all-situations scope (NHL only publishes an even-strength split for the offensive-zone stat specifically; NZ%/DZ% have just the one all-situations number regardless of the toggle).
 - **Top skating speed** (mph) — the player's single fastest recorded moment that season.
-- **Speed bursts (20+ mph)** — count of times the player exceeded 20 mph. No finer speed bands are published for skating bursts (unlike shot speed, which NHL does band). Also shown as **EDGE Bursts/min** — bursts ÷ ES TOI minutes, a ratio-of-sums rate so heavy-TOI players don't top the raw count purely on volume (used by the Speed-Bursts-vs-Top-Speed scatter).
+- **Speed bursts (20+ mph)** — count of times the player exceeded 20 mph. No finer speed bands are published for skating bursts (unlike shot speed, which NHL does band). Also shown as **EDGE Bursts/60** — bursts ÷ ES TOI minutes × 60, a ratio-of-sums rate so heavy-TOI players don't top the raw count purely on volume (used by the Speed-Bursts-vs-Top-Speed scatter).
 - **Distance skated** (miles) — total for the season. Also shown as **EDGE Distance/min**, same ratio-of-sums construction.
 
 ### Source and scrape
@@ -438,6 +438,20 @@ The EDGE API only exposes pre-aggregated season totals plus a single "best game"
 ### Display convention
 
 Each EDGE value shows a computed **(league / team) rank**, not NHL's own percentile — matching every other ranked column in the app. Pooled/2yr views are a games-played-weighted average across the player's available seasons (including for the rank basis), since NHL doesn't expose enough to recompute a true multi-season number.
+
+### EZI — EDGE Zone Impact
+
+Added 2026-07: a 0–100 index (50 = position-group average) that relates EDGE's O-zone **time** to my PBP O-zone faceoff **starts**, to surface players who generate more O-zone time than their deployment alone would predict.
+
+**Construction:** `raw = EDGE OZ time% − OZ Start%` — a straight difference, both already on a 0–100 basis (EDGE OZ time% is toggle-aware: EV or all-situations). This is deliberately a *difference*, not `EDGE OZ time% − (DZ Start% + NZ Start%)` — since OZ + DZ + NZ Start% always sum to 100%, that alternate form is algebraically identical to `(EDGE OZ time% + OZ Start% − 100)`, which rewards a player who's high on *both* (heavily sheltered *and* producing) rather than isolating the actual mismatch of interest. The difference form does that correctly:
+
+- **Positive** → more O-zone time than the O-zone starts alone would suggest (driving play beyond sheltered deployment).
+- **Negative** → O-zone starts aren't converting into O-zone time (sheltered but not producing).
+- **Near zero** → time tracks starts.
+
+Recentred exactly like OZI/DZI/NZI/TZI: `EZI = clip(50 + (raw − position-group average raw), 0, 100)`, forwards and defense normalised separately, natural spread (no artificial stretch). The position-group average is computed only over players clearing a ≥200 ES-min stability floor; every player with both source columns still gets a displayed EZI value regardless of their own TOI.
+
+**Availability:** regular season only (single season, 2yr, 4yr pool) — playoffs has no zone-start data, so EZI isn't computed there. Team-scoped and league-wide scatters (EDGE O-zone time% vs D/N-zone Start%, the two raw ingredients) sit alongside the leaderboard column so a mismatch is visible directly, not just collapsed into the single EZI number.
 
 ---
 
