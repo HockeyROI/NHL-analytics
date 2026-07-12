@@ -523,7 +523,7 @@ _ABBR_FULL = {
     "EDGE Bursts/60": "NHL EDGE — 20+ mph speed bursts per 60 minutes played",
     "EZI": "EDGE Zone Impact — O-zone time earned above/below what O-zone faceoff starts predict (0–100, 50 = average)",
     "EDGE Distance (mi)": "NHL EDGE — Distance skated (miles)",
-    "EDGE Distance/min": "NHL EDGE — Distance skated per minute (miles)",
+    "EDGE Distance/60": "NHL EDGE — Distance skated per 60 minutes (miles)",
     # Goalies
     "NFI-GSAx": "Net Front Impact — Goals Saved Above Expected (net-front shots)",
     "NFI-GSAx/60": "Net Front Impact — Goals Saved Above Expected per 60 minutes",
@@ -844,7 +844,7 @@ def render_methodology() -> None:
             "NHL EDGE",
             "NHL's own player-tracking data (by player position, not puck position) — offensive / "
             "neutral / defensive-zone time share, top skating speed, 20+ mph speed-burst count "
-            "(also shown per-60-minutes-played), and distance skated (also per-minute). "
+            "(also shown per-60-minutes-played), and distance skated (also per-60). "
             "A <b>different measurement basis</b> than the zone metrics above: EDGE "
             "tracks continuously across all-situations or even-strength TOI (toggle-able for OZ%); "
             "NZI/DZI/OZI and D/N/O Start% track puck/faceoff position after strict-5v5 faceoffs only "
@@ -853,11 +853,17 @@ def render_methodology() -> None:
             "percentile, matching every other ranked column in the app. Pooled/2yr views are a "
             "games-played-weighted average across seasons — regular season only. "
             "<b>EZI (EDGE Zone Impact)</b> relates the two: a 0–100 index (50 = position-group "
-            "average) built from <code>EDGE O-zone time% − OZ Start%</code> — positive means a "
-            "player earns more O-zone time than their O-zone faceoff starts alone would predict "
-            "(driving play beyond sheltered deployment); negative means sheltered starts aren't "
-            "converting into time. Recentred the same way as OZI/DZI/NZI/TZI. Regular season only "
-            "(no playoff zone-start data).",
+            "average) built from a <b>regression residual</b>, not a plain difference — "
+            "<code>OZ time% − OZ Start%</code> sounds right but is badly biased, since Start% "
+            "swings far more with deployment (std≈6.7) than O-zone time actually does (std≈2.4); "
+            "a plain subtraction correlated −0.94 with Start% itself, i.e. it was mostly just an "
+            "inverted deployment metric. EZI instead fits <code>OZ time% ~ OZ Start%</code> "
+            "per position group (slope ≈0.23–0.25 — starts predict time far more weakly than "
+            "1-for-1) and uses the residual: positive means a player earns more O-zone time than "
+            "their own starts predict (driving play beyond deployment); negative means sheltered "
+            "starts aren't converting into time. Residual is exactly uncorrelated with Start% by "
+            "construction. Recentred onto the same 0–100/50-average scale as OZI/DZI/NZI/TZI. "
+            "Regular season only (no playoff zone-start data).",
         )
         + _meth_framework(
             "Referees",
@@ -1269,7 +1275,7 @@ _EDGE_REN = {
     "speed_bursts_over_20mph": "EDGE Bursts 20+",
     "speed_bursts_over_20mph_percentile": "EDGE Bursts %ile",
     "distance_skated_miles": "EDGE Distance (mi)", "distance_skated_percentile": "EDGE Distance %ile",
-    "edge_distance_per_min": "EDGE Distance/min",
+    "edge_distance_per60": "EDGE Distance/60",
     "edge_bursts_per60": "EDGE Bursts/60",
 }
 # Value-only columns (excludes the raw NHL percentile columns) — displayed with
@@ -1277,7 +1283,7 @@ _EDGE_REN = {
 # other ranked column in this table.
 _EDGE_VALUE_RAW = [c for c in _EDGE_COLS if "percentile" not in c]
 _EDGE_VALUE_DISP = ([_EDGE_REN[c] for c in _EDGE_VALUE_RAW]
-                    + ["EDGE Distance/min", "EDGE Bursts/60", "EZI"])
+                    + ["EDGE Distance/60", "EDGE Bursts/60", "EZI"])
 
 # EDGE OZ%-scope toggle — the ONLY EDGE stat with an even-strength split from
 # NHL is offensive-zone time; NZ%/DZ% have just the one (all-situations)
@@ -1289,8 +1295,12 @@ _EDGE_OZ_SCOPE_COL = {"Even Strength": ("oz_time_pct_ev", "oz_time_pct_ev_percen
 def _edge_toggle_state() -> str:
     """Shared EDGE OZ% scope toggle state (set by the widget in
     render_players, read here so it applies wherever EDGE is computed this
-    run — same shared-session-state pattern as _pdo_toggle_state)."""
-    return st.session_state.get("players_edge_scope", "All Situations")
+    run — same shared-session-state pattern as _pdo_toggle_state). Defaults to
+    Even Strength to match the rest of the page (OZI/DZI/NZI/TZI and OZ Start%
+    are all strict 5v5) — and, importantly, so EZI compares EDGE OZ time% to
+    OZ Start% on the SAME even-strength basis rather than letting power-play
+    O-zone time leak into the residual."""
+    return st.session_state.get("players_edge_scope", "Even Strength")
 
 
 def _edge_rate(scope_key: str) -> pd.DataFrame:
@@ -1362,7 +1372,7 @@ def _edge_rate_playoffs() -> pd.DataFrame:
 
 
 def _edge_distance_rate(scope_key: str) -> pd.DataFrame:
-    """EDGE distance skated, normalized to a per-minute rate. Computed as a
+    """EDGE distance skated, normalized to a per-60-minutes rate. Computed as a
     ratio-of-sums (sum distance, sum toi_min across the scope's seasons, then
     divide once) rather than games-weighted-averaging the way _edge_rate
     pools its other columns — distance_skated_miles is a season TOTAL, and
@@ -1390,8 +1400,8 @@ def _edge_distance_rate(scope_key: str) -> pd.DataFrame:
     g = sub.groupby("player_id").agg(_dist=("distance_skated_miles", "sum"),
                                      _toi=("toi_min", "sum")).reset_index()
     ok = g["_toi"] > 0
-    g["edge_distance_per_min"] = np.where(ok, g["_dist"] / g["_toi"], np.nan)
-    return g[["player_id", "edge_distance_per_min"]]
+    g["edge_distance_per60"] = np.where(ok, g["_dist"] / g["_toi"] * 60.0, np.nan)
+    return g[["player_id", "edge_distance_per60"]]
 
 
 def _edge_bursts_rate(scope_key: str) -> pd.DataFrame:
@@ -1427,41 +1437,64 @@ _EZI_MIN_TOI = 200.0   # stability floor on the position-group AVERAGE only
 def _add_ezi(base: pd.DataFrame) -> pd.DataFrame:
     """EZI (EDGE Zone Impact) — a 0-100 index (50 = position-group average)
     measuring how much MORE (or less) EDGE offensive-zone TIME a player earns
-    than their O-zone faceoff STARTS alone would predict.
+    than their O-zone faceoff STARTS predict, ADJUSTED for how weakly starts
+    actually predict time.
 
-    raw = EDGE OZ time% (0-100, toggle-aware) − OZ Start% (0-100, my PBP
-    faceoff-started 5v5 shifts). A straight DIFFERENCE, not a sum against
-    (DZ Start% + NZ Start%) — since OZ+DZ+NZ Start% always sum to 100%, that
-    alternate form is algebraically identical to (OZ time% + OZ Start% − 100),
-    which rewards a player high on BOTH (heavily sheltered AND producing) —
-    not the signal we want. The difference form isolates a real mismatch:
-    positive = more O-zone time than the starts alone would suggest (driving
-    play beyond sheltered deployment); negative = O-zone starts aren't
-    converting into O-zone time; near zero = time tracks starts.
+    A naive raw = OZ time% − OZ Start% implicitly assumes starts predict time
+    1-for-1. They don't: OZ Start% has huge deployment-driven spread (std≈6.7,
+    range 8–53) while OZ time% barely moves (std≈2.4, range 35–50.5) —
+    possession/tempo dominates over the starting whistle far more than
+    deployment does. An OLS fit of OZ time% on OZ Start% (position-group-
+    specific, verified 2026-07) gives a slope of only ≈0.23-0.25: a 40-point
+    gap in starts predicts only a ~9-10-point gap in time. The naive
+    subtraction therefore over-penalizes high-Start% players and over-rewards
+    low-Start% players by roughly 4x — confirmed empirically: naive-diff
+    correlated −0.94 with OZ Start% itself, meaning it was mostly just an
+    inverted deployment metric, not a real skill residual (the leaderboard
+    was dominated by low-event defensive players; zero offensive stars).
+
+    Fix: raw = OZ time% − (intercept + slope × OZ Start%), i.e. the actual
+    regression RESIDUAL, fit separately per position group (least squares,
+    OZ Start% as the sole predictor). By construction this residual is
+    exactly uncorrelated with OZ Start% (verified: 0.0000), so it isolates
+    "time beyond what your own starts predict" rather than restating
+    deployment. Positive = converts O-zone time beyond what the starts alone
+    would suggest; negative = starts aren't converting into time.
 
     Recentred exactly like OZI/DZI/NZI/TZI: EZI = clip(50 + (raw − position-
-    group average raw), 0, 100), forwards and defense normalised separately —
-    natural spread, no artificial stretch. The group AVERAGE is computed only
-    over players clearing a >=200 ES-min stability floor; every player with
-    both source columns still gets a displayed EZI value regardless of their
-    own TOI. Requires "oz_time_pct" (raw EDGE fraction, pre-rename) and
-    "OZ Start%"; no-ops if either is missing (e.g. playoffs, which has no
-    zone-start data)."""
+    group average raw), 0, 100) — and since OLS residuals average to 0 within
+    each fitted group by construction, this recentring step is a no-op on
+    the population used to fit the regression; it only matters for making
+    the final scale consistent with the other Zone Impact metrics. Requires
+    "oz_time_pct" (raw EDGE fraction, pre-rename), "OZ Start%", "position",
+    "toi_min" (>=200 ES-min floor on which rows fit the regression, for
+    stability); no-ops if the inputs are missing (e.g. playoffs, which has
+    no zone-start data)."""
     if not {"oz_time_pct", "OZ Start%", "position", "toi_min"}.issubset(base.columns):
         return base
     base = base.copy()
-    raw = base["oz_time_pct"] * 100.0 - base["OZ Start%"]
+    oz_time = base["oz_time_pct"] * 100.0
+    oz_start = base["OZ Start%"]
     pos_group = np.where(base["position"] == "D", "D", "F")
     floor_ok = base["toi_min"].fillna(0) >= _EZI_MIN_TOI
     ezi = pd.Series(np.nan, index=base.index)
     for grp in ("F", "D"):
-        m = (pos_group == grp) & raw.notna()
+        m = (pos_group == grp) & oz_time.notna() & oz_start.notna()
         if not m.any():
             continue
-        grp_avg = raw[m & floor_ok].mean()
+        fit_m = m & floor_ok
+        if fit_m.sum() < 10:   # too few points to fit a stable regression
+            fit_m = m
+        slope, intercept = np.polyfit(oz_start[fit_m], oz_time[fit_m], 1)
+        raw = oz_time[m] - (intercept + slope * oz_start[m])   # indexed like m's True rows
+        # raw already averages ~0 over the fitting population by OLS
+        # construction, but recentre over the SAME floor-qualified subset
+        # (not the full group) so the displayed scale matches every other
+        # Zone Impact metric's convention exactly.
+        grp_avg = raw[fit_m[m]].mean()
         if pd.isna(grp_avg):
-            grp_avg = raw[m].mean()   # fall back if the floor empties the group
-        ezi.loc[m] = (50.0 + (raw[m] - grp_avg)).clip(0, 100)
+            grp_avg = raw.mean()
+        ezi.loc[m] = (50.0 + (raw - grp_avg)).clip(0, 100)
     base["EZI"] = ezi.round(1)
     return base
 
@@ -1767,14 +1800,14 @@ def _player_trend(pid: int) -> pd.DataFrame:
                             "speed_bursts_over_20mph"]].merge(
                 p[["season", "toi_min"]], on="season", how="left")
             _ok_toi = _rate_src["toi_min"] > 0
-            _rate_src["EDGE Distance/min"] = np.where(
-                _ok_toi, _rate_src["distance_skated_miles"] / _rate_src["toi_min"], np.nan)
+            _rate_src["EDGE Distance/60"] = np.where(
+                _ok_toi, _rate_src["distance_skated_miles"] / _rate_src["toi_min"] * 60.0, np.nan)
             _rate_src["EDGE Bursts/60"] = np.where(
                 _ok_toi, _rate_src["speed_bursts_over_20mph"] / _rate_src["toi_min"] * 60.0, np.nan)
             ea = ea[["season"] + _EDGE_VALUE_RAW].rename(columns=_EDGE_REN)
             trend = trend.merge(ea, on="season", how="outer")
             trend = trend.merge(
-                _rate_src[["season", "EDGE Distance/min", "EDGE Bursts/60"]],
+                _rate_src[["season", "EDGE Distance/60", "EDGE Bursts/60"]],
                 on="season", how="outer")
 
     # D/N/O Start% — real per-season data (Zones/output/zone_start_per_season.csv).
@@ -2085,7 +2118,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     _b["EDGE Bursts 20+"] = lambda v: f"{v:.0f}"
     _b["EDGE Bursts/60"] = lambda v: f"{v:.2f}/60"
     _b["EDGE Distance (mi)"] = lambda v: f"{v:.1f} mi"
-    _b["EDGE Distance/min"] = lambda v: f"{v:.3f} mi/min"
+    _b["EDGE Distance/60"] = lambda v: f"{v:.2f} mi/60"
     has_team = "Team" in trend.columns
     has_gp = "GP" in trend.columns
     rows = []
@@ -2160,9 +2193,9 @@ _QG_BAR_METRICS = ["NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
 # Each concept renders a Raw+Rel pair grouped together, spaced from the next
 # concept. NFI panel and xG panel go side by side.
 _QG_PAIR_PANELS = {
-    "NFI": [("Overall", "NFI-QG%", "RelNFI-QG%"),
-            ("Attack", "NFI-QG-A%", "RelNFI-QG-A%"),
-            ("Suppress", "NFI-QG-S%", "RelNFI-QG-S%")],
+    "NFI": [("Attack", "NFI-QG-A%", "RelNFI-QG-A%"),
+            ("Suppress", "NFI-QG-S%", "RelNFI-QG-S%"),
+            ("Overall", "NFI-QG%", "RelNFI-QG%")],
     "xG": [("For", "xG-QG-F%", "RelxG-QG-F%"),
            ("Against", "xG-QG-A%", "RelxG-QG-A%"),
            ("Overall", "xG-QG%", "RelxG-QG%")],
@@ -2371,33 +2404,44 @@ def _strip_tooltips(obj) -> None:
 
 
 def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 6,
-                keep_tooltip: bool = False) -> None:
+                keep_tooltip: bool = False, brand_embedded: bool = False) -> None:
     """Render an Altair chart + a 'Save PNG' download button. Non-faceted charts
     carry the two-colour HockeyROI wordmark + site URL embedded inside the plot
     (bottom-right, just above the x-axis) so it shows on-screen AND in the PNG
-    without distorting the axes. Faceted/multi-panel charts can't embed it (value-
-    positioned marks don't resolve to a panel's coordinates), so they show the same
-    stacked wordmark + URL as an HTML footer on-screen and have it composited into
-    the PNG. brand_lift raises the embedded footer when data crowds the bottom.
-    keep_tooltip: most charts strip on-screen tooltips (the Save button below
-    covers "more data"), but a chart that has NO other way to identify a point —
-    e.g. a league-wide scatter with hundreds of unlabeled dots — should set this
-    True so hovering still reveals which point is which."""
+    without distorting the axes. Faceted/multi-panel charts normally can't embed
+    it that way (value-positioned marks don't resolve to a panel's coordinates),
+    so they show the same stacked wordmark + URL as an HTML footer on-screen and
+    have it composited into the PNG — UNLESS brand_embedded=True, which means the
+    caller already layered _brand_layer() onto one of its own sub-panels (e.g. the
+    rightmost panel of an hconcat, so it reads as "bottom-right of the graph"
+    instead of a separate footer below it) — in which case the footer/compositing
+    step is skipped entirely to avoid a duplicate brand. brand_lift raises the
+    embedded footer when data crowds the bottom. keep_tooltip: most charts strip
+    on-screen tooltips (the Save button below covers "more data"), but a chart
+    that has NO other way to identify a point — e.g. a league-wide scatter with
+    hundreds of unlabeled dots — should set this True so hovering still reveals
+    which point is which."""
     import altair as alt
     import hashlib
     _cd = chart.to_dict()
     _multi = any(k in _cd for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
-    disp = chart if _multi else alt.layer(chart, _brand_layer(brand_lift))
+    _footer = _multi and not brand_embedded
+    # brand_embedded means the caller already layered the wordmark into the chart
+    # (or one of its panels) — don't re-layer it here. Re-layering also drops any
+    # in-chart title (Altair discards a unit/layer title when it's nested inside
+    # another layer), so an embedded-brand titled panel must skip this step.
+    disp = (chart if (_multi or brand_embedded)
+            else alt.layer(chart, _brand_layer(brand_lift)))
     # On-screen: strip hover tooltips (the Save button below covers "more data"),
     # unless keep_tooltip says this chart actually needs them to identify a point.
     _on_screen = disp.to_dict()
     if not keep_tooltip:
         _strip_tooltips(_on_screen)
     st.vega_lite_chart(_on_screen, use_container_width=True)
-    if _multi:
+    if _footer:
         _chart_brand(brand_width)
     png = _alt_png(disp.to_json())
-    if _multi:
+    if _footer:
         png = _png_add_brand(png)        # composite the brand into the download
     if _CHART_TITLE:
         png = _png_add_title(png, _CHART_TITLE)   # name whose data it is
@@ -2528,14 +2572,18 @@ def _qg_bar_chart(vals: dict, label: str, caption: str = None,
     _show_chart(bars + rule, dl_name=f"{dl_prefix}-{label}")
 
 
-def _qg_panel_chart(panels: list[tuple], vals: dict, title: str):
+def _qg_panel_chart(panels: list[tuple], vals: dict, title: str, embed_brand: bool = False):
     """Build (not render) one panel's diverging-bar Altair chart: each concept's
     Raw bar sits directly next to its Rel bar, groups spaced apart via blank
     spacer categories on the x-axis. Every bar keeps its OWN x-axis tick label
     (the metric's display name) — no opacity/legend distinction between Raw and
     Rel; colour is purely the original distance-from-50 diverging scale (darker
-    = further from 50, blue above / orange below). Returns an Altair chart
-    object (caller combines panels + calls _show_chart once)."""
+    = further from 50, blue above / orange below). embed_brand=True layers the
+    HockeyROI wordmark into THIS panel's own bottom-right corner (used on the
+    rightmost panel of a combined hconcat, so the logo reads as "bottom-right of
+    the graph" rather than a separate footer below the whole combined chart).
+    Returns an Altair chart object (caller combines panels + calls _show_chart
+    once)."""
     import altair as alt
     order: list[str] = []
     rows = []
@@ -2561,25 +2609,27 @@ def _qg_panel_chart(panels: list[tuple], vals: dict, title: str):
         tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
+    layers = bars + rule
+    if embed_brand:
+        layers = layers + _brand_layer(6)
     # Widened so the two panels together spread toward the page's full content
     # width (near the brand watermark), not a cramped narrow chart.
-    return (bars + rule).properties(
+    return layers.properties(
         width=max(340, 66 * len(order)), height=300,
         title=alt.TitleParams(text=title, color=PALETTE["text"], fontSize=13))
 
 
 def _qg_paired_bar_chart(vals: dict, label: str, caption: str, dl_prefix: str) -> None:
-    """The NFI and xG Quality-Games panels combined into ONE chart (one download
-    button covers both) — each panel shows Raw+Rel bars paired per concept,
-    spaced between concepts, on a shared fixed y-axis so the two panels line up."""
-    import altair as alt
-    nfi_chart = _qg_panel_chart(_QG_PAIR_PANELS["NFI"], vals, "NFI")
-    xg_chart = _qg_panel_chart(_QG_PAIR_PANELS["xG"], vals, "xG (MoneyPuck)")
+    """Two SEPARATE Quality-Games bar charts — NFI and xG (MoneyPuck) — each its
+    own downloadable image so either can be posted on its own without the other
+    crowding it. Each shows Raw+Rel bars paired per concept, spaced between
+    concepts, on the same fixed y-axis; the brand wordmark is embedded in each
+    chart's own bottom-right corner."""
     st.caption(caption)
-    combined = alt.hconcat(nfi_chart, xg_chart, spacing=40)
-    _panel_w = max(340, 66 * (2 * len(_QG_PAIR_PANELS["NFI"]) - 1))
-    _show_chart(combined, dl_name=f"{dl_prefix}-{label}",
-               brand_width=_panel_w * 2 + 40 + 55)
+    for fam, title in (("NFI", "NFI Quality Games %"),
+                       ("xG", "xG (MoneyPuck) Quality Games %")):
+        ch = _qg_panel_chart(_QG_PAIR_PANELS[fam], vals, title, embed_brand=True)
+        _show_chart(ch, dl_name=f"{dl_prefix}-{fam}-{label}", brand_embedded=True)
 
 
 def _qg_bar_chart_compare(players_vals: dict, label: str, metrics: list[str] = None,
@@ -3218,8 +3268,8 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
             base = base.merge(edge.rename(columns=_EDGE_REN), on="player_id", how="left")
             _ok_toi = base["toi_min"] > 0
             if "_dist_sum" in base.columns:
-                base["EDGE Distance/min"] = np.where(
-                    _ok_toi, base["_dist_sum"] / base["toi_min"], np.nan)
+                base["EDGE Distance/60"] = np.where(
+                    _ok_toi, base["_dist_sum"] / base["toi_min"] * 60.0, np.nan)
             if "_bursts_sum" in base.columns:
                 base["EDGE Bursts/60"] = np.where(
                     _ok_toi, base["_bursts_sum"] / base["toi_min"] * 60.0, np.nan)
@@ -3295,7 +3345,7 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     # EZI (EDGE Zone Impact) — how much more/less EDGE O-zone TIME a player
     # gets than their O-zone faceoff STARTS predict. See _add_ezi docstring.
     base = _add_ezi(base)
-    # EDGE distance skated, normalized to a per-minute rate (ratio-of-sums,
+    # EDGE distance skated, normalized to a per-60-minutes rate (ratio-of-sums,
     # not games-weighted averaging — see _edge_distance_rate docstring).
     edge_dist_rate = _edge_distance_rate(key)
     if not edge_dist_rate.empty and not base.empty:
@@ -3661,14 +3711,15 @@ def render_players() -> None:
             st.caption("↑ Raw DZ/NZ/OZ Start% values only appear in the table below "
                        "once **Zone Impact** (or **EDGE**) is tapped on.")
     if "EDGE" in display_fams:
-        st.session_state.setdefault("players_edge_scope", "All Situations")
+        st.session_state.setdefault("players_edge_scope", "Even Strength")
         st.radio("EDGE OZ% scope", list(_EDGE_OZ_SCOPE_COL.keys()), horizontal=True,
                  key="players_edge_scope",
-                 help="Scope for EDGE OZ% only — NZ%/DZ% always show their one "
-                      "available (all-situations) number; NHL doesn't publish an "
-                      "even-strength split for those two.")
-        st.caption("The scope toggle applies only to **EDGE OZ%** — NZ%/DZ% have no "
-                   "even-strength variant from NHL, so they're unaffected.")
+                 help="Scope for EDGE OZ% (and EZI) only — NZ%/DZ% always show their "
+                      "one available (all-situations) number; NHL doesn't publish an "
+                      "even-strength split for those two. Defaults to Even Strength to "
+                      "match the rest of the page (all 5v5).")
+        st.caption("The scope toggle applies only to **EDGE OZ%** and **EZI** — NZ%/DZ% "
+                   "have no even-strength variant from NHL, so they're unaffected.")
     if "xG" in display_fams:
         st.session_state.setdefault("players_pdo_scope", "5v5")
         st.radio("PDO shot scope", list(PDO_SCOPE_FILE.keys()), horizontal=True,
@@ -3830,8 +3881,8 @@ def render_players() -> None:
         fmt["EDGE Bursts 20+"] = lambda x: "—" if pd.isna(x) else f"{x:.0f}"
     if "EDGE Distance (mi)" in disp.columns:
         fmt["EDGE Distance (mi)"] = lambda x: "—" if pd.isna(x) else f"{x:.1f} mi"
-    if "EDGE Distance/min" in disp.columns:
-        fmt["EDGE Distance/min"] = lambda x: "—" if pd.isna(x) else f"{x:.3f} mi/min"
+    if "EDGE Distance/60" in disp.columns:
+        fmt["EDGE Distance/60"] = lambda x: "—" if pd.isna(x) else f"{x:.2f} mi/60"
     if "EDGE Bursts/60" in disp.columns:
         fmt["EDGE Bursts/60"] = lambda x: "—" if pd.isna(x) else f"{x:.2f}/60"
     if "EZI" in disp.columns:

@@ -412,10 +412,10 @@ Added 2026-07: NHL's own player-tracking data (radio-frequency + camera-based, t
 
 ### What it measures
 
-- **Zone time %** — OZ/NZ/DZ time share while the player is on the ice. OZ% has a toggle-able even-strength/all-situations scope (NHL only publishes an even-strength split for the offensive-zone stat specifically; NZ%/DZ% have just the one all-situations number regardless of the toggle).
+- **Zone time %** — OZ/NZ/DZ time share while the player is on the ice. OZ% has a toggle-able even-strength/all-situations scope (NHL only publishes an even-strength split for the offensive-zone stat specifically; NZ%/DZ% have just the one all-situations number regardless of the toggle). The toggle **defaults to Even Strength** so EDGE OZ% (and EZI, below) sit on the same 5v5 basis as the rest of the page (OZI/DZI/NZI/TZI and OZ Start%).
 - **Top skating speed** (mph) — the player's single fastest recorded moment that season.
 - **Speed bursts (20+ mph)** — count of times the player exceeded 20 mph. No finer speed bands are published for skating bursts (unlike shot speed, which NHL does band). Also shown as **EDGE Bursts/60** — bursts ÷ ES TOI minutes × 60, a ratio-of-sums rate so heavy-TOI players don't top the raw count purely on volume (used by the Speed-Bursts-vs-Top-Speed scatter).
-- **Distance skated** (miles) — total for the season. Also shown as **EDGE Distance/min**, same ratio-of-sums construction.
+- **Distance skated** (miles) — total for the season. Also shown as **EDGE Distance/60** — distance ÷ ES TOI minutes × 60, same ratio-of-sums construction.
 
 ### Source and scrape
 
@@ -443,13 +443,21 @@ Each EDGE value shows a computed **(league / team) rank**, not NHL's own percent
 
 Added 2026-07: a 0–100 index (50 = position-group average) that relates EDGE's O-zone **time** to my PBP O-zone faceoff **starts**, to surface players who generate more O-zone time than their deployment alone would predict.
 
-**Construction:** `raw = EDGE OZ time% − OZ Start%` — a straight difference, both already on a 0–100 basis (EDGE OZ time% is toggle-aware: EV or all-situations). This is deliberately a *difference*, not `EDGE OZ time% − (DZ Start% + NZ Start%)` — since OZ + DZ + NZ Start% always sum to 100%, that alternate form is algebraically identical to `(EDGE OZ time% + OZ Start% − 100)`, which rewards a player who's high on *both* (heavily sheltered *and* producing) rather than isolating the actual mismatch of interest. The difference form does that correctly:
+**Construction — a regression RESIDUAL, not a straight difference.** A first version used `raw = EDGE OZ time% − OZ Start%` (a plain percentage-point difference — chosen over `EDGE OZ time% − (DZ Start% + NZ Start%)`, since with OZ+DZ+NZ Start% always summing to 100% that alternate form is algebraically identical to `(EDGE OZ time% + OZ Start% − 100)`, which rewards a player high on *both* axes rather than isolating the mismatch of interest). That plain-difference version turned out to be badly biased: `OZ Start%` has enormous deployment-driven spread (std ≈ 6.7, range 8–53) while `OZ time%` barely moves (std ≈ 2.4, range 35–50.5) — so a straight subtraction is dominated almost entirely by the (high-variance) starts term. Verified empirically: the plain difference correlated **−0.94** with `OZ Start%` itself, and an OLS fit of `OZ time% ~ OZ Start%` gave a slope of only **≈0.23–0.25** (a 40-point gap in starts predicts only a ~9–10-point gap in time, not the full 40 the plain subtraction assumes) — so the naive version was mostly just an inverted deployment metric, and its leaderboard was dominated by low-event defensive players with essentially no offensive talent represented.
 
-- **Positive** → more O-zone time than the O-zone starts alone would suggest (driving play beyond sheltered deployment).
+**Fix:** fit a position-group-specific OLS regression of `OZ time%` on `OZ Start%`, and use the **residual** as `raw`:
+
+`raw = OZ time% − (intercept + slope × OZ Start%)`
+
+fit separately for forwards and defense (least squares, `OZ Start%` as the sole predictor, fit over players clearing the ≥200 ES-min floor). By construction an OLS residual is exactly uncorrelated with the predictor — verified: correlation with `OZ Start%` is **0.0000** — so `raw` isolates "time beyond what your own starts predict" rather than restating deployment. The resulting leaderboard is a genuine mix of offensive stars and possession-driving depth players across the full range of `OZ Start%`.
+
+- **Positive** → converts O-zone time beyond what the starts alone predict (driving play beyond deployment).
 - **Negative** → O-zone starts aren't converting into O-zone time (sheltered but not producing).
-- **Near zero** → time tracks starts.
+- **Near zero** → time tracks the position-group's normal starts→time relationship.
 
-Recentred exactly like OZI/DZI/NZI/TZI: `EZI = clip(50 + (raw − position-group average raw), 0, 100)`, forwards and defense normalised separately, natural spread (no artificial stretch). The position-group average is computed only over players clearing a ≥200 ES-min stability floor; every player with both source columns still gets a displayed EZI value regardless of their own TOI.
+Recentred exactly like OZI/DZI/NZI/TZI: `EZI = clip(50 + (raw − position-group average raw), 0, 100)`, forwards and defense normalised separately, natural spread (no artificial stretch) — though since OLS residuals already average to ≈0 within the fitted population, this step mainly keeps EZI on the same 0–100/50-average scale as the rest of the Zone Impact family rather than doing meaningful additional recentring. The position-group average (and the regression fit itself) use only players clearing a ≥200 ES-min stability floor; every player with both source columns still gets a displayed EZI value regardless of their own TOI.
+
+**Basis:** EZI uses the **even-strength** EDGE O-zone time% (following the EDGE OZ% scope toggle, which defaults to EV) so the time term shares the 5v5 basis of `OZ Start%` — if all-situations O-zone time were used against 5v5 starts, power-play O-zone shelter would leak into the residual and read as play-driving. Switching the toggle to all-situations re-fits EZI on that basis too.
 
 **Availability:** regular season only (single season, 2yr, 4yr pool) — playoffs has no zone-start data, so EZI isn't computed there. Team-scoped and league-wide scatters (EDGE O-zone time% vs D/N-zone Start%, the two raw ingredients) sit alongside the leaderboard column so a mismatch is visible directly, not just collapsed into the single EZI number.
 
