@@ -1282,8 +1282,10 @@ _EDGE_REN = {
 # a computed (league / team) rank bracket instead, same convention as every
 # other ranked column in this table.
 _EDGE_VALUE_RAW = [c for c in _EDGE_COLS if "percentile" not in c]
-_EDGE_VALUE_DISP = ([_EDGE_REN[c] for c in _EDGE_VALUE_RAW]
-                    + ["EDGE Distance/60", "EDGE Bursts/60", "EZI"])
+# EZI leads the EDGE family (the headline "did they earn their O-zone time"
+# metric), then the raw NHL tracking columns, then the per-60 rates.
+_EDGE_VALUE_DISP = (["EZI"] + [_EDGE_REN[c] for c in _EDGE_VALUE_RAW]
+                    + ["EDGE Distance/60", "EDGE Bursts/60"])
 
 # EDGE OZ%-scope toggle — the ONLY EDGE stat with an even-strength split from
 # NHL is offensive-zone time; NZ%/DZ% have just the one (all-situations)
