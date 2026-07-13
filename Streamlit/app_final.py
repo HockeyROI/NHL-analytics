@@ -3562,7 +3562,14 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
             )
             chart = chart + labels
     if year_label:
-        _title_text = f"{y_title} vs {x_title} — {year_label}"
+        # Long axis-title pairs (e.g. EZI's "D/N-Zone Start% (100 − OZ
+        # Start%) vs EDGE O-Zone Time%") overflow a single title line at the
+        # in-app chart width and get clipped — Vega-Lite doesn't auto-wrap
+        # title text. Split onto two lines past a length threshold instead
+        # (short titles stay on one line as before).
+        _title_main = f"{y_title} vs {x_title}"
+        _title_text = ([_title_main, f"— {year_label}"] if len(_title_main) > 40
+                       else f"{_title_main} — {year_label}")
         chart = chart.properties(title=alt.TitleParams(
             text=_title_text, color=PALETTE["text"], fontSize=13))
     # League-wide (not team_scoped) scatters have no visible name label — hover
