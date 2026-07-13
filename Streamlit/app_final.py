@@ -3139,8 +3139,6 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
         _ezi_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
                     year_label=_yl)
     if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_team_frame_allpos.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
-                    f"vs Top Speed</h4>", unsafe_allow_html=True)
         _edge_speed_scatter(_team_frame_allpos, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
                            year_label=_yl, league_df=_league_frame)
 
@@ -3669,7 +3667,8 @@ def _ezi_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highl
 
 def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
                         domain_df: pd.DataFrame = None, year_label: str = None,
-                        league_df: pd.DataFrame = None) -> None:
+                        league_df: pd.DataFrame = None,
+                        title_prefix: str = "EDGE: Speed Bursts vs Top Speed") -> None:
     """Skating speed vs speed-burst rate, rendered as TWO scatters — one for
     forwards, one for defense — ALWAYS both, regardless of which (if any)
     player is drilled into. NHL computes its EDGE speed percentiles WITHIN
@@ -3717,9 +3716,12 @@ def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
             _avg.append(alt.Chart(pd.DataFrame({"y": [float(_my)]})).mark_rule(
                 color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q"))
         _extra = alt.layer(*_avg) if _avg else None
-        st.markdown(f"<h5 style='color:{PALETTE['text']}; margin:0.6rem 0 0.1rem;'>{_lbl}</h5>",
-                    unsafe_allow_html=True)
-        _yl = f"{_lbl} — {year_label}" if year_label else _lbl
+        # Own "EDGE: ..." heading PER position group (not one shared heading
+        # above both) — a single heading above only the first (Forwards) chart
+        # made the second (Defense) chart look untitled/orphaned below it.
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>{title_prefix} "
+                    f"— {_lbl}</h4>", unsafe_allow_html=True)
+        _yl = year_label
         _scatter_with_labels(
             _sub, "EDGE Top Speed", _y, "Top Speed (mph)",
             "Speed Bursts (20+ mph) / 60", f"EDGE-speed-burst-vs-top-speed-{_grp}{dl_suffix}",
@@ -4158,8 +4160,6 @@ def render_players() -> None:
         _ezi_scatter(df, _team_scoped, year_label=scope_label)
 
     if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts vs "
-                    f"Top Speed</h4>", unsafe_allow_html=True)
         _edge_speed_scatter(df, _team_scoped)
 
     # Row click → drill into that player (collapse the list). Bump the table key
@@ -4271,11 +4271,9 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
             _edge_zone_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi,
                               year_label="Playoffs")
         if {"Player", "EDGE Top Speed"}.issubset(_tf.columns):
-            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
-                        f"{_team} EDGE: Speed Bursts vs Top Speed (playoffs)</h4>",
-                        unsafe_allow_html=True)
             _edge_speed_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi,
-                               year_label="Playoffs", league_df=frame)
+                               year_label="Playoffs", league_df=frame,
+                               title_prefix=f"{_team} EDGE: Speed Bursts vs Top Speed (playoffs)")
 
 
 # ---------------------------------------------------------------------------
@@ -6007,8 +6005,6 @@ def render_trade_analyzer() -> None:
                         "EDGE O-Zone Time vs Non-O-Zone Starts</h4>", unsafe_allow_html=True)
             _ezi_scatter(_sf, True, dl_suffix="-trade", domain_df=_full, year_label=_tyl)
         if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_sf.columns):
-            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: "
-                        "Speed Bursts vs Top Speed</h4>", unsafe_allow_html=True)
             _edge_speed_scatter(_sf, True, dl_suffix="-trade", domain_df=_full, year_label=_tyl,
                                league_df=_full)
 
