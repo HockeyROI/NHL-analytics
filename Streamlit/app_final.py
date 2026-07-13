@@ -844,8 +844,10 @@ def render_methodology() -> None:
             "NHL EDGE",
             "NHL's own player-tracking data (by player position, not puck position) — offensive / "
             "neutral / defensive-zone time share, top skating speed, 20+ mph speed-burst count "
-            "(also shown per-60-minutes-played), and distance skated (also per-60). The scope "
-            "toggle defaults to even strength to match the rest of the page."
+            "(NHL's raw season total — no per-60 rate, since bursts are an all-situations count "
+            "and there's no season-scoped all-situations ice-time source to build a clean matching "
+            "rate from), and distance skated (also shown per-60). The scope toggle defaults to "
+            "even strength to match the rest of the page."
             "<br><br>"
             "A <b>different measurement basis</b> than the zone metrics above: EDGE tracks "
             "continuously across all-situations or even-strength TOI (toggle-able for OZ%); "
