@@ -844,26 +844,30 @@ def render_methodology() -> None:
             "NHL EDGE",
             "NHL's own player-tracking data (by player position, not puck position) — offensive / "
             "neutral / defensive-zone time share, top skating speed, 20+ mph speed-burst count "
-            "(also shown per-60-minutes-played), and distance skated (also per-60). "
-            "A <b>different measurement basis</b> than the zone metrics above: EDGE "
-            "tracks continuously across all-situations or even-strength TOI (toggle-able for OZ%); "
-            "NZI/DZI/OZI and D/N/O Start% track puck/faceoff position after strict-5v5 faceoffs only "
-            "— do not read EDGE zone-time% as the same metric as those, different data source and "
-            "definition. Each EDGE value shows a computed (league / team) rank rather than NHL's own "
-            "percentile, matching every other ranked column in the app. Pooled/2yr views are a "
-            "games-played-weighted average across seasons — regular season only. "
-            "<b>EZI (EDGE Zone Impact)</b> relates the two: a 0–100 index (50 = position-group "
-            "average) built from a <b>regression residual</b>, not a plain difference — "
-            "<code>OZ time% − OZ Start%</code> sounds right but is badly biased, since Start% "
-            "swings far more with deployment (std≈6.7) than O-zone time actually does (std≈2.4); "
-            "a plain subtraction correlated −0.94 with Start% itself, i.e. it was mostly just an "
-            "inverted deployment metric. EZI instead fits <code>OZ time% ~ OZ Start%</code> "
-            "per position group (slope ≈0.23–0.25 — starts predict time far more weakly than "
-            "1-for-1) and uses the residual: positive means a player earns more O-zone time than "
-            "their own starts predict (driving play beyond deployment); negative means sheltered "
-            "starts aren't converting into time. Residual is exactly uncorrelated with Start% by "
-            "construction. Recentred onto the same 0–100/50-average scale as OZI/DZI/NZI/TZI. "
-            "Regular season only (no playoff zone-start data).",
+            "(also shown per-60-minutes-played), and distance skated (also per-60). The scope "
+            "toggle defaults to even strength to match the rest of the page."
+            "<br><br>"
+            "A <b>different measurement basis</b> than the zone metrics above: EDGE tracks "
+            "continuously across all-situations or even-strength TOI (toggle-able for OZ%); "
+            "NZI/DZI/OZI and D/N/O Start% track puck/faceoff position after strict-5v5 faceoffs "
+            "only — do not read EDGE zone-time% as the same metric as those. Each EDGE value shows "
+            "a computed (league / team) rank rather than NHL's own percentile, matching every other "
+            "ranked column in the app; pooled/2yr views are a games-played-weighted average across "
+            "seasons, regular season only."
+            "<br><br>"
+            "<b>EZI (EDGE Zone Impact)</b> relates a player's O-zone time to their O-zone faceoff "
+            "starts: a 0–100 index (50 = position-group average) built from a <b>regression "
+            "residual</b>, not a plain difference. <code>OZ time% − OZ Start%</code> sounds right "
+            "but is badly biased — Start% swings far more with deployment (std≈6.7) than O-zone "
+            "time actually does (std≈2.4), so a plain subtraction correlated −0.94 with Start% "
+            "itself, i.e. it was mostly just an inverted deployment metric. EZI instead fits "
+            "<code>OZ time% ~ OZ Start%</code> per position group (slope ≈0.23–0.25 — starts "
+            "predict time far more weakly than 1-for-1) and uses the residual: positive means a "
+            "player earns more O-zone time than their own starts predict (driving play beyond "
+            "deployment), negative means sheltered starts aren't converting into time. The residual "
+            "is exactly uncorrelated with Start% by construction, then recentred onto the same "
+            "0–100/50-average scale as OZI/DZI/NZI/TZI. Regular season only (no playoff zone-start "
+            "data).",
         )
         + _meth_framework(
             "Referees",
@@ -3590,16 +3594,33 @@ def _ezi_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highl
 
 def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
                         domain_df: pd.DataFrame = None) -> None:
+    import altair as alt
     # Y axis is 20+ mph speed bursts PER 60 MINUTES PLAYED (rate), not the raw
     # season count — so heavy-TOI players don't top it purely on volume.
     _y = "EDGE Bursts/60" if "EDGE Bursts/60" in df.columns else "EDGE Bursts 20+"
     if not {"EDGE Top Speed", _y}.issubset(df.columns):
         return
+    # League-average crosshair on both axes. Averaged over the full-league frame
+    # (domain_df, passed for team-scoped/trade views) so a team's points are read
+    # against the LEAGUE mean, not just their own; falls back to df on the plain
+    # league-wide leaderboard, where df already is the league.
+    _mean_src = domain_df if (domain_df is not None and not domain_df.empty) else df
+    _mx = pd.to_numeric(_mean_src.get("EDGE Top Speed"), errors="coerce").mean()
+    _my = pd.to_numeric(_mean_src.get(_y), errors="coerce").mean()
+    _avg = []
+    if pd.notna(_mx):
+        _avg.append(alt.Chart(pd.DataFrame({"x": [float(_mx)]})).mark_rule(
+            color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(x="x:Q"))
+    if pd.notna(_my):
+        _avg.append(alt.Chart(pd.DataFrame({"y": [float(_my)]})).mark_rule(
+            color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q"))
+    _extra = alt.layer(*_avg) if _avg else None
     _scatter_with_labels(
         df, "EDGE Top Speed", _y, "Top Speed (mph)",
         "Speed Bursts (20+ mph) / 60", f"EDGE-speed-burst-vs-top-speed{dl_suffix}",
-        "NHL EDGE tracking, one point per player.",
-        team_scoped, highlight_name=highlight_name, domain_df=domain_df)
+        "NHL EDGE tracking, one point per player. Dashed lines = league average on "
+        "each axis (top-right = fast **and** frequent bursts).",
+        team_scoped, extra_layer=_extra, highlight_name=highlight_name, domain_df=domain_df)
 
 
 def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
