@@ -2206,6 +2206,13 @@ _QG_PAIR_PANELS = {
            ("Against", "xG-QG-A%", "RelxG-QG-A%"),
            ("Overall", "xG-QG%", "RelxG-QG%")],
 }
+# Flat Raw+Rel-paired metric order per family — used by the Trade Analyzer's
+# faceted per-player bar compare so it carries the SAME 12 metrics (incl. the
+# relative QG splits) and the same Attack/Suppress/Overall order as the
+# single-player drill-in's paired panels.
+_QG_BAR_ORDER_NFI = [m for _c, raw, rel in _QG_PAIR_PANELS["NFI"] for m in (raw, rel)]
+_QG_BAR_ORDER_XG = [m for _c, raw, rel in _QG_PAIR_PANELS["xG"] for m in (raw, rel)]
+_ZONE_BAR_METRICS_ORDER = ["OZI", "DZI", "NZI", "TZI"]
 _BRAND_DEEP = "#0A1A2F"          # "Hockey" — deeper than the chart navy
 _BRAND_ROI = PALETTE["orange"]   # "ROI" — brand orange (#FF6B35)
 
@@ -4558,6 +4565,29 @@ def load_qg_starter_baseline(scope_suffix: str) -> dict:
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def load_sqs_league_avg(scope_suffix: str) -> dict:
+    """{season_str: GP-weighted league-average sQS% (QG_pct_s, 0-100)} — the
+    real "average goalie" line for the sQS% consistency bar. sQS% is graded
+    against the high STARTER-tier save% bar, so the league averages ~51-53%
+    (NOT 50%): a hardcoded 50 line understates the bar and makes an average
+    goalie read as above-average. Volume-weighted by GP to mirror how NFI SV%'s
+    league-average-save% baseline is shots-weighted."""
+    df = load_qg_tiered_by_season(scope_suffix)
+    if df.empty or "QG_pct_s" not in df.columns:
+        return {}
+    d = df.copy()
+    d["season"] = d["season"].astype(str)
+    out = {}
+    for s, g in d.groupby("season"):
+        v = pd.to_numeric(g["QG_pct_s"], errors="coerce")
+        w = pd.to_numeric(g.get("GP"), errors="coerce")
+        m = v.notna() & (w > 0)
+        if m.any():
+            out[str(s)] = float(np.average(v[m], weights=w[m]))
+    return out
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_goalie_nfi_playoffs() -> pd.DataFrame:
     fp = REPO_ROOT / "NFI" / "output" / "goalie_nfi_gsax_by_season_playoffs.csv"
     if not fp.exists():
@@ -4831,12 +4861,19 @@ def load_gsax_league_avg() -> dict:
     return out
 
 
-def _goalie_consistency_bar(row, qg_label: str, sv_baseline) -> None:
-    """One-year diverging bar (like the player QG bar): QNFG%/QG%/sQS% above/below
-    the 50% line, and NFI SV% above/below the season's league-average save% —
-    two blue cut-off lines. Bar colour: blue above its line, orange below."""
+def _goalie_consistency_bar(row, qg_label: str, sv_baseline, sqs_baseline=None) -> None:
+    """One-year diverging bar (like the player QG bar). QNFG% and QG% (GSAx≥0
+    game shares) sit against the 50% line — a clean "beat expected half the time"
+    reference. sQS% and NFI SV% each sit against their OWN season league-average
+    line (sqs_baseline / sv_baseline) rather than 50%, because both are graded
+    against a high save%-based bar where the league average is NOT 50%: sQS%
+    averages ~51-53% (a hardcoded 50 would flatter every average goalie), and
+    NFI SV% averages ~91%. Bar colour: blue above its own line, orange below."""
     import altair as alt
-    specs = [("QNFG%", 50.0, 1.0), ("QG%", 50.0, 1.0), (qg_label, 50.0, 1.0)]
+    # sQS% baseline: real league-average sQS% when supplied, else fall back to 50.
+    _sqs_base = (float(sqs_baseline) if sqs_baseline is not None
+                 and pd.notna(sqs_baseline) else 50.0)
+    specs = [("QNFG%", 50.0, 1.0), ("QG%", 50.0, 1.0), (qg_label, _sqs_base, 1.0)]
     sv_base = sv_baseline * 100.0 if sv_baseline is not None and pd.notna(sv_baseline) else None
     if sv_base is not None and "NFI SV%" in row and pd.notna(row["NFI SV%"]):
         specs.append(("NFI SV%", sv_base, 100.0))
@@ -4851,17 +4888,26 @@ def _goalie_consistency_bar(row, qg_label: str, sv_baseline) -> None:
     d = pd.DataFrame(rows)
     _vals = [r["value"] for r in rows] + [r["base"] for r in rows]
     dom = [int(np.floor(min(_vals))) - 2, int(np.ceil(max(_vals))) + 2]
-    st.caption(f"**{row['Season']}** — Consistency % vs **50** "
-               "(NFI SV% vs league-average save%).")
+    _sqs_txt = (f"sQS% vs its **{_sqs_base:.0f}%** league average"
+                if sqs_baseline is not None and pd.notna(sqs_baseline)
+                else "sQS% vs 50")
+    st.caption(f"**{row['Season']}** — QNFG% / QG% vs **50** (beat expected half the "
+               f"time); {_sqs_txt}; NFI SV% vs league-average save%.")
+    _sort = [r["Metric"] for r in rows]
     bars = alt.Chart(d).mark_bar(size=40).encode(
-        x=alt.X("Metric:N", sort=[r["Metric"] for r in rows],
+        x=alt.X("Metric:N", sort=_sort,
                 axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold")),
         y=alt.Y("base:Q", scale=alt.Scale(domain=dom), title="%"), y2="value:Q",
         color=alt.Color("color:N", scale=None, legend=None),
-        tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f")])
-    cuts = pd.DataFrame({"y": sorted({50.0} | ({sv_base} if sv_base is not None else set()))})
-    rule = alt.Chart(cuts).mark_rule(color=_CHART_THIRD, strokeDash=[4, 4]).encode(y="y:Q")
-    _show_chart(bars + rule, dl_name=f"Goalie-consistency-{row['Season']}")
+        tooltip=[alt.Tooltip("Metric:N"),
+                 alt.Tooltip("base:Q", title="league avg", format=".1f"),
+                 alt.Tooltip("value:Q", format=".1f")])
+    # Each bar's baseline (its own league-average / 50 reference) drawn as a short
+    # tick at that bar's base — not a full-width line, since the three metrics now
+    # have three different baselines (~50 / ~52 / ~91).
+    ticks = alt.Chart(d).mark_tick(color=_CHART_THIRD, thickness=2, size=44).encode(
+        x=alt.X("Metric:N", sort=_sort), y="base:Q")
+    _show_chart(bars + ticks, dl_name=f"Goalie-consistency-{row['Season']}")
 
 
 def _goalie_gsax_bar(row, qg_scope_suffix: str = "") -> None:
@@ -4982,9 +5028,10 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
             _yr = _default_qg_year(season_label, _bt_seasons)
             _match = _bt[_bt["Season"].astype(str) == str(_yr)]
             _row = _match.iloc[0] if len(_match) else _bt.iloc[-1]
-            _svb = (load_nfi_sv_baseline().get(str(int(_row["season"])))
-                    if pd.notna(_row.get("season")) else None)
-            _goalie_consistency_bar(_row, qg_label, _svb)
+            _ssn_str = str(int(_row["season"])) if pd.notna(_row.get("season")) else None
+            _svb = load_nfi_sv_baseline().get(_ssn_str) if _ssn_str else None
+            _sqsb = load_sqs_league_avg(qg_scope_suffix).get(_ssn_str) if _ssn_str else None
+            _goalie_consistency_bar(_row, qg_label, _svb, sqs_baseline=_sqsb)
             _goalie_gsax_bar(_row, qg_scope_suffix)
 
     # (2) Consistency % over time (no GSAx) — QNFG%, QG%, sQS% on one axis.
@@ -5511,20 +5558,32 @@ def _render_goalie_playoff_summary(gid: int, qg_scope_suffix: str = "", qg_start
     _show_df(pd.DataFrame(items, columns=["Metric", "Value"]),
                  width="stretch", hide_index=True)
 
-    # Consistency % bar — QNFG%/QG%/sQS% vs the 50% league baseline, plus NFI
-    # SV% vs a simple all-playoff-goalie shots-weighted average save% (16
-    # teams' worth of playoff goalies — no top-N "starter tier" subset).
+    # Consistency % bar — QNFG%/QG% vs 50, sQS% vs the all-playoff-goalie average
+    # sQS%, and NFI SV% vs a simple all-playoff-goalie shots-weighted average
+    # save% (16 teams' worth of playoff goalies — no top-N "starter tier" subset).
     _sv_bl = _playoff_sv_baseline(n)
+    # League-average playoff sQS% (GP-weighted where GP is available).
+    _sqs_bl = np.nan
+    if not g.empty and "QG_pct_s" in g.columns:
+        _sv = pd.to_numeric(g["QG_pct_s"], errors="coerce")
+        _w = pd.to_numeric(g.get("GP"), errors="coerce") if "GP" in g.columns else None
+        _mm = _sv.notna() & ((_w > 0) if _w is not None else True)
+        if _mm.any():
+            _sqs_bl = (float(np.average(_sv[_mm], weights=_w[_mm])) if _w is not None
+                       else float(_sv[_mm].mean()))
     if pd.notna(_sv_bl):
         st.markdown(
             f"<div style='color:{_CHART_THIRD}; font-size:0.85rem; margin:0.1rem 0 0.4rem;'>"
             f"<b>Playoff save% baseline</b> (shots-weighted average, all playoff "
-            f"goalies) — {_sv_bl * 100:.1f}%. Used as the cutoff for NFI SV% and "
-            f"as {qg_label}'s baseline for context.</div>", unsafe_allow_html=True)
+            f"goalies) — {_sv_bl * 100:.1f}%. Used as the cutoff for NFI SV%; "
+            f"{qg_label} uses the all-playoff-goalie average sQS%"
+            + (f" ({_sqs_bl:.0f}%)" if pd.notna(_sqs_bl) else "") + ".</div>",
+            unsafe_allow_html=True)
     if any(pd.notna(v) for v in (v_qnfg, v_qg, v_sqs, v_sv)):
         _row = pd.Series({"Season": "Playoffs", "QNFG%": v_qnfg,
                           "QG%": v_qg, qg_label: v_sqs, "NFI SV%": v_sv})
-        _goalie_consistency_bar(_row, qg_label, _sv_bl)
+        _goalie_consistency_bar(_row, qg_label, _sv_bl,
+                               sqs_baseline=_sqs_bl if pd.notna(_sqs_bl) else None)
 
 
 # ---------------------------------------------------------------------------
@@ -5647,23 +5706,36 @@ def render_trade_analyzer() -> None:
     # than mixed together, matching the single-player drill-in's split.
     _seasons_all = [SEASON_DISPLAY.get(s, s) for s in PROFILE_SEASONS] + ["2yr avg (24-26)"]
     _cmp_yr = _default_qg_year(season_label, _seasons_all)
-    _trends, _pv = {}, {}
+    _trends, _pv, _zv = {}, {}, {}
     for pid in sel:
         _nm = plabel.get(int(pid), str(pid))
         _tr = _player_trend(int(pid))
         if not _tr.empty:
             _trends[_nm] = _tr
             _pv[_nm] = _player_qg_vals(int(pid), _tr, _cmp_yr)
+            _zv[_nm] = _player_zone_vals(int(pid), _tr, _cmp_yr)
     if _pv:
         _set_dl_title(" vs ".join(_pv.keys()))
+        # Same 12-metric Raw+Rel paired set (and Attack/Suppress/Overall order)
+        # as the single-player drill-in bars, faceted one panel per player.
         _qg_bar_chart_compare(
-            _pv, _cmp_yr, metrics=_QG_LINE_ORDER_NFI,
-            caption=f"**{_cmp_yr}** — **NFI** Quality-Games % vs the **50% baseline**, "
-                    "one panel per player.", dl_name="Trade-QG-bars-NFI")
+            _pv, _cmp_yr, metrics=_QG_BAR_ORDER_NFI,
+            caption=f"**{_cmp_yr}** — **NFI** Quality-Games % vs the **50% baseline** "
+                    "(Raw next to its Relative counterpart), one panel per player.",
+            dl_name="Trade-QG-bars-NFI")
         _qg_bar_chart_compare(
-            _pv, _cmp_yr, metrics=_QG_LINE_ORDER_XG,
+            _pv, _cmp_yr, metrics=_QG_BAR_ORDER_XG,
             caption=f"**{_cmp_yr}** — **xG (MoneyPuck)** Quality-Games % vs the "
-                    "**50% baseline**, one panel per player.", dl_name="Trade-QG-bars-xG")
+                    "**50% baseline** (Raw next to its Relative counterpart), one panel "
+                    "per player.", dl_name="Trade-QG-bars-xG")
+        # Zone Impact bar (OZI/DZI/NZI/TZI, 0-100, 50 = position average) — same
+        # metric the drill-in shows, faceted per player.
+        if any(any(pd.notna(v) for v in zv.values()) for zv in _zv.values()):
+            _qg_bar_chart_compare(
+                _zv, _cmp_yr, metrics=_ZONE_BAR_METRICS_ORDER,
+                caption=f"**{_cmp_yr}** — **Zone Impact** index (OZI/DZI/NZI/TZI) vs the "
+                        "**50 baseline** (50 = league-average for the position), one panel "
+                        "per player.", dl_name="Trade-Zone-bars")
     # Year-over-year line graphs behind a toggle (off by default), mirroring the
     # player drill-in — lead with the bars + scatters, reveal the season-by-season
     # lines on demand. Same full metric set as the drill-in (Quality Games, xG,
@@ -5712,8 +5784,9 @@ def render_trade_analyzer() -> None:
                 "EDGE Zone-Time % (OZ, DZ) over time, per player.", "Trade-EDGE-zone")
             _trade_line_compare(_trends, ["EDGE Top Speed"],
                 "EDGE Top Speed (mph) over time, per player.", "Trade-EDGE-topspeed")
-            _trade_line_compare(_trends, ["EDGE Bursts 20+"],
-                "EDGE Speed Bursts (20+ mph) over time, per player.", "Trade-EDGE-bursts")
+            _trade_line_compare(_trends, ["EDGE Bursts/60"],
+                "EDGE Speed Bursts (20+ mph) per 60 over time, per player.",
+                "Trade-EDGE-bursts")
             _trade_line_compare(_trends, ["EDGE Distance (mi)"],
                 "EDGE Distance Skated (mi) over time, per player.", "Trade-EDGE-dist")
 
@@ -5744,6 +5817,10 @@ def render_trade_analyzer() -> None:
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
                         "xG%</h4>", unsafe_allow_html=True)
             _trade_rawrel_scatter(_sf, "NFI%", "NFI%", "Trade-NFI-vs-xG", _full)
+        if {"PDOxG", "NFI%"}.issubset(_sf.columns):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
+                        "NFI%</h4>", unsafe_allow_html=True)
+            _pdo_nfi_scatter(_sf, True, dl_suffix="-trade", domain_df=_full)
         if {"EDGE DZ%", "EDGE OZ%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: "
                         "D-Zone vs O-Zone Time%</h4>", unsafe_allow_html=True)
