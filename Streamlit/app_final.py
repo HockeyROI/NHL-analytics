@@ -520,8 +520,7 @@ _ABBR_FULL = {
     "EDGE NZ%": "NHL EDGE — Neutral-Zone time %",
     "EDGE DZ%": "NHL EDGE — Defensive-Zone time %",
     "EDGE Top Speed": "NHL EDGE — Top skating speed (mph)",
-    "EDGE Bursts 20+": "NHL EDGE — Number of 20+ mph speed bursts",
-    "EDGE Bursts/60": "NHL EDGE — 20+ mph speed bursts per 60 minutes played",
+    "EDGE Bursts 20+": "NHL EDGE — Number of 20+ mph speed bursts (season total)",
     "EZI": "EDGE Zone Impact — O-zone time earned above/below what O-zone faceoff starts predict (0–100, 50 = average)",
     "EDGE Distance (mi)": "NHL EDGE — Distance skated (miles)",
     "EDGE Distance/60": "NHL EDGE — Distance skated per 60 minutes (miles)",
@@ -1281,16 +1280,21 @@ _EDGE_REN = {
     "speed_bursts_over_20mph_percentile": "EDGE Bursts %ile",
     "distance_skated_miles": "EDGE Distance (mi)", "distance_skated_percentile": "EDGE Distance %ile",
     "edge_distance_per60": "EDGE Distance/60",
-    "edge_bursts_per60": "EDGE Bursts/60",
 }
 # Value-only columns (excludes the raw NHL percentile columns) — displayed with
 # a computed (league / team) rank bracket instead, same convention as every
 # other ranked column in this table.
 _EDGE_VALUE_RAW = [c for c in _EDGE_COLS if "percentile" not in c]
 # EZI leads the EDGE family (the headline "did they earn their O-zone time"
-# metric), then the raw NHL tracking columns, then the per-60 rates.
+# metric), then the raw NHL tracking columns, then the distance per-60 rate.
+# Speed bursts stay as NHL's raw season total (not a per-60 rate) — bursts are
+# an ALL-SITUATIONS count and there's no season-scoped all-situations TOI
+# source in this app's data to build a clean matching rate from (checked:
+# NFI's toi_min is ES-only; the one other local TOI file is career-cumulative,
+# not season-scoped) — a per-60 rate over an ES-only denominator would inflate
+# the number for anyone with real PP/PK time, worse for heavier-usage players.
 _EDGE_VALUE_DISP = (["EZI"] + [_EDGE_REN[c] for c in _EDGE_VALUE_RAW]
-                    + ["EDGE Distance/60", "EDGE Bursts/60"])
+                    + ["EDGE Distance/60"])
 
 # EDGE OZ%-scope toggle — the ONLY EDGE stat with an even-strength split from
 # NHL is offensive-zone time; NZ%/DZ% have just the one (all-situations)
@@ -1367,14 +1371,14 @@ def _edge_rate_playoffs() -> pd.DataFrame:
     ).reset_index()
     for c in _EDGE_COLS:
         agg[c] = np.where(agg["_wtot"] > 0, agg[f"_wsum_{c}"] / agg["_wtot"], np.nan)
-    # Raw season totals (distance, bursts), summed across playoff seasons —
-    # under DISTINCT names so they don't collide with the games-weighted-average
-    # "distance_skated_miles"/"speed_bursts_over_20mph" columns above (those are
-    # the display totals, matching regular-season _edge_rate's convention; these
-    # _sum columns are only for the ratio-of-sum per-minute rates below).
+    # Raw distance total, summed across playoff seasons — under a DISTINCT
+    # name so it doesn't collide with the games-weighted-average
+    # "distance_skated_miles" column above (that's the display total, matching
+    # regular-season _edge_rate's convention; this _sum column is only for the
+    # ratio-of-sum per-60 rate below). Bursts stay as the games-weighted-average
+    # raw total in `agg` above — no per-60 rate (see _EDGE_VALUE_DISP comment).
     raw = g.groupby("player_id").agg(
-        _dist_sum=("distance_skated_miles", "sum"),
-        _bursts_sum=("speed_bursts_over_20mph", "sum")).reset_index()
+        _dist_sum=("distance_skated_miles", "sum")).reset_index()
     return agg[["player_id"] + _EDGE_COLS].merge(raw, on="player_id", how="left")
 
 
@@ -1409,33 +1413,6 @@ def _edge_distance_rate(scope_key: str) -> pd.DataFrame:
     ok = g["_toi"] > 0
     g["edge_distance_per60"] = np.where(ok, g["_dist"] / g["_toi"] * 60.0, np.nan)
     return g[["player_id", "edge_distance_per60"]]
-
-
-def _edge_bursts_rate(scope_key: str) -> pd.DataFrame:
-    """EDGE 20+ mph speed bursts, normalized to a per-60-minutes-played rate.
-    Same ratio-of-sums construction and all-situations-vs-ES caveat as
-    _edge_distance_rate (speed_bursts_over_20mph is a season TOTAL)."""
-    edge = load_edge_player_season()
-    nfi = load_nfi_player()
-    if edge.empty or nfi.empty:
-        return pd.DataFrame()
-    e = edge[["player_id", "season", "speed_bursts_over_20mph"]].dropna()
-    n = nfi[["player_id", "season", "toi_min"]].copy()
-    n["season"] = n["season"].astype(str)
-    m = e.merge(n, on=["player_id", "season"], how="inner")
-    if scope_key == "pooled":
-        sub = m[m["season"].isin(POOLED_SEASONS)]
-    elif scope_key == "pooled_2yr":
-        sub = m[m["season"].isin(POOLED_2YR_SEASONS)]
-    else:
-        sub = m[m["season"] == scope_key]
-    if sub.empty:
-        return pd.DataFrame()
-    g = sub.groupby("player_id").agg(_bursts=("speed_bursts_over_20mph", "sum"),
-                                     _toi=("toi_min", "sum")).reset_index()
-    ok = g["_toi"] > 0
-    g["edge_bursts_per60"] = np.where(ok, g["_bursts"] / g["_toi"] * 60.0, np.nan)
-    return g[["player_id", "edge_bursts_per60"]]
 
 
 _EZI_MIN_TOI = 200.0   # stability floor on the position-group AVERAGE only
@@ -1799,22 +1776,20 @@ def _player_trend(pid: int) -> pd.DataFrame:
             _oz_col, _oz_pct_col = _EDGE_OZ_SCOPE_COL[_edge_toggle_state()]
             ea["oz_time_pct"] = ea[_oz_col]
             ea["oz_time_pct_percentile"] = ea[_oz_pct_col]
-            # Per-min/per-60 EDGE rates (distance, 20+ mph bursts) BEFORE the
-            # rename below — same ratio (this player's own season rows) that
-            # the league-wide _edge_*_rate functions use, so the per-season
-            # and pooled 2yr-avg rows land on an identical basis.
-            _rate_src = ea[["season", "distance_skated_miles",
-                            "speed_bursts_over_20mph"]].merge(
+            # Per-60 EDGE distance rate BEFORE the rename below — same ratio
+            # (this player's own season rows) that the league-wide
+            # _edge_distance_rate function uses, so the per-season and pooled
+            # 2yr-avg rows land on an identical basis. Bursts stay as NHL's
+            # raw season total (see _EDGE_VALUE_DISP comment) — no rate here.
+            _rate_src = ea[["season", "distance_skated_miles"]].merge(
                 p[["season", "toi_min"]], on="season", how="left")
             _ok_toi = _rate_src["toi_min"] > 0
             _rate_src["EDGE Distance/60"] = np.where(
                 _ok_toi, _rate_src["distance_skated_miles"] / _rate_src["toi_min"] * 60.0, np.nan)
-            _rate_src["EDGE Bursts/60"] = np.where(
-                _ok_toi, _rate_src["speed_bursts_over_20mph"] / _rate_src["toi_min"] * 60.0, np.nan)
             ea = ea[["season"] + _EDGE_VALUE_RAW].rename(columns=_EDGE_REN)
             trend = trend.merge(ea, on="season", how="outer")
             trend = trend.merge(
-                _rate_src[["season", "EDGE Distance/60", "EDGE Bursts/60"]],
+                _rate_src[["season", "EDGE Distance/60"]],
                 on="season", how="outer")
 
     # D/N/O Start% — real per-season data (Zones/output/zone_start_per_season.csv).
@@ -2123,7 +2098,6 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
         _b[c] = lambda v: f"{v * 100:.1f}%"
     _b["EDGE Top Speed"] = lambda v: f"{v:.1f} mph"
     _b["EDGE Bursts 20+"] = lambda v: f"{v:.0f}"
-    _b["EDGE Bursts/60"] = lambda v: f"{v:.2f}/60"
     _b["EDGE Distance (mi)"] = lambda v: f"{v:.1f} mi"
     _b["EDGE Distance/60"] = lambda v: f"{v:.2f} mi/60"
     has_team = "Team" in trend.columns
@@ -3040,7 +3014,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         _chart("NFI% (net-front share)", ["NFI%"])
         _chart("EDGE Zone-Time % (OZ, DZ)", ["EDGE OZ%", "EDGE DZ%"])
         _chart("EDGE Top Speed (mph)", ["EDGE Top Speed"])
-        _chart("EDGE Speed Bursts (20+ mph) per 60", ["EDGE Bursts/60"])
+        _chart("EDGE Speed Bursts (20+ mph, season total)", ["EDGE Bursts 20+"])
         _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])
     else:
         # Current-year bars: the combined NFI+xG Quality-Games panel (one
@@ -3332,11 +3306,7 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
             if "_dist_sum" in base.columns:
                 base["EDGE Distance/60"] = np.where(
                     _ok_toi, base["_dist_sum"] / base["toi_min"] * 60.0, np.nan)
-            if "_bursts_sum" in base.columns:
-                base["EDGE Bursts/60"] = np.where(
-                    _ok_toi, base["_bursts_sum"] / base["toi_min"] * 60.0, np.nan)
-            base = base.drop(columns=[c for c in ("_dist_sum", "_bursts_sum")
-                                      if c in base.columns])
+            base = base.drop(columns=[c for c in ("_dist_sum",) if c in base.columns])
         return base, True
 
     nfi = load_nfi_player()
@@ -3412,10 +3382,6 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     edge_dist_rate = _edge_distance_rate(key)
     if not edge_dist_rate.empty and not base.empty:
         base = base.merge(edge_dist_rate, on="player_id", how="left")
-    # EDGE 20+ mph speed bursts per 60 minutes played (same ratio-of-sums basis).
-    edge_bursts_rate = _edge_bursts_rate(key)
-    if not edge_bursts_rate.empty and not base.empty:
-        base = base.merge(edge_bursts_rate, on="player_id", how="left")
     # Quality-Games For/Against (xG-QG-F/A%, NFI-QG-F/A%), ratio-of-sums pooling.
     qgfa = _qg_fa_rates(key)
     if not qgfa.empty and not base.empty:
@@ -3678,9 +3644,14 @@ def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
     inflated by forwards. Each chart's dashed crosshair is therefore that
     position group's OWN average, matching NHL's per-position basis."""
     import altair as alt
-    # Y axis is 20+ mph speed bursts PER 60 MINUTES PLAYED (rate), not the raw
-    # season count — so heavy-TOI players don't top it purely on volume.
-    _y = "EDGE Bursts/60" if "EDGE Bursts/60" in df.columns else "EDGE Bursts 20+"
+    # Y axis is NHL's raw season total of 20+ mph bursts, matching NHL's own
+    # percentile basis — not a per-60 rate. Bursts are an ALL-SITUATIONS count
+    # and there's no season-scoped all-situations TOI source in this app's data
+    # to build a clean matching rate from (checked: NFI's toi_min is ES-only;
+    # the one other local TOI file is career-cumulative, not season-scoped) —
+    # a rate over an ES-only denominator would inflate the number for anyone
+    # with real PP/PK time, so raw total it stays.
+    _y = "EDGE Bursts 20+"
     # The position group column is "position" on the team/trade/playoff frames
     # but renamed to "Pos" on the main leaderboard df — accept either.
     def _poscol(_f):
@@ -3724,7 +3695,7 @@ def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
         _yl = year_label
         _scatter_with_labels(
             _sub, "EDGE Top Speed", _y, "Top Speed (mph)",
-            "Speed Bursts (20+ mph) / 60", f"EDGE-speed-burst-vs-top-speed-{_grp}{dl_suffix}",
+            "Speed Bursts (20+ mph, season total)", f"EDGE-speed-burst-vs-top-speed-{_grp}{dl_suffix}",
             f"NHL EDGE tracking, one point per {_lbl.lower().rstrip('s')}. Dashed lines = "
             f"**{_lbl.lower()}** league average on each axis (F and D computed separately, "
             "matching NHL's per-position percentiles). Top-right = fast **and** frequent bursts.",
@@ -4032,8 +4003,6 @@ def render_players() -> None:
         fmt["EDGE Distance (mi)"] = lambda x: "—" if pd.isna(x) else f"{x:.1f} mi"
     if "EDGE Distance/60" in disp.columns:
         fmt["EDGE Distance/60"] = lambda x: "—" if pd.isna(x) else f"{x:.2f} mi/60"
-    if "EDGE Bursts/60" in disp.columns:
-        fmt["EDGE Bursts/60"] = lambda x: "—" if pd.isna(x) else f"{x:.2f}/60"
     if "EZI" in disp.columns:
         fmt["EZI"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "TOI" in disp.columns:
@@ -5954,8 +5923,8 @@ def render_trade_analyzer() -> None:
                 "EDGE Zone-Time % (OZ, DZ) over time, per player.", "Trade-EDGE-zone")
             _trade_line_compare(_trends, ["EDGE Top Speed"],
                 "EDGE Top Speed (mph) over time, per player.", "Trade-EDGE-topspeed")
-            _trade_line_compare(_trends, ["EDGE Bursts/60"],
-                "EDGE Speed Bursts (20+ mph) per 60 over time, per player.",
+            _trade_line_compare(_trends, ["EDGE Bursts 20+"],
+                "EDGE Speed Bursts (20+ mph, season total) over time, per player.",
                 "Trade-EDGE-bursts")
             _trade_line_compare(_trends, ["EDGE Distance (mi)"],
                 "EDGE Distance Skated (mi) over time, per player.", "Trade-EDGE-dist")
