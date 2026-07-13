@@ -2144,7 +2144,10 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
                 txt = _b.get(c, lambda v: f"{v}")(v)
                 rk = ranks.get(c, {}).get(ssn)
                 if rk is None:
-                    row[c] = txt
+                    # Below that metric's OWN qualifying floor that season (not a
+                    # missing value) — mark it explicitly rather than showing a
+                    # bare number with no indication it's unranked.
+                    row[c] = f"{txt} (UR)"
                 elif team:
                     trk = team_ranks.get(c, {}).get(ssn)
                     row[c] = f"{txt} ({rk} / {trk})" if trk is not None else f"{txt} ({rk})"
@@ -2213,7 +2216,7 @@ _QG_PAIR_PANELS = {
 # single-player drill-in's paired panels.
 _QG_BAR_ORDER_NFI = [m for _c, raw, rel in _QG_PAIR_PANELS["NFI"] for m in (raw, rel)]
 _QG_BAR_ORDER_XG = [m for _c, raw, rel in _QG_PAIR_PANELS["xG"] for m in (raw, rel)]
-_ZONE_BAR_METRICS_ORDER = ["OZI", "DZI", "NZI", "TZI"]
+_ZONE_BAR_METRICS_ORDER = ["OZI", "DZI", "NZI", "TZI", "EZI"]
 _BRAND_DEEP = "#0A1A2F"          # "Hockey" — deeper than the chart navy
 _BRAND_ROI = PALETTE["orange"]   # "ROI" — brand orange (#FF6B35)
 
@@ -2510,16 +2513,23 @@ def _player_qg_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
                 and pd.notna(_tr[m].iloc[0]) else np.nan) for m in _QG_BAR_METRICS}
 
 
-# The four Zone-Impact index metrics for the hard-locked zone bar (0-100 scale,
-# 50 = position-group average). Already on a 0-100 basis (unlike the QG metrics,
-# which are stored as 0-1 fractions), so these values are read straight through
-# with NO ×100 rescale.
-_ZONE_BAR_METRICS = ["OZI", "DZI", "NZI", "TZI"]
+# The Zone-Impact-family index metrics for the hard-locked zone bar (0-100
+# scale, 50 = position-group average). OZI/DZI/NZI/TZI are already on a 0-100
+# basis (unlike the QG metrics, which are stored as 0-1 fractions), so they're
+# read straight through with NO ×100 rescale. EZI joins them here too — it's
+# the same 0-100/50-avg scale, just EDGE-time-vs-starts instead of PBP-time
+# share, so it belongs alongside the others as a 5th lens.
+_ZONE_BAR_METRICS = ["OZI", "DZI", "NZI", "TZI", "EZI"]
 
 
 def _player_zone_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
-    """The 4 Zone-Impact index values (0-100) for one player at a season label or
-    the 2yr row. 50 = league-average for that position group."""
+    """The Zone-Impact-family index values (OZI/DZI/NZI/TZI + EZI, 0-100) for
+    one player at a season label or the 2yr row. 50 = league-average for that
+    position group. EZI isn't in the per-season trend table (its position-group
+    regression fit needs the WHOLE cohort, not a single player's row), so it's
+    looked up fresh from the leaderboard frame (_build_players_frame) for the
+    matching scope instead — cached, so repeat lookups are cheap. Comes back
+    NaN wherever EZI isn't computed (e.g. playoffs — no zone-start data)."""
     if label == "2yr avg (24-26)":
         _p2 = _players_2yr_frame()
         _pr = _p2[_p2["player_id"] == int(pid)] if not _p2.empty else _p2
@@ -2528,9 +2538,17 @@ def _player_zone_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
                     and pd.notna(_pr[m].iloc[0]) else np.nan)
                 for m in _ZONE_BAR_METRICS}
     _tr = trend[trend["Season"].astype(str) == str(label)]
-    return {m: (float(_tr[m].iloc[0]) if len(_tr) and m in _tr.columns
+    out = {m: (float(_tr[m].iloc[0]) if len(_tr) and m in _tr.columns
                 and pd.notna(_tr[m].iloc[0]) else np.nan)
-            for m in _ZONE_BAR_METRICS}
+           for m in _ZONE_BAR_METRICS if m != "EZI"}
+    out["EZI"] = np.nan
+    if label in SEASON_KEY:
+        _b, _ = _build_players_frame(label)
+        if not _b.empty and "EZI" in _b.columns:
+            _r = _b[_b["player_id"] == int(pid)]
+            if len(_r) and pd.notna(_r["EZI"].iloc[0]):
+                out["EZI"] = float(_r["EZI"].iloc[0])
+    return out
 
 
 def _default_qg_year(season_label, seasons) -> str:
@@ -2551,11 +2569,14 @@ _PROFILE_BAR_YDOM = [30, 75]
 
 
 def _qg_bar_chart(vals: dict, label: str, caption: str = None,
-                  dl_prefix: str = "QG-bars", ydomain: list = None) -> None:
+                  dl_prefix: str = "QG-bars", ydomain: list = None,
+                  title: str = None) -> None:
     """Diverging bar of metric %s vs a 50% baseline (50% = league-median: bar up
     when above, down when below). vals maps display-metric → value on a 0-100
     scale. caption overrides the default (player NFI%+QG) caption; dl_prefix names
-    the download file. ydomain fixes the y-axis range (defaults to auto-fit)."""
+    the download file. ydomain fixes the y-axis range (defaults to auto-fit).
+    title: chart description (e.g. "Zone Impact Index") — the filtered year/scope
+    (label) is appended automatically so the baked-in chart image is self-labeled."""
     import altair as alt
     rows = [{"Metric": m, "value": float(v), "base": 50.0, "color": _bar_color(v)}
             for m, v in vals.items() if pd.notna(v)]
@@ -2583,7 +2604,11 @@ def _qg_bar_chart(vals: dict, label: str, caption: str = None,
         tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
-    _show_chart(bars + rule, dl_name=f"{dl_prefix}-{label}")
+    chart = bars + rule
+    if title:
+        chart = chart.properties(title=alt.TitleParams(
+            text=f"{title} — {label}", color=PALETTE["text"], fontSize=13))
+    _show_chart(chart, dl_name=f"{dl_prefix}-{label}")
 
 
 def _qg_panel_chart(panels: list[tuple], vals: dict, title: str, embed_brand: bool = False):
@@ -2642,16 +2667,19 @@ def _qg_paired_bar_chart(vals: dict, label: str, caption: str, dl_prefix: str) -
     st.caption(caption)
     for fam, title in (("NFI", "NFI Quality Games %"),
                        ("xG", "xG (MoneyPuck) Quality Games %")):
-        ch = _qg_panel_chart(_QG_PAIR_PANELS[fam], vals, title, embed_brand=True)
+        ch = _qg_panel_chart(_QG_PAIR_PANELS[fam], vals, f"{title} — {label}",
+                             embed_brand=True)
         _show_chart(ch, dl_name=f"{dl_prefix}-{fam}-{label}", brand_embedded=True)
 
 
 def _qg_bar_chart_compare(players_vals: dict, label: str, metrics: list[str] = None,
-                          caption: str = None, dl_name: str = "Trade-QG-bars") -> None:
+                          caption: str = None, dl_name: str = "Trade-QG-bars",
+                          title: str = None) -> None:
     """Side-by-side small-multiple bar charts (one panel per player) of the QG
     metrics vs the 50% baseline. players_vals: {player_name: {metric: 0-100}}.
     metrics restricts to a subset (e.g. NFI-only or xG-only) so the NFI and xG
-    families render as two separate charts instead of mixed in one."""
+    families render as two separate charts instead of mixed in one. title: chart
+    description — the filtered year/scope (label) is appended automatically."""
     import altair as alt
     _metrics = metrics or _QG_BAR_METRICS
     rows, allv = [], []
@@ -2687,6 +2715,9 @@ def _qg_bar_chart_compare(players_vals: dict, label: str, metrics: list[str] = N
     chart = alt.layer(bars, rule).properties(width=_w, height=300).facet(
         column=alt.Column("Player:N", title=None,
                           header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
+    if title:
+        chart = chart.properties(title=alt.TitleParams(
+            text=f"{title} — {label}", color=PALETTE["text"], fontSize=13))
     _show_chart(chart, dl_name=dl_name,
                 brand_width=_w * _n + 24 * (_n - 1) + 55)
 
@@ -3019,12 +3050,13 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         _all_qg_vals = _player_qg_vals(pid, trend, _yr)
         _qg_paired_bar_chart(
             _all_qg_vals, _yr,
-            caption=f"**{_yr}** — Quality Games % vs **50** — NFI (left) / xG (right).",
+            caption="Quality Games % vs **50**.",
             dl_prefix="QG-bars")
         _zone_vals = _player_zone_vals(pid, trend, _yr)
         _qg_bar_chart(_zone_vals, _yr,
-                     caption=f"**{_yr}** — Zone Impact index vs **50** (league average).",
-                     dl_prefix="Zone-bars", ydomain=_PROFILE_BAR_YDOM)
+                     caption="Zone Impact index vs **50** (league average).",
+                     dl_prefix="Zone-bars", ydomain=_PROFILE_BAR_YDOM,
+                     title="Zone Impact Index")
         st.caption("↕ Click a different year (or the 2yr row) above to change the bars.")
 
     # Team scatters — ALWAYS shown here regardless of which family pills are
@@ -3062,37 +3094,50 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
         _team_frame = _team_frame[_team_frame["position"] == _pos_code]
     if _team_frame.empty:
         return
+    # True league-wide frame (no team filter) — needed for any "league average"
+    # crosshair on a team-scoped chart, since _team_frame itself is only this
+    # player's own team and averaging it would silently compute a TEAM average
+    # and mislabel it "league average".
+    _league_frame = _team_scatter_frame(season_label or "4yr (2022-2026)")
     _scope_txt = f" ({cohort})" if same_pos else ""
+    _yl = season_label or "4yr (2022-2026)"
     st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>{heading_prefix}{_my_team} "
                 f"Team Scatters{_scope_txt}</h3>", unsafe_allow_html=True)
     if {"PDOxG", "xG%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                     f"xG%</h4>", unsafe_allow_html=True)
-        _pdo_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+        _pdo_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                       year_label=_yl)
     if {"PDOxG", "NFI%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                     f"NFI%</h4>", unsafe_allow_html=True)
-        _pdo_nfi_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+        _pdo_nfi_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                        year_label=_yl)
     if {"NFI%", "xG%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
                     f"xG%</h4>", unsafe_allow_html=True)
-        _nfi_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+        _nfi_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                       year_label=_yl)
     if {"EDGE DZ%", "EDGE OZ%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
                     f"O-Zone Time%</h4>", unsafe_allow_html=True)
-        _edge_zone_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+        _edge_zone_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                          year_label=_yl)
     if {"DZ Start%", "OZ Start%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
                     f"vs O-Zone</h4>", unsafe_allow_html=True)
-        _zone_start_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+        _zone_start_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                           year_label=_yl)
     if {"EDGE OZ%", "DZ Start%", "NZ Start%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EZI: EDGE O-Zone "
                     f"Time vs Non-O-Zone Starts</h4>", unsafe_allow_html=True)
-        _ezi_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+        _ezi_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                    year_label=_yl)
     if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
                     f"vs Top Speed</h4>", unsafe_allow_html=True)
-        _edge_speed_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name)
+        _edge_speed_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                           year_label=_yl, league_df=_league_frame)
 
 
 # ===========================================================================
@@ -3423,7 +3468,8 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
                          team_scoped: bool, name_col: str = "Player",
                          extra_layer=None, color_col: str = None,
                          color_title: str = None, highlight_name: str = None,
-                         domain_df: pd.DataFrame = None) -> None:
+                         domain_df: pd.DataFrame = None,
+                         year_label: str = None) -> None:
     """Shared scatter renderer for the 5 team-scatter charts: tight (non-zero)
     axis domains so points aren't clustered in a corner, player-name labels
     shown directly ONLY when team_scoped (a small, readable point count) —
@@ -3433,7 +3479,10 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
     (easy) -> dark (hard) color gradient by a 3rd metric — team-scoped views
     ONLY (league-wide always plain blue dots, since a color legend across
     hundreds of points isn't readable); silently falls back to plain dots if
-    that column isn't available for the current scope. highlight_name
+    that column isn't available for the current scope. year_label (optional):
+    the filtered season/scope (e.g. "2024-25", "4yr (2022-2026)", "Playoffs")
+    — baked into the chart's own title (as "{y_title} vs {x_title} — {year}")
+    so the downloaded image is self-labeled. highlight_name
     (optional): the searched/drilled-into player's full name — their label
     renders bold and slightly larger so they're easy to pick out among
     teammates."""
@@ -3512,6 +3561,10 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
                 text="_label:N",
             )
             chart = chart + labels
+    if year_label:
+        _title_text = f"{y_title} vs {x_title} — {year_label}"
+        chart = chart.properties(title=alt.TitleParams(
+            text=_title_text, color=PALETTE["text"], fontSize=13))
     # League-wide (not team_scoped) scatters have no visible name label — hover
     # is the ONLY way to identify a point — so keep the tooltip there. Team-
     # scoped scatters already show a name label on every dot, so they stay
@@ -3520,7 +3573,7 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
 
 
 def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
-                    domain_df: pd.DataFrame = None) -> None:
+                    domain_df: pd.DataFrame = None, year_label: str = None) -> None:
     import altair as alt
     if not {"PDOxG", "xG%"}.issubset(df.columns):
         return
@@ -3533,11 +3586,11 @@ def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", hi
         "(light = easier, dark = harder).",
         team_scoped, extra_layer=rule0, color_col="OZ Start%",
         color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
-        domain_df=domain_df)
+        domain_df=domain_df, year_label=year_label)
 
 
 def _pdo_nfi_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
-                     domain_df: pd.DataFrame = None) -> None:
+                     domain_df: pd.DataFrame = None, year_label: str = None) -> None:
     import altair as alt
     if not {"PDOxG", "NFI%"}.issubset(df.columns):
         return
@@ -3550,22 +3603,23 @@ def _pdo_nfi_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", h
         "(light = easier, dark = harder).",
         team_scoped, extra_layer=rule0, color_col="OZ Start%",
         color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
-        domain_df=domain_df)
+        domain_df=domain_df, year_label=year_label)
 
 
 def _zone_start_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
-                        domain_df: pd.DataFrame = None) -> None:
+                        domain_df: pd.DataFrame = None, year_label: str = None) -> None:
     if not {"DZ Start%", "OZ Start%"}.issubset(df.columns):
         return
     _scatter_with_labels(
         df, "DZ Start%", "OZ Start%", "DZ Start%", "OZ Start%",
         f"zone-start-scatter{dl_suffix}",
         "Faceoff-started 5v5 shifts, one point per player.",
-        team_scoped, highlight_name=highlight_name, domain_df=domain_df)
+        team_scoped, highlight_name=highlight_name, domain_df=domain_df,
+        year_label=year_label)
 
 
 def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
-                       domain_df: pd.DataFrame = None) -> None:
+                       domain_df: pd.DataFrame = None, year_label: str = None) -> None:
     if not {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
         return
     _scatter_with_labels(
@@ -3575,11 +3629,11 @@ def _edge_zone_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "",
         "(light = easier, dark = harder).",
         team_scoped, color_col="OZ Start%",
         color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
-        domain_df=domain_df)
+        domain_df=domain_df, year_label=year_label)
 
 
 def _ezi_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
-                 domain_df: pd.DataFrame = None) -> None:
+                 domain_df: pd.DataFrame = None, year_label: str = None) -> None:
     """EDGE O-zone TIME vs non-O-zone faceoff STARTS (DZ Start% + NZ Start%) —
     the two raw ingredients behind EZI, plotted directly so a mismatch (low
     starts, high time, or the reverse) is visible as distance from the
@@ -3597,22 +3651,30 @@ def _ezi_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highl
         "NHL EDGE O-zone time vs non-O-zone faceoff starts — top-right = EZI "
         "outperformers (low O-zone starts, high O-zone time); bottom-left = "
         "underperformers (sheltered starts that aren't converting to time).",
-        team_scoped, highlight_name=highlight_name, domain_df=domain_df)
+        team_scoped, highlight_name=highlight_name, domain_df=domain_df,
+        year_label=year_label)
 
 
 def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
-                        domain_df: pd.DataFrame = None) -> None:
+                        domain_df: pd.DataFrame = None, year_label: str = None,
+                        league_df: pd.DataFrame = None) -> None:
     import altair as alt
     # Y axis is 20+ mph speed bursts PER 60 MINUTES PLAYED (rate), not the raw
     # season count — so heavy-TOI players don't top it purely on volume.
     _y = "EDGE Bursts/60" if "EDGE Bursts/60" in df.columns else "EDGE Bursts 20+"
     if not {"EDGE Top Speed", _y}.issubset(df.columns):
         return
-    # League-average crosshair on both axes. Averaged over the full-league frame
-    # (domain_df, passed for team-scoped/trade views) so a team's points are read
-    # against the LEAGUE mean, not just their own; falls back to df on the plain
-    # league-wide leaderboard, where df already is the league.
-    _mean_src = domain_df if (domain_df is not None and not domain_df.empty) else df
+    # League-average crosshair on both axes — MUST be the true league-wide mean,
+    # not the (possibly team-filtered) `df` this chart plots. league_df is the
+    # explicit "genuinely whole league" source (pass this from any team-scoped
+    # or trade caller); domain_df is a fallback since the Trade Analyzer's
+    # domain_df already happens to be the unfiltered league frame too. Only
+    # falls back to `df` itself on the plain league-wide leaderboard, where df
+    # already IS the league — team-scoped callers that pass neither would
+    # silently average just their own team and mislabel it "league average",
+    # which is the bug this two-param design fixes.
+    _mean_src = (league_df if (league_df is not None and not league_df.empty)
+                 else (domain_df if (domain_df is not None and not domain_df.empty) else df))
     _mx = pd.to_numeric(_mean_src.get("EDGE Top Speed"), errors="coerce").mean()
     _my = pd.to_numeric(_mean_src.get(_y), errors="coerce").mean()
     _avg = []
@@ -3628,11 +3690,12 @@ def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
         "Speed Bursts (20+ mph) / 60", f"EDGE-speed-burst-vs-top-speed{dl_suffix}",
         "NHL EDGE tracking, one point per player. Dashed lines = league average on "
         "each axis (top-right = fast **and** frequent bursts).",
-        team_scoped, extra_layer=_extra, highlight_name=highlight_name, domain_df=domain_df)
+        team_scoped, extra_layer=_extra, highlight_name=highlight_name, domain_df=domain_df,
+        year_label=year_label)
 
 
 def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
-                    domain_df: pd.DataFrame = None) -> None:
+                    domain_df: pd.DataFrame = None, year_label: str = None) -> None:
     import altair as alt
     if not {"NFI%", "xG%"}.issubset(df.columns):
         return
@@ -3643,7 +3706,7 @@ def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", hi
         "(light = easier, dark = harder).",
         team_scoped, color_col="OZ Start%",
         color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
-        domain_df=domain_df)
+        domain_df=domain_df, year_label=year_label)
 
 
 def render_players() -> None:
@@ -3727,7 +3790,7 @@ def render_players() -> None:
 
     # Metric-family toggles first, then the Team filter. Families start with none
     # selected (only the identity columns show); click a family to display it.
-    fcol, tcol = st.columns([2.8, 1.0])
+    fcol, tcol, gcol = st.columns([2.4, 0.85, 0.85])
     # Quality Games shows by default; the user can toggle other families on/off.
     st.session_state.setdefault("players_display_seg", ["Quality Games"])
     with fcol:
@@ -3766,6 +3829,15 @@ def render_players() -> None:
         else:
             toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
             min_toi = st.slider("Min ES TOI (min)", 0, 7500, rank_floor, 50, key=toi_key)
+    with gcol:
+        # Min GP — a SEPARATE, adjustable floor from Min ES TOI, so a player who's
+        # off the leaderboard purely on games played (rather than low per-game
+        # minutes) can be brought on. Doesn't change the fixed rank_floor used for
+        # ranking eligibility (still shows "(UR)" below that), only which rows show.
+        _is_2yr_scope = (not playoffs) and SEASON_KEY.get(season_label) == "pooled_2yr"
+        _gpmax = 30 if playoffs else (350 if is_pooled else (170 if _is_2yr_scope else 82))
+        _gpkey = (f"players_mingp_{'playoffs' if playoffs else ('pooled' if is_pooled else ('2yr' if _is_2yr_scope else 'season'))}")
+        min_gp = st.slider("Min GP", 0, _gpmax, min(25, _gpmax), 1, key=_gpkey)
 
     # Drill-in (via the search box OR clicking a leaderboard row): show one
     # player's detail (trend + charts) here. Clear/deselect to return to the list.
@@ -3817,6 +3889,7 @@ def render_players() -> None:
     # then filters which rows are shown; sub-floor rows that survive it render UR.
     rank_cohort = df[df["toi_min"].fillna(0) >= rank_floor].copy()
     df = df[df["toi_min"].fillna(0) >= min_toi]
+    df = df[df["GP"].fillna(0) >= min_gp]
     if team_sel != "All":
         if _has_teams:
             df = df[df["_teams"].apply(lambda ts: team_sel in ts)]
@@ -3973,6 +4046,10 @@ def render_players() -> None:
     _pl_qual = pd.to_numeric(disp["TOI"], errors="coerce").fillna(0) >= rank_floor
     _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better=_lower,
                  mark_unranked=True, qualified=_pl_qual, team_rank_idx=_team_rank_idx)
+    _lb_cohort_txt = {"F": "forwards", "D": "defense"}.get(pos, "all skaters")
+    st.caption(f"Each value shows **(league / team)** rank — rank among "
+               f"**{_lb_cohort_txt}** league-wide, then among their own team's skaters "
+               "that season. NFI-S/60 (shots against): lowest = #1.")
     _sort_hint()
     st.caption("Click a row to open that player's detail (collapses the list).")
     _gen = st.session_state.get("_pl_tbl_gen", 0)
@@ -3992,8 +4069,9 @@ def render_players() -> None:
         zone_note = (" · OZI/DZI/NZI/TZI (0–100, 50 = avg) and D/N/O Start% "
                      "for this season")
     st.caption(
-        f"{len(disp):,} players (≥ {min_toi:,} ES min) · {scope_label} · sorted by "
-        f"RelNFI% descending · ranked at ≥ {rank_floor:,} ES min (else UR){zone_note}"
+        f"{len(disp):,} players (≥ {min_toi:,} ES min, ≥ {min_gp} GP) · {scope_label} · "
+        f"sorted by RelNFI% descending · ranked at ≥ {rank_floor:,} ES min (else UR)"
+        f"{zone_note} · lower Min GP / Min ES TOI to bring more players onto the list"
     )
 
     import altair as alt
@@ -4016,32 +4094,32 @@ def render_players() -> None:
     if {"PDOxG", "xG%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs xG%</h4>",
                     unsafe_allow_html=True)
-        _pdo_xg_scatter(df, _team_scoped)
+        _pdo_xg_scatter(df, _team_scoped, year_label=scope_label)
 
     if {"PDOxG", "NFI%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs NFI%</h4>",
                     unsafe_allow_html=True)
-        _pdo_nfi_scatter(df, _team_scoped)
+        _pdo_nfi_scatter(df, _team_scoped, year_label=scope_label)
 
     if {"NFI%", "xG%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG%</h4>",
                     unsafe_allow_html=True)
-        _nfi_xg_scatter(df, _team_scoped)
+        _nfi_xg_scatter(df, _team_scoped, year_label=scope_label)
 
     if {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
                     f"O-Zone Time%</h4>", unsafe_allow_html=True)
-        _edge_zone_scatter(df, _team_scoped)
+        _edge_zone_scatter(df, _team_scoped, year_label=scope_label)
 
     if {"DZ Start%", "OZ Start%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone vs "
                     f"O-Zone</h4>", unsafe_allow_html=True)
-        _zone_start_scatter(df, _team_scoped)
+        _zone_start_scatter(df, _team_scoped, year_label=scope_label)
 
     if {"EDGE OZ%", "DZ Start%", "NZ Start%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EZI: EDGE O-Zone "
                     f"Time vs Non-O-Zone Starts</h4>", unsafe_allow_html=True)
-        _ezi_scatter(df, _team_scoped)
+        _ezi_scatter(df, _team_scoped, year_label=scope_label)
 
     if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts vs "
@@ -4117,14 +4195,15 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
     if any(pd.notna(v) for v in qg_vals.values()):
         _qg_paired_bar_chart(
             qg_vals, "Playoffs",
-            caption="Quality Games % vs **50** — NFI (left) / xG (right).",
+            caption="Quality Games % vs **50**.",
             dl_prefix="QG-bars-playoffs")
     zone_vals = {m: (float(r[m]) if m in r.index and pd.notna(r.get(m)) else np.nan)
                  for m in _ZONE_BAR_METRICS}
     if any(pd.notna(v) for v in zone_vals.values()):
         _qg_bar_chart(zone_vals, "Playoffs",
                      caption="Zone Impact index vs **50** (league average).",
-                     dl_prefix="Zone-bars-playoffs", ydomain=_PROFILE_BAR_YDOM)
+                     dl_prefix="Zone-bars-playoffs", ydomain=_PROFILE_BAR_YDOM,
+                     title="Zone Impact Index")
 
     # Team scatters, scoped to this player's playoff team. Zone-start% still
     # isn't computed for playoffs, so only 4 of the 5 regular-season scatters
@@ -4137,25 +4216,30 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
         if {"Player", "PDOxG", "xG%"}.issubset(_tf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
                         f"{_team} PDOxG vs xG% (playoffs)</h4>", unsafe_allow_html=True)
-            _pdo_xg_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi)
+            _pdo_xg_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi,
+                          year_label="Playoffs")
         if {"Player", "PDOxG", "NFI%"}.issubset(_tf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
                         f"{_team} PDOxG vs NFI% (playoffs)</h4>", unsafe_allow_html=True)
-            _pdo_nfi_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi)
+            _pdo_nfi_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi,
+                           year_label="Playoffs")
         if {"Player", "NFI%", "xG%"}.issubset(_tf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
                         f"{_team} NFI% vs xG% (playoffs)</h4>", unsafe_allow_html=True)
-            _nfi_xg_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi)
+            _nfi_xg_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi,
+                          year_label="Playoffs")
         if {"Player", "EDGE DZ%", "EDGE OZ%"}.issubset(_tf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
                         f"{_team} EDGE: D-Zone vs O-Zone Time% (playoffs)</h4>",
                         unsafe_allow_html=True)
-            _edge_zone_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi)
+            _edge_zone_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi,
+                              year_label="Playoffs")
         if {"Player", "EDGE Top Speed"}.issubset(_tf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
                         f"{_team} EDGE: Speed Bursts vs Top Speed (playoffs)</h4>",
                         unsafe_allow_html=True)
-            _edge_speed_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi)
+            _edge_speed_scatter(_tf, True, dl_suffix="-playoffs", highlight_name=_hi,
+                               year_label="Playoffs", league_df=frame)
 
 
 # ---------------------------------------------------------------------------
@@ -4782,7 +4866,10 @@ def _goalie_profile_table(gid: int, qg_scope_suffix: str = "", qg_starter: bool 
             else:
                 txt = _b.get(c, lambda v: f"{v}")(v)
                 rk = ranks.get(c, {}).get(ssn)
-                row[c] = f"{txt} ({rk})" if rk is not None else txt
+                # Below that metric's OWN qualifying floor that season (e.g. QNFG%/
+                # QG%/sQS% need >=25 GP) — mark it explicitly rather than showing a
+                # bare number with no indication it's unranked.
+                row[c] = f"{txt} ({rk})" if rk is not None else f"{txt} (UR)"
         rows.append(row)
 
     # Append a "2yr avg (24-26)" row — denominator-based pool of the last two
@@ -5310,7 +5397,7 @@ def render_goalies() -> None:
             base[_qc] = base.get(_col, pd.Series(np.nan, index=base.index)).fillna(0) >= _flr
     _gid_of = dict(zip(base["Goalie"], base["goalie_id"]))   # name → id for drill-in
 
-    c1, c2, c3 = st.columns([2.0, 1.3, 1.0])
+    c1, c2, c3, c4 = st.columns([1.8, 1.1, 1.1, 0.9])
     with c1:
         _gnames = sorted(base["Goalie"].dropna().unique().tolist())
         goalie_pick = st.selectbox(
@@ -5331,6 +5418,15 @@ def render_goalies() -> None:
             _shdef, _shkey, _shmax = 150, "goalies_minshots_season", 3000
         min_shots = st.slider("Min Shots Faced", 0, _shmax, _shdef, 50, key=_shkey)
     with c3:
+        # Min GP — a SEPARATE, adjustable floor from the fixed 25-GP bar each of
+        # QNFG%/QG%/sQS% requires to be individually ranked. Lowering this just
+        # brings a low-GP goalie onto the leaderboard (still showing "(UR)" on
+        # whichever of their columns don't clear that metric's own floor) — it
+        # does not change what counts as "qualified" for ranking.
+        _gpmax = 30 if playoffs else (100 if (is_pooled or is_2yr) else 82)
+        _gpkey = f"goalies_mingp_{'playoffs' if playoffs else ('pooled' if is_pooled else ('2yr' if is_2yr else 'season'))}"
+        min_gp = st.slider("Min GP", 0, _gpmax, min(25, _gpmax), 1, key=_gpkey)
+    with c4:
         _gteam_opts = ["All"] + sorted(base["Team"].dropna().unique().tolist())
         # Picking a team exits any drill-in and clears the goalie search (mutually
         # exclusive views).
@@ -5370,6 +5466,7 @@ def render_goalies() -> None:
     # slider then filters which rows are shown, and the Team filter narrows further.
     rank_pool = base.copy()
     base = base[base["total_faced"].fillna(0) >= min_shots]
+    base = base[base["GP"].fillna(0) >= min_gp]
     if goalie_team != "All":
         base = base[base["Team"] == goalie_team]
     if base.empty:
@@ -5482,8 +5579,10 @@ def render_goalies() -> None:
                        key=f"goalies_tbl_{_ggen}")
     _goalie_scope = "all playoffs (2022-2025 pooled)" if playoffs else season_label
     st.caption(
-        f"{len(disp)} goalies (≥ {min_shots:,} shots faced) · {_goalie_scope} · sorted "
-        "by NFI-GSAx/60 descending · (UR) = below that metric's ranking floor"
+        f"{len(disp)} goalies (≥ {min_shots:,} shots faced, ≥ {min_gp} GP) · "
+        f"{_goalie_scope} · sorted by NFI-GSAx/60 descending · (UR) = below that "
+        "metric's own ranking floor — lower Min GP / Min Shots Faced to bring more "
+        "goalies onto the list"
     )
     if playoffs:
         st.markdown(
@@ -5756,22 +5855,23 @@ def render_trade_analyzer() -> None:
         # as the single-player drill-in bars, faceted one panel per player.
         _qg_bar_chart_compare(
             _pv, _cmp_yr, metrics=_QG_BAR_ORDER_NFI,
-            caption=f"**{_cmp_yr}** — **NFI** Quality-Games % vs the **50% baseline** "
+            caption="**NFI** Quality-Games % vs the **50% baseline** "
                     "(Raw next to its Relative counterpart), one panel per player.",
-            dl_name="Trade-QG-bars-NFI")
+            dl_name="Trade-QG-bars-NFI", title="NFI Quality Games %")
         _qg_bar_chart_compare(
             _pv, _cmp_yr, metrics=_QG_BAR_ORDER_XG,
-            caption=f"**{_cmp_yr}** — **xG (MoneyPuck)** Quality-Games % vs the "
+            caption="**xG (MoneyPuck)** Quality-Games % vs the "
                     "**50% baseline** (Raw next to its Relative counterpart), one panel "
-                    "per player.", dl_name="Trade-QG-bars-xG")
+                    "per player.", dl_name="Trade-QG-bars-xG",
+            title="xG (MoneyPuck) Quality Games %")
         # Zone Impact bar (OZI/DZI/NZI/TZI, 0-100, 50 = position average) — same
         # metric the drill-in shows, faceted per player.
         if any(any(pd.notna(v) for v in zv.values()) for zv in _zv.values()):
             _qg_bar_chart_compare(
                 _zv, _cmp_yr, metrics=_ZONE_BAR_METRICS_ORDER,
-                caption=f"**{_cmp_yr}** — **Zone Impact** index (OZI/DZI/NZI/TZI) vs the "
+                caption="**Zone Impact** index (OZI/DZI/NZI/TZI) vs the "
                         "**50 baseline** (50 = league-average for the position), one panel "
-                        "per player.", dl_name="Trade-Zone-bars")
+                        "per player.", dl_name="Trade-Zone-bars", title="Zone Impact Index")
     # Year-over-year line graphs behind a toggle (off by default), mirroring the
     # player drill-in — lead with the bars + scatters, reveal the season-by-season
     # lines on demand. Same full metric set as the drill-in (Quality Games, xG,
@@ -5845,6 +5945,7 @@ def render_trade_analyzer() -> None:
                    "league range (same scale as the leaderboard) so a small real gap "
                    "isn't exaggerated. The xG-based scatters show **Raw xG%** vs **Rel "
                    "xG%** side by side; the others have no relative variant.")
+        _tyl = season_label or "4yr (2022-2026)"
         if {"PDOxG", "xG%", "RelxG%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                         "xG%</h4>", unsafe_allow_html=True)
@@ -5856,23 +5957,24 @@ def render_trade_analyzer() -> None:
         if {"PDOxG", "NFI%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                         "NFI%</h4>", unsafe_allow_html=True)
-            _pdo_nfi_scatter(_sf, True, dl_suffix="-trade", domain_df=_full)
+            _pdo_nfi_scatter(_sf, True, dl_suffix="-trade", domain_df=_full, year_label=_tyl)
         if {"EDGE DZ%", "EDGE OZ%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: "
                         "D-Zone vs O-Zone Time%</h4>", unsafe_allow_html=True)
-            _edge_zone_scatter(_sf, True, dl_suffix="-trade", domain_df=_full)
+            _edge_zone_scatter(_sf, True, dl_suffix="-trade", domain_df=_full, year_label=_tyl)
         if {"DZ Start%", "OZ Start%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone "
                         "Starts: D-Zone vs O-Zone</h4>", unsafe_allow_html=True)
-            _zone_start_scatter(_sf, True, dl_suffix="-trade", domain_df=_full)
+            _zone_start_scatter(_sf, True, dl_suffix="-trade", domain_df=_full, year_label=_tyl)
         if {"EDGE OZ%", "DZ Start%", "NZ Start%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EZI: "
                         "EDGE O-Zone Time vs Non-O-Zone Starts</h4>", unsafe_allow_html=True)
-            _ezi_scatter(_sf, True, dl_suffix="-trade", domain_df=_full)
+            _ezi_scatter(_sf, True, dl_suffix="-trade", domain_df=_full, year_label=_tyl)
         if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: "
                         "Speed Bursts vs Top Speed</h4>", unsafe_allow_html=True)
-            _edge_speed_scatter(_sf, True, dl_suffix="-trade", domain_df=_full)
+            _edge_speed_scatter(_sf, True, dl_suffix="-trade", domain_df=_full, year_label=_tyl,
+                               league_df=_full)
 
 
 def _trade_rawrel_scatter(df_sel: pd.DataFrame, y_col: str, y_title: str,
