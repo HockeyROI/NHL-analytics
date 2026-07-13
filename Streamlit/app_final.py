@@ -3086,6 +3086,11 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
     # any of the last 4 seasons — e.g. a long-retired player still
     # showing up under their old team when viewing a recent season).
     _team_frame = _team_scatter_frame(season_label or "4yr (2022-2026)", team=_my_team)
+    # Keep the full-roster (both-position) copy for the speed scatter, which
+    # always shows Forwards AND Defense sub-charts regardless of the drilled-in
+    # player's position — the same_pos restriction below would otherwise strip
+    # out the other position group.
+    _team_frame_allpos = _team_frame
     # Respect the "Rank against Defense/Forwards only" choice above — a
     # same_pos view should scatter against the player's own position
     # group on the team, not the whole roster.
@@ -3133,10 +3138,10 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
                     f"Time vs Non-O-Zone Starts</h4>", unsafe_allow_html=True)
         _ezi_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
                     year_label=_yl)
-    if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_team_frame.columns):
+    if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_team_frame_allpos.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: Speed Bursts "
                     f"vs Top Speed</h4>", unsafe_allow_html=True)
-        _edge_speed_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+        _edge_speed_scatter(_team_frame_allpos, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
                            year_label=_yl, league_df=_league_frame)
 
 
@@ -3665,40 +3670,64 @@ def _ezi_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highl
 def _edge_speed_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
                         domain_df: pd.DataFrame = None, year_label: str = None,
                         league_df: pd.DataFrame = None) -> None:
+    """Skating speed vs speed-burst rate, rendered as TWO scatters — one for
+    forwards, one for defense — ALWAYS both, regardless of which (if any)
+    player is drilled into. NHL computes its EDGE speed percentiles WITHIN
+    position group (its own published "league average" is 22.17 mph for F vs
+    21.59 mph for D — forwards skate faster), so a single mixed crosshair made
+    a top-quartile-among-D defenseman look "below average" against a line
+    inflated by forwards. Each chart's dashed crosshair is therefore that
+    position group's OWN average, matching NHL's per-position basis."""
     import altair as alt
     # Y axis is 20+ mph speed bursts PER 60 MINUTES PLAYED (rate), not the raw
     # season count — so heavy-TOI players don't top it purely on volume.
     _y = "EDGE Bursts/60" if "EDGE Bursts/60" in df.columns else "EDGE Bursts 20+"
-    if not {"EDGE Top Speed", _y}.issubset(df.columns):
+    # The position group column is "position" on the team/trade/playoff frames
+    # but renamed to "Pos" on the main leaderboard df — accept either.
+    def _poscol(_f):
+        return ("position" if "position" in getattr(_f, "columns", [])
+                else ("Pos" if "Pos" in getattr(_f, "columns", []) else None))
+    _pc = _poscol(df)
+    if not {"EDGE Top Speed", _y}.issubset(df.columns) or _pc is None:
         return
-    # League-average crosshair on both axes — MUST be the true league-wide mean,
-    # not the (possibly team-filtered) `df` this chart plots. league_df is the
-    # explicit "genuinely whole league" source (pass this from any team-scoped
-    # or trade caller); domain_df is a fallback since the Trade Analyzer's
-    # domain_df already happens to be the unfiltered league frame too. Only
-    # falls back to `df` itself on the plain league-wide leaderboard, where df
-    # already IS the league — team-scoped callers that pass neither would
-    # silently average just their own team and mislabel it "league average",
-    # which is the bug this two-param design fixes.
+    # Crosshair average MUST come from the true league-wide frame (per position
+    # group), not the possibly team-filtered `df` this chart plots. league_df is
+    # the explicit whole-league source (passed by team-scoped / trade callers);
+    # domain_df is a fallback since the Trade Analyzer's domain_df is already the
+    # unfiltered league frame; only falls back to `df` on the plain league-wide
+    # leaderboard, where df already IS the league.
     _mean_src = (league_df if (league_df is not None and not league_df.empty)
                  else (domain_df if (domain_df is not None and not domain_df.empty) else df))
-    _mx = pd.to_numeric(_mean_src.get("EDGE Top Speed"), errors="coerce").mean()
-    _my = pd.to_numeric(_mean_src.get(_y), errors="coerce").mean()
-    _avg = []
-    if pd.notna(_mx):
-        _avg.append(alt.Chart(pd.DataFrame({"x": [float(_mx)]})).mark_rule(
-            color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(x="x:Q"))
-    if pd.notna(_my):
-        _avg.append(alt.Chart(pd.DataFrame({"y": [float(_my)]})).mark_rule(
-            color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q"))
-    _extra = alt.layer(*_avg) if _avg else None
-    _scatter_with_labels(
-        df, "EDGE Top Speed", _y, "Top Speed (mph)",
-        "Speed Bursts (20+ mph) / 60", f"EDGE-speed-burst-vs-top-speed{dl_suffix}",
-        "NHL EDGE tracking, one point per player. Dashed lines = league average on "
-        "each axis (top-right = fast **and** frequent bursts).",
-        team_scoped, extra_layer=_extra, highlight_name=highlight_name, domain_df=domain_df,
-        year_label=year_label)
+    _mpc = _poscol(_mean_src)
+    # Shared axis domain across BOTH sub-charts so forwards vs defense are
+    # directly comparable (the forward cloud visibly sits to the right).
+    _dom = domain_df if (domain_df is not None and not domain_df.empty) else df
+    for _grp, _lbl in (("F", "Forwards"), ("D", "Defense")):
+        _sub = df[df[_pc] == _grp]
+        if _sub.dropna(subset=["EDGE Top Speed", _y]).empty:
+            continue
+        _msrc = (_mean_src[_mean_src[_mpc] == _grp] if _mpc is not None else _mean_src)
+        _mx = pd.to_numeric(_msrc.get("EDGE Top Speed"), errors="coerce").mean()
+        _my = pd.to_numeric(_msrc.get(_y), errors="coerce").mean()
+        _avg = []
+        if pd.notna(_mx):
+            _avg.append(alt.Chart(pd.DataFrame({"x": [float(_mx)]})).mark_rule(
+                color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(x="x:Q"))
+        if pd.notna(_my):
+            _avg.append(alt.Chart(pd.DataFrame({"y": [float(_my)]})).mark_rule(
+                color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q"))
+        _extra = alt.layer(*_avg) if _avg else None
+        st.markdown(f"<h5 style='color:{PALETTE['text']}; margin:0.6rem 0 0.1rem;'>{_lbl}</h5>",
+                    unsafe_allow_html=True)
+        _yl = f"{_lbl} — {year_label}" if year_label else _lbl
+        _scatter_with_labels(
+            _sub, "EDGE Top Speed", _y, "Top Speed (mph)",
+            "Speed Bursts (20+ mph) / 60", f"EDGE-speed-burst-vs-top-speed-{_grp}{dl_suffix}",
+            f"NHL EDGE tracking, one point per {_lbl.lower().rstrip('s')}. Dashed lines = "
+            f"**{_lbl.lower()}** league average on each axis (F and D computed separately, "
+            "matching NHL's per-position percentiles). Top-right = fast **and** frequent bursts.",
+            team_scoped, extra_layer=_extra, highlight_name=highlight_name, domain_df=_dom,
+            year_label=_yl)
 
 
 def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
