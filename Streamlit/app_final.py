@@ -2430,6 +2430,15 @@ def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 
     _on_screen = disp.to_dict()
     if not keep_tooltip:
         _strip_tooltips(_on_screen)
+    if not _multi:
+        # Vega-Lite's default top padding isn't enough room for a titled
+        # chart's ascenders at this font size — the SVG itself renders with
+        # overflow:hidden, so without extra padding the top few px of the
+        # title's tallest characters get clipped (confirmed via the rendered
+        # DOM: title top sat ~7px above the SVG's own top edge). _export_spec
+        # already does this for the PNG download; mirror it here for the
+        # on-screen chart, which goes through a separate code path.
+        _on_screen["padding"] = {"left": 10, "top": 15, "right": 10, "bottom": 10}
     st.vega_lite_chart(_on_screen, use_container_width=True)
     if _footer:
         _chart_brand(brand_width)
@@ -3533,14 +3542,15 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
             )
             chart = chart + labels
     if year_label:
-        # Long axis-title pairs (e.g. EZI's "D/N-Zone Start% (100 − OZ
-        # Start%) vs EDGE O-Zone Time%") overflow a single title line at the
-        # in-app chart width and get clipped — Vega-Lite doesn't auto-wrap
-        # title text. Split onto two lines past a length threshold instead
-        # (short titles stay on one line as before).
-        _title_main = f"{y_title} vs {x_title}"
-        _title_text = ([_title_main, f"— {year_label}"] if len(_title_main) > 40
-                       else f"{_title_main} — {year_label}")
+        # Single line only — a 2-line array title was tried (splitting long
+        # axis-title pairs like EZI's onto their own line) but Vega-Lite
+        # doesn't reserve extra top margin for it in this render path, so
+        # line 1 got clipped above the SVG's own top edge (confirmed via the
+        # rendered DOM: title top -11px vs SVG top 0px). The in-app chart
+        # width (1120px+, use_container_width) comfortably fits even the
+        # longest of these titles on one line, so single-line is both
+        # simpler and doesn't clip.
+        _title_text = f"{y_title} vs {x_title} — {year_label}"
         chart = chart.properties(title=alt.TitleParams(
             text=_title_text, color=PALETTE["text"], fontSize=13))
     # League-wide (not team_scoped) scatters have no visible name label — hover
