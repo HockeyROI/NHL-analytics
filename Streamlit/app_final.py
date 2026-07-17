@@ -2197,126 +2197,12 @@ _BRAND_DEEP = "#0A1A2F"          # "Hockey" — deeper than the chart navy
 _BRAND_ROI = PALETTE["orange"]   # "ROI" — brand orange (#FF6B35)
 
 
-def _chart_brand(width_px: int = None) -> None:
-    """HockeyROI footer rendered just under a (faceted) chart, stacked to match the
-    embedded version: the two-colour wordmark (Hockey deep-navy, ROI orange) on top,
-    the site URL beneath it, right-aligned. width_px caps the block so it sits under
-    the chart's right edge (for fixed-width faceted charts) rather than the far
-    container edge."""
-    _w = f"max-width:{int(width_px)}px; " if width_px else ""
-    st.markdown(
-        f"<div style='{_w}text-align:right; margin:-0.3rem 0 0.5rem 0; "
-        "line-height:1.05; letter-spacing:0.2px;'>"
-        "<div style='font-weight:800; font-size:0.95rem;'>"
-        f"<span style='color:{_BRAND_DEEP};'>Hockey</span>"
-        f"<span style='color:{_BRAND_ROI};'>ROI</span></div>"
-        f"<div style='color:#7A8694; font-size:0.78rem;'>{_BRAND_URL}</div></div>",
-        unsafe_allow_html=True)
-
-
-try:
-    import vl_convert as _vlc            # PNG export backend (installed on deploy)
-    _HAS_VLC = True
-    # Register the bundled Inter TTFs so the server-side PNG renders in the SAME
-    # font as the on-screen chart (Streamlit uses the Inter webfont; vl-convert
-    # has no system access, so without this it falls back to its default font).
-    try:
-        _vlc.register_font_directory(str(APP_DIR / "fonts"))
-    except Exception:
-        pass
-except Exception:
-    _HAS_VLC = False
-
-# The font the PNG is rendered with — must match the on-screen UI font (Inter).
-_CHART_FONT = "Inter"
-
-
-def _export_spec(spec_json: str) -> str:
-    """Make a Vega-Lite spec render to a clean standalone PNG: padding + pad-
-    autosize so nothing clips, an explicit width for single-view charts (the
-    on-screen 'container' width can't resolve headless), and a light axis/view
-    config so it doesn't get the default Vega axis box."""
-    import json
-    d = json.loads(spec_json)
-    _multi = any(k in d for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
-    d["padding"] = {"left": 10, "top": 10, "right": 28, "bottom": 18}
-    if not _multi:
-        d["autosize"] = {"type": "pad", "contains": "padding"}
-        if d.get("width") in (None, "container"):
-            d["width"] = 860
-    cfg = d.setdefault("config", {})
-    cfg.setdefault("axis", {"gridColor": "#ececec", "tickColor": "#cccccc",
-                            "labelColor": PALETTE["text"], "titleColor": PALETTE["text"]})
-    cfg.setdefault("axisY", {})
-    cfg.setdefault("axisX", {"domainColor": "#cccccc"})
-    cfg.setdefault("view", {"stroke": "transparent"})
-    # Force the left y-axis line + ticks off (matches the on-screen chart). Must be
-    # forced, NOT setdefault: a layered/composed spec can already carry an axisY
-    # config, in which case setdefault would silently leave the domain line on.
-    cfg["axisY"]["domain"] = False
-    cfg["axisY"]["ticks"] = False
-    # Force Inter everywhere text is drawn so the PNG matches the on-screen font.
-    for _grp in ("axis", "axisX", "axisY", "legend", "header"):
-        _g = cfg.setdefault(_grp, {})
-        _g["labelFont"] = _CHART_FONT
-        _g["titleFont"] = _CHART_FONT
-    cfg.setdefault("title", {})["font"] = _CHART_FONT
-    cfg.setdefault("title", {})["subtitleFont"] = _CHART_FONT
-    cfg.setdefault("text", {})["font"] = _CHART_FONT   # mark_text (incl. wordmark/URL)
-    cfg["font"] = _CHART_FONT
-    return json.dumps(d)
-
-
-@st.cache_data(show_spinner=False, ttl=3600, max_entries=300)
-def _alt_png(spec_json: str):
-    """Vega-Lite spec → PNG bytes (None if export unavailable)."""
-    if not _HAS_VLC:
-        return None
-    try:
-        return _vlc.vegalite_to_png(_export_spec(spec_json), scale=2)
-    except Exception:
-        return None
-
-
 _BRAND_URL = "hockeyroi.streamlit.app"
 
 
-def _png_add_brand(png):
-    """Composite the stacked HockeyROI wordmark + site URL into a white footer
-    strip at the bottom of an already-rendered PNG (scale=2). Used for multi-panel
-    (faceted) charts, whose brand can't be embedded inside the Vega plot — value-
-    positioned marks don't resolve to a panel's coordinates — so the download still
-    carries the brand, matching the on-screen HTML footer."""
-    if not png:
-        return png
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        import io
-        im = Image.open(io.BytesIO(png)).convert("RGB")
-        W, H = im.size
-        _fd = str(APP_DIR / "fonts")
-        f_mark = ImageFont.truetype(f"{_fd}/Inter-Bold.ttf", 24)
-        f_url = ImageFont.truetype(f"{_fd}/Inter-Regular.ttf", 20)
-        strip = 60
-        out = Image.new("RGB", (W, H + strip), (255, 255, 255))
-        out.paste(im, (0, 0))
-        dr = ImageDraw.Draw(out)
-        right = W - 24
-        y_url = H + strip - 12               # bottom line: URL
-        y_mark = y_url - 26                   # line above: wordmark
-        _w_roi = dr.textlength("ROI", font=f_mark)
-        dr.text((right, y_mark), "ROI", font=f_mark, fill=(255, 107, 53), anchor="rs")
-        dr.text((right - _w_roi, y_mark), "Hockey", font=f_mark, fill=(10, 26, 47), anchor="rs")
-        dr.text((right, y_url), _BRAND_URL, font=f_url, fill=(122, 134, 148), anchor="rs")
-        buf = io.BytesIO()
-        out.save(buf, format="PNG")
-        return buf.getvalue()
-    except Exception:
-        return png
-
-
-# Set by drill-in views so a downloaded chart carries whose data it is (composited
-# into a title strip at the top of the PNG). Reset to None on leaderboard views.
+# Set by drill-in views so a downloaded chart carries whose data it is (rendered as
+# an in-chart title so it's part of the browser's native Save-as-PNG). Reset to None
+# on leaderboard views.
 _CHART_TITLE = None
 
 
@@ -2325,27 +2211,30 @@ def _set_dl_title(name) -> None:
     _CHART_TITLE = str(name) if name else None
 
 
-def _png_add_title(png, title):
-    """Composite a bold title (the player/goalie/comparison name) into a white strip
-    at the TOP of a rendered PNG, so a saved chart identifies whose data it is."""
-    if not png or not title:
-        return png
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        import io
-        im = Image.open(io.BytesIO(png)).convert("RGB")
-        W, H = im.size
-        f = ImageFont.truetype(str(APP_DIR / "fonts" / "Inter-Bold.ttf"), 30)
-        strip = 48
-        out = Image.new("RGB", (W, H + strip), (255, 255, 255))
-        out.paste(im, (0, strip))
-        dr = ImageDraw.Draw(out)
-        dr.text((16, strip // 2), title, font=f, fill=(27, 58, 92), anchor="lm")
-        buf = io.BytesIO()
-        out.save(buf, format="PNG")
-        return buf.getvalue()
-    except Exception:
-        return png
+def _brand_row(width_px: int = None):
+    """A standalone one-row chart carrying the two-colour HockeyROI wordmark + URL,
+    right-aligned. vconcat'd beneath multi-panel (faceted/concat) charts so the brand
+    is part of the Vega spec — and therefore part of the browser's native Save-as-PNG
+    export — the same way single-panel charts get it from the in-plot _brand_layer.
+    (Faceted charts can't embed the in-plot version: value-positioned marks don't
+    resolve to a panel's coordinates.)"""
+    import altair as alt
+    W = int(width_px) if width_px else 720
+    b = alt.Chart(pd.DataFrame([{"_": 0}]))
+    _y_mark = alt.value(16)      # wordmark line
+    _y_url = alt.value(31)       # URL line, just beneath
+
+    def _word(text, xpx, align, color, size, yv):
+        return b.mark_text(align=align, baseline="bottom", fontSize=size,
+                           fontWeight="bold", color=color).encode(
+            x=alt.value(xpx), y=yv, text=alt.value(text))
+
+    # Literal pixel x (the row's width is known) — the "width" signal doesn't resolve
+    # in a standalone value-only layer, so the wordmark is anchored to W directly.
+    h = _word("Hockey", W - 27, "right", _BRAND_DEEP, 12, _y_mark)
+    r = _word("ROI", W - 27, "left", _BRAND_ROI, 12, _y_mark)
+    u = _word(_BRAND_URL, W, "right", "#7A8694", 10, _y_url)
+    return alt.layer(h, r, u).properties(width=W, height=34)
 
 
 def _brand_layer(lift: int = 6):
@@ -2360,7 +2249,7 @@ def _brand_layer(lift: int = 6):
     left-aligned) so 'HockeyROI' has no gap whatever its width. lift: pixels the
     URL (bottom line) sits above the x-axis; the wordmark rides one line higher.
     (Faceted charts can't embed this — value-positioned marks don't resolve to a
-    panel's coordinates — so they use the stacked HTML footer in _chart_brand.)"""
+    panel's coordinates — so they get the vconcat'd _brand_row instead.)"""
     import altair as alt
     b = alt.Chart(pd.DataFrame([{"_": 0}]))
     _y_url = alt.value(alt.ExprRef(f"height - {int(lift)}"))        # bottom line: URL
@@ -2398,61 +2287,56 @@ def _strip_tooltips(obj) -> None:
 
 def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 6,
                 keep_tooltip: bool = False, brand_embedded: bool = False) -> None:
-    """Render an Altair chart + a 'Save PNG' download button. Non-faceted charts
-    carry the two-colour HockeyROI wordmark + site URL embedded inside the plot
-    (bottom-right, just above the x-axis) so it shows on-screen AND in the PNG
-    without distorting the axes. Faceted/multi-panel charts normally can't embed
-    it that way (value-positioned marks don't resolve to a panel's coordinates),
-    so they show the same stacked wordmark + URL as an HTML footer on-screen and
-    have it composited into the PNG — UNLESS brand_embedded=True, which means the
-    caller already layered _brand_layer() onto one of its own sub-panels (e.g. the
-    rightmost panel of an hconcat, so it reads as "bottom-right of the graph"
-    instead of a separate footer below it) — in which case the footer/compositing
-    step is skipped entirely to avoid a duplicate brand. brand_lift raises the
-    embedded footer when data crowds the bottom. keep_tooltip: most charts strip
-    on-screen tooltips (the Save button below covers "more data"), but a chart
-    that has NO other way to identify a point — e.g. a league-wide scatter with
-    hundreds of unlabeled dots — should set this True so hovering still reveals
-    which point is which."""
+    """Render a chart with the HockeyROI brand baked INTO the Vega spec, so the
+    browser's native "Save as PNG" (the chart's ··· hover menu) carries the brand
+    with zero server-side rendering. Non-faceted charts get the two-colour wordmark
+    + URL layered inside the plot (bottom-right, just above the x-axis) — it shows
+    on-screen AND in a saved PNG without distorting the axes. Faceted/multi-panel
+    charts can't embed it that way (value-positioned marks don't resolve to a
+    panel's coordinates), so a _brand_row() wordmark is vconcat'd beneath them —
+    UNLESS brand_embedded=True, meaning the caller already layered _brand_layer()
+    onto one of its own sub-panels, so the footer is skipped to avoid a duplicate.
+    brand_lift raises the embedded footer when data crowds the bottom. brand_width
+    sizes the vconcat brand row to sit under a fixed-width faceted chart's right
+    edge. _CHART_TITLE (set by drill-ins) becomes an in-chart title so a saved
+    image names whose data it is. keep_tooltip: most charts strip on-screen
+    tooltips, but a chart with no other way to identify a point (e.g. a league-wide
+    scatter of unlabeled dots) sets this True so hovering still reveals which is
+    which. dl_name is retained as a stable per-chart key hint (no download button
+    is rendered — the native menu handles saving)."""
     import altair as alt
-    import hashlib
     _cd = chart.to_dict()
     _multi = any(k in _cd for k in ("facet", "hconcat", "vconcat", "concat", "repeat"))
-    _footer = _multi and not brand_embedded
-    # brand_embedded means the caller already layered the wordmark into the chart
-    # (or one of its panels) — don't re-layer it here. Re-layering also drops any
-    # in-chart title (Altair discards a unit/layer title when it's nested inside
-    # another layer), so an embedded-brand titled panel must skip this step.
-    disp = (chart if (_multi or brand_embedded)
-            else alt.layer(chart, _brand_layer(brand_lift)))
-    # On-screen: strip hover tooltips (the Save button below covers "more data"),
-    # unless keep_tooltip says this chart actually needs them to identify a point.
+    if _multi and not brand_embedded:
+        # Can't embed the in-plot wordmark in a faceted/concat chart, so append a
+        # brand row beneath the whole thing — still part of the spec, so a native
+        # Save-as-PNG includes it. Transparent view stroke drops the border box
+        # around the brand row (and matches the panels to the single-chart look).
+        disp = alt.vconcat(chart, _brand_row(brand_width),
+                           spacing=4).configure_view(stroke=None)
+    elif brand_embedded:
+        disp = chart                       # caller already layered the wordmark in
+    else:
+        disp = alt.layer(chart, _brand_layer(brand_lift))
     _on_screen = disp.to_dict()
+    # On-screen (and in the native export): strip hover tooltips unless this chart
+    # needs them to identify an otherwise-unlabeled point.
     if not keep_tooltip:
         _strip_tooltips(_on_screen)
+    # Name whose data it is, as a top-level title (valid on any spec shape) so the
+    # saved PNG is self-labeled. Only drill-in views set _CHART_TITLE.
+    if _CHART_TITLE:
+        _on_screen["title"] = {"text": _CHART_TITLE, "anchor": "start",
+                               "fontSize": 15, "color": PALETTE["text"],
+                               "fontWeight": "bold", "offset": 8}
     if not _multi:
-        # Vega-Lite's default top padding isn't enough room for a titled
-        # chart's ascenders at this font size — the SVG itself renders with
-        # overflow:hidden, so without extra padding the top few px of the
-        # title's tallest characters get clipped (confirmed via the rendered
-        # DOM: title top sat ~7px above the SVG's own top edge). _export_spec
-        # already does this for the PNG download; mirror it here for the
-        # on-screen chart, which goes through a separate code path.
+        # Vega-Lite's default top padding isn't enough room for a titled chart's
+        # ascenders at this font size — the SVG renders with overflow:hidden, so
+        # without extra padding the top few px of the title's tallest characters
+        # get clipped (confirmed via the rendered DOM: title top sat ~7px above
+        # the SVG's own top edge).
         _on_screen["padding"] = {"left": 10, "top": 15, "right": 10, "bottom": 10}
     st.vega_lite_chart(_on_screen, use_container_width=True)
-    if _footer:
-        _chart_brand(brand_width)
-    png = _alt_png(disp.to_json())
-    if _footer:
-        png = _png_add_brand(png)        # composite the brand into the download
-    if _CHART_TITLE:
-        png = _png_add_title(png, _CHART_TITLE)   # name whose data it is
-    if png:
-        _key = "dl_" + hashlib.md5(dl_name.encode()).hexdigest()[:12]
-        _sp, _btn = st.columns([20, 1])
-        with _btn:
-            st.download_button("⬇", data=png, file_name=f"{dl_name}.png",
-                               mime="image/png", key=_key)
 
 
 # Diverging gradient: a light tint near the 50% midline → the FULL brand colour
@@ -5180,7 +5064,8 @@ def _goalie_gsax_bar(row, qg_scope_suffix: str = "") -> None:
                 f"<b>sQS% starter baseline save% ({_scope_label})</b> — a game clears sQS% "
                 f"when its save% beats this line: {row['Season']} {_sqs_bl:.1f}%.</div>",
                 unsafe_allow_html=True)
-    _show_chart(alt.hconcat(*panels, spacing=110), dl_name=f"Goalie-GSAx-{row['Season']}")
+    _show_chart(alt.hconcat(*panels, spacing=110), dl_name=f"Goalie-GSAx-{row['Season']}",
+                brand_width=320 * len(panels) + 110 * (len(panels) - 1))
 
 
 def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True,
@@ -6477,18 +6362,16 @@ def main() -> None:
         initial_sidebar_state="collapsed",
     )
     inject_css()
-    # Fullscreen (expand) on charts is fine and kept. Two separate "show the
-    # underlying data" affordances are hidden: (1) the Vega "···" actions menu
-    # (View Source / Compiled Vega / Vega Editor), and (2) Streamlit's OWN
-    # native chart-hover toolbar button (aria-label="Show data") — a distinct
-    # feature that renders the chart's full source DataFrame as a table,
-    # including every column passed to alt.Chart(d) even when only 2-4 of them
-    # are actually plotted/tooltipped. Both hidden so hovering a chart never
-    # exposes more than what's drawn. Scoped to charts; data-table toolbars
-    # (st.dataframe) are untouched.
+    # The Vega "···" actions menu is KEPT — its "Save as PNG"/"Save as SVG" is now
+    # how a chart is downloaded (rendered client-side in the browser, so it costs
+    # the server nothing; the brand is baked into every chart's spec so the saved
+    # image carries it). Fullscreen (expand) is also kept. Only Streamlit's OWN
+    # native chart-hover toolbar button (aria-label="Show data") stays hidden — it
+    # renders the chart's full source DataFrame as a table, including every column
+    # passed to alt.Chart(d) even when only 2-4 are actually plotted, so hovering
+    # never exposes more than what's drawn. Scoped to charts; st.dataframe toolbars
+    # are untouched.
     _css = (
-        ".vega-embed details,.vega-embed summary,.vega-embed .vega-actions"
-        "{display:none !important;}"
         "[data-testid='stElementContainer']:has([data-testid='stVegaLiteChart']) "
         "button[aria-label='Show data']{display:none !important;}"
     )
