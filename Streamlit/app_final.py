@@ -4200,6 +4200,21 @@ def render_players() -> None:
                     unsafe_allow_html=True)
         _nfi_xg_scatter(df, _team_scoped, year_label=scope_label)
 
+    if {"PDOxG", "xG_QG_pct"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs xG-QG%</h4>",
+                    unsafe_allow_html=True)
+        _pdoxg_xgqg_scatter(df, _team_scoped, year_label=scope_label)
+
+    if {"PDOxG", "NFI_QG_pct"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs NFI-QG%</h4>",
+                    unsafe_allow_html=True)
+        _pdoxg_nfiqg_scatter(df, _team_scoped, year_label=scope_label)
+
+    if {"xG_QG_pct", "NFI_QG_pct"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>xG-QG% vs NFI-QG%</h4>",
+                    unsafe_allow_html=True)
+        _xgqg_nfiqg_scatter(df, _team_scoped, year_label=scope_label)
+
     if {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
                     f"O-Zone Time%</h4>", unsafe_allow_html=True)
