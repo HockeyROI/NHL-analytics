@@ -3108,6 +3108,21 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
                     f"xG%</h4>", unsafe_allow_html=True)
         _nfi_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
                        year_label=_yl)
+    if {"PDOxG", "xG_QG_pct"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
+                    f"xG-QG%</h4>", unsafe_allow_html=True)
+        _pdoxg_xgqg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                            year_label=_yl)
+    if {"PDOxG", "NFI_QG_pct"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
+                    f"NFI-QG%</h4>", unsafe_allow_html=True)
+        _pdoxg_nfiqg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                             year_label=_yl)
+    if {"xG_QG_pct", "NFI_QG_pct"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>xG-QG% vs "
+                    f"NFI-QG%</h4>", unsafe_allow_html=True)
+        _xgqg_nfiqg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                            year_label=_yl)
     if {"EDGE DZ%", "EDGE OZ%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
                     f"O-Zone Time%</h4>", unsafe_allow_html=True)
@@ -3726,6 +3741,66 @@ def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", hi
         "One point per player. Color = **OZ Start%** "
         "(light = easier, dark = harder).",
         team_scoped, color_col="OZ Start%",
+        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
+        domain_df=domain_df, year_label=year_label)
+
+
+def _pdoxg_xgqg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
+                        domain_df: pd.DataFrame = None, year_label: str = None) -> None:
+    """PDOxG (luck) vs xG-QG% (share of games clearing the xG floor) — does a
+    player's quality-game rate come with over/under-shooting luck?"""
+    import altair as alt
+    if not {"PDOxG", "xG_QG_pct"}.issubset(df.columns):
+        return
+    rule0 = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
+        color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
+    _scatter_with_labels(
+        df, "xG_QG_pct", "PDOxG", "xG-QG%", "PDOxG (luck net of shot quality)",
+        f"pdoxg-vs-xgqg-pct{dl_suffix}",
+        "Descriptive, not a ranking — see Methodology. Color = **OZ Start%** "
+        "(light = easier, dark = harder).",
+        team_scoped, extra_layer=rule0, color_col="OZ Start%",
+        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
+        domain_df=domain_df, year_label=year_label)
+
+
+def _pdoxg_nfiqg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
+                         domain_df: pd.DataFrame = None, year_label: str = None) -> None:
+    """PDOxG (luck) vs NFI-QG% (share of games clearing the net-front-impact
+    floor)."""
+    import altair as alt
+    if not {"PDOxG", "NFI_QG_pct"}.issubset(df.columns):
+        return
+    rule0 = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
+        color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
+    _scatter_with_labels(
+        df, "NFI_QG_pct", "PDOxG", "NFI-QG%", "PDOxG (luck net of shot quality)",
+        f"pdoxg-vs-nfiqg-pct{dl_suffix}",
+        "Descriptive, not a ranking — see Methodology. Color = **OZ Start%** "
+        "(light = easier, dark = harder).",
+        team_scoped, extra_layer=rule0, color_col="OZ Start%",
+        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
+        domain_df=domain_df, year_label=year_label)
+
+
+def _xgqg_nfiqg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
+                        domain_df: pd.DataFrame = None, year_label: str = None) -> None:
+    """xG-QG% vs NFI-QG% — do the two quality-game rates (shot quality vs net-
+    front impact) agree for a player? 50/50 crosshair = an average qualifier
+    on both."""
+    import altair as alt
+    if not {"xG_QG_pct", "NFI_QG_pct"}.issubset(df.columns):
+        return
+    rule_v = alt.Chart(pd.DataFrame({"x": [50]})).mark_rule(
+        color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(x="x:Q")
+    rule_h = alt.Chart(pd.DataFrame({"y": [50]})).mark_rule(
+        color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
+    _scatter_with_labels(
+        df, "xG_QG_pct", "NFI_QG_pct", "xG-QG%", "NFI-QG%",
+        f"nfiqg-vs-xgqg-pct{dl_suffix}",
+        "One point per player — how often each clears the xG vs net-front-impact "
+        "quality-game floor. Color = **OZ Start%** (light = easier, dark = harder).",
+        team_scoped, extra_layer=alt.layer(rule_v, rule_h), color_col="OZ Start%",
         color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
         domain_df=domain_df, year_label=year_label)
 
