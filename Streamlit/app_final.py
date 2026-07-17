@@ -2336,6 +2336,12 @@ def _show_chart(chart, dl_name: str, brand_width: int = None, brand_lift: int = 
         # get clipped (confirmed via the rendered DOM: title top sat ~7px above
         # the SVG's own top edge).
         _on_screen["padding"] = {"left": 10, "top": 15, "right": 10, "bottom": 10}
+    # Render the native "Save as PNG" at 2× so downloads are crisp (not the 1× screen
+    # resolution vega-embed defaults to). vega-embed reads export options from the
+    # spec's usermeta.embedOptions, so this needs no Streamlit API support and still
+    # renders entirely in the browser (zero server cost). Save-as-SVG stays vector.
+    _on_screen.setdefault("usermeta", {}).setdefault(
+        "embedOptions", {})["scaleFactor"] = 2
     st.vega_lite_chart(_on_screen, use_container_width=True)
 
 
