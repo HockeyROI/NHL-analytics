@@ -2983,21 +2983,6 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
     _yl = season_label or "4yr (2022-2026)"
     st.markdown(f"<h3 style='color:{PALETTE['text']}; margin-top:1.5rem;'>{heading_prefix}{_my_team} "
                 f"Team Scatters{_scope_txt}</h3>", unsafe_allow_html=True)
-    if {"PDOxG", "xG%"}.issubset(_team_frame.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
-                    f"xG%</h4>", unsafe_allow_html=True)
-        _pdo_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
-                       year_label=_yl)
-    if {"PDOxG", "NFI%"}.issubset(_team_frame.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
-                    f"NFI%</h4>", unsafe_allow_html=True)
-        _pdo_nfi_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
-                        year_label=_yl)
-    if {"NFI%", "xG%"}.issubset(_team_frame.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
-                    f"xG%</h4>", unsafe_allow_html=True)
-        _nfi_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
-                       year_label=_yl)
     if {"PDOxG", "xG_QG_pct"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                     f"xG-QG%</h4>", unsafe_allow_html=True)
@@ -3013,6 +2998,21 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
                     f"NFI-QG%</h4>", unsafe_allow_html=True)
         _xgqg_nfiqg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
                             year_label=_yl)
+    if {"PDOxG", "xG%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
+                    f"xG%</h4>", unsafe_allow_html=True)
+        _pdo_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                       year_label=_yl)
+    if {"PDOxG", "NFI%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
+                    f"NFI%</h4>", unsafe_allow_html=True)
+        _pdo_nfi_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                        year_label=_yl)
+    if {"NFI%", "xG%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
+                    f"xG%</h4>", unsafe_allow_html=True)
+        _nfi_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                       year_label=_yl)
     if {"EDGE DZ%", "EDGE OZ%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
                     f"O-Zone Time%</h4>", unsafe_allow_html=True)
@@ -3681,9 +3681,13 @@ def _xgqg_nfiqg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
     import altair as alt
     if not {"xG_QG_pct", "NFI_QG_pct"}.issubset(df.columns):
         return
-    rule_v = alt.Chart(pd.DataFrame({"x": [50]})).mark_rule(
+    # xG_QG_pct/NFI_QG_pct are stored as 0-1 fractions (not 0-100), so the 50/50
+    # crosshair must be 0.5/0.5 — a literal 50 here previously blew the shared-scale
+    # domain resolution out to ~1.25B pixels (data range ~0.1-0.9 unioned with a
+    # value of 50), which silently failed to render at all.
+    rule_v = alt.Chart(pd.DataFrame({"x": [0.5]})).mark_rule(
         color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(x="x:Q")
-    rule_h = alt.Chart(pd.DataFrame({"y": [50]})).mark_rule(
+    rule_h = alt.Chart(pd.DataFrame({"y": [0.5]})).mark_rule(
         color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
     _scatter_with_labels(
         df, "xG_QG_pct", "NFI_QG_pct", "xG-QG%", "NFI-QG%",
@@ -4075,21 +4079,6 @@ def render_players() -> None:
     # which metric-family pills are toggled. Only genuine data-availability
     # gates remain (e.g. is_pooled for Start%, since that data has no
     # per-season cut).
-    if {"PDOxG", "xG%"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs xG%</h4>",
-                    unsafe_allow_html=True)
-        _pdo_xg_scatter(df, _team_scoped, year_label=scope_label)
-
-    if {"PDOxG", "NFI%"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs NFI%</h4>",
-                    unsafe_allow_html=True)
-        _pdo_nfi_scatter(df, _team_scoped, year_label=scope_label)
-
-    if {"NFI%", "xG%"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG%</h4>",
-                    unsafe_allow_html=True)
-        _nfi_xg_scatter(df, _team_scoped, year_label=scope_label)
-
     if {"PDOxG", "xG_QG_pct"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs xG-QG%</h4>",
                     unsafe_allow_html=True)
@@ -4104,6 +4093,21 @@ def render_players() -> None:
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>xG-QG% vs NFI-QG%</h4>",
                     unsafe_allow_html=True)
         _xgqg_nfiqg_scatter(df, _team_scoped, year_label=scope_label)
+
+    if {"PDOxG", "xG%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs xG%</h4>",
+                    unsafe_allow_html=True)
+        _pdo_xg_scatter(df, _team_scoped, year_label=scope_label)
+
+    if {"PDOxG", "NFI%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs NFI%</h4>",
+                    unsafe_allow_html=True)
+        _pdo_nfi_scatter(df, _team_scoped, year_label=scope_label)
+
+    if {"NFI%", "xG%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs xG%</h4>",
+                    unsafe_allow_html=True)
+        _nfi_xg_scatter(df, _team_scoped, year_label=scope_label)
 
     if {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
