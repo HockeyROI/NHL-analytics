@@ -6170,8 +6170,10 @@ def _ref_bar_chart(ref: str, df: pd.DataFrame, season_label: str,
         t = min(max(t, 0.0), 1.0)
         if r["Series"] == "This referee":
             return _hex_lerp("#BCD0E2", PALETTE["text"], t)   # light blue → navy
-        # light orange → the original brand orange (kept bright, not burnt)
-        return _hex_lerp("#FFE0CF", PALETTE["orange"], t)
+        # light orange → the original brand orange; a tight range so the fade is
+        # subtle (the light end is already a fairly saturated orange, not a pale
+        # peach) — keeps all average bars clearly in the brand-orange family.
+        return _hex_lerp("#FFB88F", PALETTE["orange"], t)
     d["color"] = d.apply(_col, axis=1)
     _series_order = ["This referee", avg_label]
 
