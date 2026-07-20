@@ -6212,7 +6212,7 @@ def _ref_bar_chart(ref: str, df: pd.DataFrame, season_label: str,
     _show_chart(chart, dl_name=_dl)
 
 
-def _render_ref_league(df: pd.DataFrame, season_label: str, name_q: str):
+def _render_ref_league(df: pd.DataFrame, season_label: str):
     """League-wide referee table. The top row is the highlighted LEAGUE AVERAGE
     (plain values); every referee cell shows its value with an inline
     (± vs league average) bracket. Click a referee's row to drill into their
@@ -6227,11 +6227,6 @@ def _render_ref_league(df: pd.DataFrame, season_label: str, name_q: str):
     pct_cols = {"Home Pen%", "Away Pen%"}
 
     tbl = tbl.sort_values("Pen/Game", ascending=False).reset_index(drop=True)
-    if name_q:
-        tbl = tbl[tbl["Referee"].str.lower().str.contains(name_q, na=False)]
-    if tbl.empty:
-        st.info("No referees match the name filter.")
-        return None
 
     def _plain(v, c):
         if pd.isna(v):
@@ -6274,7 +6269,7 @@ def _render_ref_league(df: pd.DataFrame, season_label: str, name_q: str):
     return None
 
 
-def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str):
+def _render_ref_team(df: pd.DataFrame, season_label: str, team: str):
     """Per-team view: (A) what each referee calls AGAINST this team — every rate
     (overall and per penalty type) carries a two-sided bracket (Δ vs league avg /
     Δ vs that ref's own average); (B) the team's penalties-taken per game by type,
@@ -6333,10 +6328,8 @@ def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str
                 "in this view.")
     else:
         ta = pd.DataFrame(rows).sort_values("_sort", ascending=False)
-        if name_q:
-            ta = ta[ta["Referee"].str.lower().str.contains(name_q, na=False)]
         if ta.empty:
-            st.info("No referees match the name filter.")
+            st.info(f"No referee worked ≥{REF_TEAM_MIN_GAMES} games involving {team}.")
         else:
             cols = ["Referee", "Games", rate_col] + [f"{t}/G" for t in REF_TYPES]
             st.caption(
@@ -6430,7 +6423,7 @@ def render_referees() -> None:
     teams = sorted({t for t in set(df["home_team"]) | set(df["away_team"])
                     if isinstance(t, str) and len(t) == 3})
     _refs_all = sorted(df["ref"].dropna().unique().tolist())
-    c0, c1, c2, c3 = st.columns([1.4, 0.9, 1.0, 1.2])
+    c0, c1, c2 = st.columns([1.6, 0.9, 1.1])
     with c0:
         ref_pick = st.selectbox(
             "Find a referee", _refs_all, index=None, placeholder="", key="refs_search",
@@ -6443,16 +6436,14 @@ def render_referees() -> None:
                                  "team's home vs away games.")
     with c2:
         team_sel = st.selectbox("Team", ["All teams"] + teams, key="refs_team")
-    with c3:
-        name_q = st.text_input("Referee name contains", key="refs_name").strip().lower()
 
     if ref_pick:
         st.session_state["_ref_drill"] = ref_pick
 
     if team_sel == "All teams":
-        _clicked = _render_ref_league(df, season_label, name_q)
+        _clicked = _render_ref_league(df, season_label)
     else:
-        _clicked = _render_ref_team(df, season_label, team_sel, name_q)
+        _clicked = _render_ref_team(df, season_label, team_sel)
     if _clicked:
         st.session_state["_ref_drill"] = _clicked
 
