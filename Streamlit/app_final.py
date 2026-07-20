@@ -6094,118 +6094,101 @@ def _ref_league_avg(df: pd.DataFrame, min_games: int = REF_MIN_GAMES) -> dict:
     return {c: float(tbl[c].mean()) for c in metric_cols if c in tbl.columns}
 
 
-def _ref_bar_chart(ref: str, df: pd.DataFrame, season_label: str) -> None:
-    """One referee's penalty-call rate per game, by type, vs the league-average
-    referee — a diverging bar (mirrors the QG bar charts) but each bar keeps its
-    OWN baseline via a per-bar tick (penalty types don't share one rate), the
-    same pattern the goalie consistency bar uses for its 3 different baselines."""
+def _ref_bar_chart(ref: str, df: pd.DataFrame, season_label: str,
+                   side: str = "All", team: str = None) -> None:
+    """One referee's penalty-call rate per game, by type, as grouped bars from a
+    0 baseline: a BLUE bar for the referee (darker blue the higher the rate) next
+    to an ORANGE comparison-average bar. The comparison is the LEAGUE average with
+    no team filter, or the TEAM average (all referees' rate against that team) when
+    a team is selected. `side` (All/Home/Away) restricts to penalties on the home/
+    away team (no team) or to the team's home/away games (team filtered)."""
     import altair as alt
-    tbl = _ref_table(df)
-    r = tbl[tbl["Referee"] == ref]
-    if r.empty:
-        st.caption(f"No data for {ref} in this view.")
-        return
-    r = r.iloc[0]
-    league = _ref_league_avg(df)
-    order = ["Pen/Game"] + [f"{t}/G" for t in REF_TYPES]
-    rows = [{"Metric": m, "value": float(r[m]), "base": league[m],
-            "color": PALETTE["blue"] if r[m] >= league[m] else PALETTE["orange"]}
-           for m in order if m in r.index and pd.notna(r[m]) and m in league]
-    if not rows:
-        st.caption(f"No data for {ref} in this view.")
-        return
-    d = pd.DataFrame(rows)
-    _vals = pd.concat([d["value"], d["base"]])
-    dom = [0, float(_vals.max()) * 1.15]
-    st.caption(f"**{ref}** — penalty calls per game by type, across all teams, vs the "
-               "**league-average referee** (grey tick). Blue bar = above league average, "
-               "orange = below.")
-    bars = alt.Chart(d).mark_bar(size=34).encode(
-        x=alt.X("Metric:N", sort=order,
-                axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold")),
-        y=alt.Y("base:Q", scale=alt.Scale(domain=dom), title="Per game"),
-        y2="value:Q",
-        color=alt.Color("color:N", scale=None, legend=None),
-        tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".2f", title=ref),
-                 alt.Tooltip("base:Q", format=".2f", title="League avg")])
-    ticks = alt.Chart(d).mark_tick(color=PALETTE["text_secondary"], thickness=2,
-                                   size=38).encode(x=alt.X("Metric:N", sort=order), y="base:Q")
-    chart = (bars + ticks).properties(title=alt.TitleParams(
-        text=f"{ref} — Penalty Calls per Game — {season_label}",
-        color=PALETTE["text"], fontSize=13))
-    _show_chart(chart, dl_name=f"Ref-bars-{ref.replace(' ', '-')}")
-
-
-def _ref_team_bar_chart(ref: str, df: pd.DataFrame, team: str, season_label: str) -> None:
-    """One referee's penalty-call rate against ONE team, split Home/Away, by
-    type — each bar carries TWO baseline ticks: the league-average rate (grey)
-    and this same referee's own average rate (orange), both for that penalty
-    type/side across all teams — so a spike reads as either "referees in
-    general call more on this team" or "this ref specifically does" at a
-    glance, instead of collapsing both signals into one number."""
-    import altair as alt
-    dft = df[(df["home_team"] == team) | (df["away_team"] == team)]
-    g = dft[dft["ref"] == ref]
-    if g.empty:
-        st.caption(f"{ref} hasn't worked a game involving {team} in this view.")
-        return
-    against = dft[dft["penalized_team"] == team]
-    ag = against[against["ref"] == ref]
-    distinct_games = df["game_id"].nunique()
-    ref_games_all = df[df["ref"] == ref]["game_id"].nunique()
-    games_home = g[g["home_team"] == team]["game_id"].nunique()
-    games_away = g[g["away_team"] == team]["game_id"].nunique()
-
     order = ["All"] + REF_TYPES
-    rows = []
-    for t in order:
-        pt = None if t == "All" else t
-        for side, gcount in (("home", games_home), ("away", games_away)):
-            if gcount <= 0:
-                continue
-            sub_ag = ag if pt is None else ag[ag["penalty_type"] == pt]
-            value = float((sub_ag["home_or_away"] == side).sum()) / gcount
-            lg_sub = df if pt is None else df[df["penalty_type"] == pt]
-            league_base = (((lg_sub["home_or_away"] == side).sum() / 2) / distinct_games
-                          if distinct_games else np.nan)
-            ref_sub = df[df["ref"] == ref] if pt is None else df[(df["ref"] == ref) & (df["penalty_type"] == pt)]
-            ref_base = (((ref_sub["home_or_away"] == side).sum()) / ref_games_all
-                       if ref_games_all else np.nan)
-            rows.append({"Metric": t, "Side": side.capitalize(), "value": value,
-                        "league_base": league_base, "ref_base": ref_base})
-    d = pd.DataFrame(rows)
-    if d.empty or d["value"].isna().all():
-        st.caption(f"No data for {ref} vs {team} in this view.")
-        return
-    _vals = pd.concat([d["value"], d["league_base"], d["ref_base"]]).dropna()
-    dom = [0, float(_vals.max()) * 1.2] if len(_vals) else [0, 1]
+    sc = side.lower()   # "home" / "away" / "all"
 
-    st.caption(f"**{ref}** vs **{team}** — penalty calls per game by type, split Home/Away "
-               "for the team. Grey tick = league-average rate; orange tick = this referee's "
-               "own average rate (both for that penalty type/side, across all teams).")
-    bars = alt.Chart(d).mark_bar(size=16).encode(
+    if team:
+        # Team view: penalties called AGAINST the team; side picks the team's
+        # home vs away games. Comparison = the team's own average (all refs).
+        gscope = df[(df["home_team"] == team) | (df["away_team"] == team)]
+        if sc == "home":
+            gscope = gscope[gscope["home_team"] == team]
+        elif sc == "away":
+            gscope = gscope[gscope["away_team"] == team]
+        ref_games = gscope[gscope["ref"] == ref]["game_id"].nunique()
+        ref_pens = gscope[(gscope["ref"] == ref) & (gscope["penalized_team"] == team)]
+        # Team average = POOLED penalties-taken-per-game (matches the per-team
+        # Table B's "penalties taken per game"): unique penalties (exploded → /2)
+        # over the team's distinct games in scope.
+        avg_pens = gscope[gscope["penalized_team"] == team]
+        avg_games = gscope["game_id"].nunique()
+        avg_label, scope_txt = f"{team} average", f" vs **{team}**"
+
+        def _avg_rate(pt):
+            ap = avg_pens if pt is None else avg_pens[avg_pens["penalty_type"] == pt]
+            return ((len(ap) / 2) / avg_games) if avg_games else np.nan
+    else:
+        # League view: every penalty in the referee's games; side picks penalties
+        # on the home vs away team.
+        dside = df if sc == "all" else df[df["home_or_away"] == sc]
+        ref_games = df[df["ref"] == ref]["game_id"].nunique()
+        ref_pens = dside[dside["ref"] == ref]
+        avg_label, scope_txt = "League average", ""
+        # League average = MEAN of each qualifying referee's own per-game rate
+        # (refs with >= REF_MIN_GAMES) — the same basis as the league table's
+        # highlighted LEAGUE AVERAGE row, so the bar matches the table.
+        _ref_g = df.groupby("ref")["game_id"].nunique()
+        _qrefs = _ref_g[_ref_g >= REF_MIN_GAMES].index
+
+        def _avg_rate(pt):
+            sub = dside if pt is None else dside[dside["penalty_type"] == pt]
+            cnt = sub.groupby("ref").size()
+            rates = [cnt.get(r, 0) / _ref_g[r] for r in _qrefs]
+            return float(np.mean(rates)) if rates else np.nan
+
+    if not ref_games:
+        st.caption(f"{ref} has no games in this selection.")
+        return
+    rows = []
+    for cat in order:
+        pt = None if cat == "All" else cat
+        rp = ref_pens if pt is None else ref_pens[ref_pens["penalty_type"] == pt]
+        rows.append({"Metric": cat, "Series": "This referee",
+                     "value": len(rp) / ref_games})
+        rows.append({"Metric": cat, "Series": avg_label, "value": _avg_rate(pt)})
+    d = pd.DataFrame(rows).dropna(subset=["value"])
+    if d.empty:
+        st.caption(f"No data for {ref} in this selection.")
+        return
+
+    # Blue bar (ref) shaded light→navy by its own rate; orange bar = the average.
+    _refvals = d[d["Series"] == "This referee"]["value"]
+    _vmax = float(_refvals.max()) if len(_refvals) else 0.0
+    def _col(r):
+        if r["Series"] != "This referee":
+            return PALETTE["orange"]
+        t = (r["value"] / _vmax) if _vmax > 0 else 0.0
+        return _hex_lerp("#BCD0E2", PALETTE["text"], min(max(t, 0.0), 1.0))
+    d["color"] = d.apply(_col, axis=1)
+    _series_order = ["This referee", avg_label]
+
+    _side_txt = "" if sc == "all" else f" — {side} only"
+    _avg_txt = "league average" if not team else f"{team} average"
+    st.caption(f"**{ref}**{scope_txt} — penalty calls per game by type{_side_txt}. "
+               f"**Blue** = this referee (darker = higher rate); **orange** = "
+               f"{_avg_txt}. All bars start at 0.")
+    bars = alt.Chart(d).mark_bar(size=18).encode(
         x=alt.X("Metric:N", sort=order,
                 axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold")),
-        xOffset=alt.XOffset("Side:N", sort=["Home", "Away"]),
-        y=alt.Y("value:Q", scale=alt.Scale(domain=dom), title="Per game"),
-        color=alt.Color("Side:N", sort=["Home", "Away"],
-                        scale=alt.Scale(domain=["Home", "Away"],
-                                        range=[PALETTE["blue"], PALETTE["lightblue"]]),
-                        legend=alt.Legend(orient="bottom", title=None)),
-        tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("Side:N"),
-                 alt.Tooltip("value:Q", format=".2f", title=ref),
-                 alt.Tooltip("league_base:Q", format=".2f", title="League avg"),
-                 alt.Tooltip("ref_base:Q", format=".2f", title=f"{ref} avg")])
-    lg_ticks = alt.Chart(d).mark_tick(color=PALETTE["text_secondary"], thickness=2, size=15).encode(
-        x=alt.X("Metric:N", sort=order), xOffset=alt.XOffset("Side:N", sort=["Home", "Away"]),
-        y="league_base:Q")
-    ref_ticks = alt.Chart(d).mark_tick(color=PALETTE["orange"], thickness=2, size=15).encode(
-        x=alt.X("Metric:N", sort=order), xOffset=alt.XOffset("Side:N", sort=["Home", "Away"]),
-        y="ref_base:Q")
-    chart = (bars + lg_ticks + ref_ticks).properties(title=alt.TitleParams(
-        text=f"{ref} vs {team} — Penalty Calls per Game — {season_label}",
-        color=PALETTE["text"], fontSize=13))
-    _show_chart(chart, dl_name=f"Ref-team-bars-{ref.replace(' ', '-')}-{team}")
+        xOffset=alt.XOffset("Series:N", sort=_series_order),
+        y=alt.Y("value:Q", title="Per game", scale=alt.Scale(zero=True)),
+        color=alt.Color("color:N", scale=None, legend=None),
+        tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("Series:N"),
+                 alt.Tooltip("value:Q", format=".2f", title="Per game")])
+    _ttl = f"{ref}{(' vs ' + team) if team else ''}"
+    _ttl += f"{('' if sc == 'all' else ' (' + side + ')')} — Penalty Calls per Game — {season_label}"
+    chart = bars.properties(title=alt.TitleParams(text=_ttl, color=PALETTE["text"], fontSize=13))
+    _dl = f"Ref-bars-{ref.replace(' ', '-')}{('-' + team) if team else ''}{('' if sc == 'all' else '-' + side)}"
+    _show_chart(chart, dl_name=_dl)
 
 
 def _render_ref_league(df: pd.DataFrame, season_label: str, name_q: str):
@@ -6426,14 +6409,20 @@ def render_referees() -> None:
     teams = sorted({t for t in set(df["home_team"]) | set(df["away_team"])
                     if isinstance(t, str) and len(t) == 3})
     _refs_all = sorted(df["ref"].dropna().unique().tolist())
-    c0, c1, c2 = st.columns([1.5, 1.0, 1.3])
+    c0, c1, c2, c3 = st.columns([1.4, 0.9, 1.0, 1.2])
     with c0:
         ref_pick = st.selectbox(
             "Find a referee", _refs_all, index=None, placeholder="", key="refs_search",
             help="Type to search by name; pick one to see their penalty-call chart.")
     with c1:
-        team_sel = st.selectbox("Team", ["All teams"] + teams, key="refs_team")
+        side_sel = st.radio("Home / Away", ["All", "Home", "Away"], horizontal=True,
+                            key="refs_side",
+                            help="Filters the drill-in bar chart. With no team, Home/Away = "
+                                 "penalties on the home vs away team. With a team, = the "
+                                 "team's home vs away games.")
     with c2:
+        team_sel = st.selectbox("Team", ["All teams"] + teams, key="refs_team")
+    with c3:
         name_q = st.text_input("Referee name contains", key="refs_name").strip().lower()
 
     if ref_pick:
@@ -6460,10 +6449,8 @@ def render_referees() -> None:
                       on_click=lambda: st.session_state.update(
                           _ref_drill=None, refs_search=None))
         _set_dl_title(_drill)
-        if team_sel == "All teams":
-            _ref_bar_chart(_drill, df, season_label)
-        else:
-            _ref_team_bar_chart(_drill, df, team_sel, season_label)
+        _team_arg = None if team_sel == "All teams" else team_sel
+        _ref_bar_chart(_drill, df, season_label, side=side_sel, team=_team_arg)
 
 
 # ---------------------------------------------------------------------------
