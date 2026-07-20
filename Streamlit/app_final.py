@@ -6160,14 +6160,17 @@ def _ref_bar_chart(ref: str, df: pd.DataFrame, season_label: str,
         st.caption(f"No data for {ref} in this selection.")
         return
 
-    # Blue bar (ref) shaded light→navy by its own rate; orange bar = the average.
-    _refvals = d[d["Series"] == "This referee"]["value"]
-    _vmax = float(_refvals.max()) if len(_refvals) else 0.0
+    # Both series are shaded light→dark by their rate — referee bars light-blue→
+    # navy, average bars light-orange→burnt-orange. A SHARED max (over every bar)
+    # drives the darkness, so shade = absolute rate and is comparable across the
+    # two colours (a darker bar always means a higher per-game rate).
+    _vmax = float(d["value"].max()) if len(d) else 0.0
     def _col(r):
-        if r["Series"] != "This referee":
-            return PALETTE["orange"]
         t = (r["value"] / _vmax) if _vmax > 0 else 0.0
-        return _hex_lerp("#BCD0E2", PALETTE["text"], min(max(t, 0.0), 1.0))
+        t = min(max(t, 0.0), 1.0)
+        if r["Series"] == "This referee":
+            return _hex_lerp("#BCD0E2", PALETTE["text"], t)   # light blue → navy
+        return _hex_lerp("#FFD8C2", "#B8431A", t)             # light orange → burnt orange
     d["color"] = d.apply(_col, axis=1)
     _series_order = ["This referee", avg_label]
 
@@ -6182,7 +6185,7 @@ def _ref_bar_chart(ref: str, df: pd.DataFrame, season_label: str,
     _side_txt = "" if sc == "all" else f" — {side} only"
     st.caption(f"**{ref}**{scope_txt} — penalty calls per game by type{_side_txt}. "
                "Each penalty type shows this referee next to the "
-               f"{'league' if not team else team} average; darker blue = a higher rate.")
+               f"{'league' if not team else team} average; darker shading = a higher rate.")
     _base = alt.Chart(d).encode(
         x=alt.X("Metric:N", sort=order,
                 scale=alt.Scale(paddingInner=0.35, paddingOuter=0.2),
