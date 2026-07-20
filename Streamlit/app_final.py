@@ -6103,7 +6103,7 @@ def _ref_bar_chart(ref: str, df: pd.DataFrame, season_label: str,
     a team is selected. `side` (All/Home/Away) restricts to penalties on the home/
     away team (no team) or to the team's home/away games (team filtered)."""
     import altair as alt
-    order = ["All"] + REF_TYPES
+    order = list(REF_TYPES)   # one group per penalty type (no overall "All" bar)
     sc = side.lower()   # "home" / "away" / "all"
 
     if team:
@@ -6171,22 +6171,43 @@ def _ref_bar_chart(ref: str, df: pd.DataFrame, season_label: str,
     d["color"] = d.apply(_col, axis=1)
     _series_order = ["This referee", avg_label]
 
+    # Legend labels: the blue swatch is the referee; the orange swatch is the
+    # comparison average (league or team). The chart's own legend carries the
+    # colour key, so the caption no longer spells the colours out.
+    _avg_leg = "League average" if not team else f"{team} average"
+    _leg_relabel = {"This referee": ref, avg_label: _avg_leg}
+    d["Legend"] = d["Series"].map(_leg_relabel)
+    _leg_order = [ref, _avg_leg]
+
     _side_txt = "" if sc == "all" else f" — {side} only"
-    _avg_txt = "league average" if not team else f"{team} average"
     st.caption(f"**{ref}**{scope_txt} — penalty calls per game by type{_side_txt}. "
-               f"**Blue** = this referee (darker = higher rate); **orange** = "
-               f"{_avg_txt}. All bars start at 0.")
-    bars = alt.Chart(d).mark_bar(size=18).encode(
+               "Each penalty type shows this referee next to the "
+               f"{'league' if not team else team} average; darker blue = a higher rate.")
+    _base = alt.Chart(d).encode(
         x=alt.X("Metric:N", sort=order,
+                scale=alt.Scale(paddingInner=0.35, paddingOuter=0.2),
                 axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold")),
-        xOffset=alt.XOffset("Series:N", sort=_series_order),
-        y=alt.Y("value:Q", title="Per game", scale=alt.Scale(zero=True)),
-        color=alt.Color("color:N", scale=None, legend=None),
-        tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("Series:N"),
+        # paddingInner=0 → the referee bar and the average bar in each group touch
+        # (no gap); the gap between penalty types comes from the x band padding.
+        xOffset=alt.XOffset("Series:N", sort=_series_order,
+                            scale=alt.Scale(paddingInner=0.0, paddingOuter=0.0)),
+        y=alt.Y("value:Q", title="Per game", scale=alt.Scale(zero=True)))
+    bars = _base.mark_bar().encode(
+        color=alt.Color("color:N", scale=None, legend=None),   # per-datum blue gradient
+        tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("Legend:N", title=""),
                  alt.Tooltip("value:Q", format=".2f", title="Per game")])
+    # Invisible layer whose sole job is to render a 2-swatch colour legend (the
+    # bars use per-datum hex fills for the gradient, which can't emit a legend).
+    _leg = alt.Chart(pd.DataFrame({"Legend": _leg_order})).mark_square(opacity=0).encode(
+        color=alt.Color("Legend:N", sort=_leg_order,
+                        scale=alt.Scale(domain=_leg_order,
+                                        range=[PALETTE["blue"], PALETTE["orange"]]),
+                        legend=alt.Legend(orient="top", title=None, symbolType="square",
+                                          symbolSize=160, labelFontSize=12)))
     _ttl = f"{ref}{(' vs ' + team) if team else ''}"
     _ttl += f"{('' if sc == 'all' else ' (' + side + ')')} — Penalty Calls per Game — {season_label}"
-    chart = bars.properties(title=alt.TitleParams(text=_ttl, color=PALETTE["text"], fontSize=13))
+    chart = alt.layer(bars, _leg).resolve_scale(color="independent").properties(
+        title=alt.TitleParams(text=_ttl, color=PALETTE["text"], fontSize=13))
     _dl = f"Ref-bars-{ref.replace(' ', '-')}{('-' + team) if team else ''}{('' if sc == 'all' else '-' + side)}"
     _show_chart(chart, dl_name=_dl)
 
