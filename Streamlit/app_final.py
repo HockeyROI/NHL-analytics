@@ -6170,7 +6170,8 @@ def _ref_bar_chart(ref: str, df: pd.DataFrame, season_label: str,
         t = min(max(t, 0.0), 1.0)
         if r["Series"] == "This referee":
             return _hex_lerp("#BCD0E2", PALETTE["text"], t)   # light blue → navy
-        return _hex_lerp("#FFD8C2", "#B8431A", t)             # light orange → burnt orange
+        # light orange → the original brand orange (kept bright, not burnt)
+        return _hex_lerp("#FFE0CF", PALETTE["orange"], t)
     d["color"] = d.apply(_col, axis=1)
     _series_order = ["This referee", avg_label]
 
