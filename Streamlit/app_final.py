@@ -2897,26 +2897,39 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         _show_chart(ch, dl_name=title.split(" (")[0].replace(" ", "-"))
 
     if view_mode == "Year over year":
-        # Line charts — ALL of them show regardless of which metric-family pills
-        # are selected above (the pills only filter the table + team scatters).
+        # Line charts — ALL of them still show regardless of which metric-family
+        # pills are selected above (the pills filter the table + team scatters),
+        # but whichever family is currently toggled on moves to the TOP of this
+        # section, so the pills also control what you see first here.
         # One chart per scale so none flattens; y-axes zoom to each chart's own
         # data range so season-to-season movement is visible.
-        _qg_combined_line(trend)
-        _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])
-        _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
-               ["RelxG%", "RelxG-F%", "RelxG-A%"])
-        _chart("PDOxG (5v5) — luck net of shot quality", ["PDOxG"])
-        _chart("RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
-               ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])
-        _chart("Zone Impact index 0–100 (OZI, DZI, NZI, TZI) — 50 = average",
-               ["OZI", "DZI", "NZI", "TZI"], ydomain=[30, 70])
-        _chart("D/O Zone Start% (faceoff-started 5v5 shifts)", ["OZ Start%", "DZ Start%"])
-        _chart("Raw net-front rate per 60 (NFI-A/60, NFI-S/60)", ["NFI-A/60", "NFI-S/60"])
-        _chart("NFI% (net-front share)", ["NFI%"])
-        _chart("EDGE Zone-Time % (OZ, DZ)", ["EDGE OZ%", "EDGE DZ%"])
-        _chart("EDGE Top Speed (mph)", ["EDGE Top Speed"])
-        _chart("EDGE Speed Bursts (20+ mph, season total)", ["EDGE Bursts 20+"])
-        _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])
+        _yoy_charts = [
+            ("Quality Games", lambda: _qg_combined_line(trend)),
+            ("xG", lambda: _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])),
+            ("xG", lambda: _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
+                   ["RelxG%", "RelxG-F%", "RelxG-A%"])),
+            ("xG", lambda: _chart("PDOxG (5v5) — luck net of shot quality", ["PDOxG"])),
+            ("Net Front Impact", lambda: _chart(
+                   "RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
+                   ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])),
+            ("Zone Impact", lambda: _chart(
+                   "Zone Impact index 0–100 (OZI, DZI, NZI, TZI) — 50 = average",
+                   ["OZI", "DZI", "NZI", "TZI"], ydomain=[30, 70])),
+            ("Zone Impact", lambda: _chart(
+                   "D/O Zone Start% (faceoff-started 5v5 shifts)",
+                   ["OZ Start%", "DZ Start%"])),
+            ("Net Front Impact", lambda: _chart(
+                   "Raw net-front rate per 60 (NFI-A/60, NFI-S/60)",
+                   ["NFI-A/60", "NFI-S/60"])),
+            ("Net Front Impact", lambda: _chart("NFI% (net-front share)", ["NFI%"])),
+            ("EDGE", lambda: _chart("EDGE Zone-Time % (OZ, DZ)", ["EDGE OZ%", "EDGE DZ%"])),
+            ("EDGE", lambda: _chart("EDGE Top Speed (mph)", ["EDGE Top Speed"])),
+            ("EDGE", lambda: _chart("EDGE Speed Bursts (20+ mph, season total)",
+                   ["EDGE Bursts 20+"])),
+            ("EDGE", lambda: _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])),
+        ]
+        for _fam, _fn in sorted(_yoy_charts, key=lambda item: item[0] not in _show_fams):
+            _fn()
     else:
         # Current-year bars: the combined NFI+xG Quality-Games panel (one
         # download covers both) and the hard-locked Zone Impact bar — both on
@@ -3755,10 +3768,9 @@ def render_players() -> None:
     _plabel = {int(r.player_id): f"{r.player_name} ({r.position})"
                for r in _popts.itertuples()}
 
-    # Fixed ES-TOI floor for RANKING: players below it are ranked "(UR)". The Min
-    # ES TOI slider (default = this floor) FILTERS the list — by default it hides
-    # the sub-floor players; slide it down to reveal them (shown as UR), up to
-    # trim further. The slider never changes the ranking denominator.
+    # Default position for the Min ES TOI slider. The slider itself IS the
+    # ranking floor — players below its current value are unranked "(UR)";
+    # move it down to bring more players into the ranked cohort.
     rank_floor = 300 if playoffs else (2000 if is_pooled else 500)
     c1, c2, c3 = st.columns([1.5, 1.0, 1.3])
     with c1:
@@ -3874,10 +3886,11 @@ def render_players() -> None:
         df = df[df["position"] == pos]
     else:
         df = df[df["position"].isin(["F", "D"])]
-    # Ranking denominator is the position cohort clearing the FIXED floor (set
-    # before the Min-TOI slider so the slider never changes ranks). The slider
-    # then filters which rows are shown; sub-floor rows that survive it render UR.
-    rank_cohort = df[df["toi_min"].fillna(0) >= rank_floor].copy()
+    # Ranking denominator is the position cohort clearing the Min ES TOI / Min GP
+    # sliders — the sliders ARE the qualifying floor, so moving them changes who
+    # ranks, not just who's visible.
+    rank_cohort = df[(df["toi_min"].fillna(0) >= min_toi)
+                     & (df["GP"].fillna(0) >= min_gp)].copy()
     df = df[df["toi_min"].fillna(0) >= min_toi]
     df = df[df["GP"].fillna(0) >= min_gp]
     if team_sel != "All":
@@ -3893,9 +3906,9 @@ def render_players() -> None:
         )
         return
 
-    # Qualified players (≥ floor) lead, sorted by RelNFI%; sub-floor (UR) players
-    # follow — so low-TOI noise can't dominate the top of the leaderboard.
-    df["_qual"] = df["toi_min"].fillna(0) >= rank_floor
+    # Qualified players (≥ slider floor) lead, sorted by RelNFI%; sub-floor (UR)
+    # players follow — so low-TOI noise can't dominate the top of the leaderboard.
+    df["_qual"] = (df["toi_min"].fillna(0) >= min_toi) & (df["GP"].fillna(0) >= min_gp)
     df = df.sort_values(["_qual", "RelNFI_pct"], ascending=[False, False],
                         na_position="last").reset_index(drop=True)
     # Storage → display: RelNFI_F (attack / for) shows as "RelNFI-A%",
@@ -4031,7 +4044,8 @@ def render_players() -> None:
                 p2t = dict(zip(rank_cohort["player_id"], tr))
                 _team_rank_idx[col] = {i: int(p2t[p]) for i, p in _df_pid.items()
                                        if pd.notna(p2t.get(p))}
-    _pl_qual = pd.to_numeric(disp["TOI"], errors="coerce").fillna(0) >= rank_floor
+    _pl_qual = ((pd.to_numeric(disp["TOI"], errors="coerce").fillna(0) >= min_toi)
+               & (pd.to_numeric(disp["GP"], errors="coerce").fillna(0) >= min_gp))
     _apply_ranks(disp, fmt, rank_cohort, _player_rank, lower_better=_lower,
                  mark_unranked=True, qualified=_pl_qual, team_rank_idx=_team_rank_idx)
     _lb_cohort_txt = {"F": "forwards", "D": "defense"}.get(pos, "all skaters")
@@ -4058,8 +4072,9 @@ def render_players() -> None:
                      "for this season")
     st.caption(
         f"{len(disp):,} players (≥ {min_toi:,} ES min, ≥ {min_gp} GP) · {scope_label} · "
-        f"sorted by RelNFI% descending · ranked at ≥ {rank_floor:,} ES min (else UR)"
-        f"{zone_note} · lower Min GP / Min ES TOI to bring more players onto the list"
+        f"sorted by RelNFI% descending · ranked at ≥ {min_toi:,} ES min / ≥ {min_gp} GP "
+        f"(else UR){zone_note} · the Min GP / Min ES TOI sliders set the ranking floor "
+        "directly — lower them to rank more players, raise them to tighten the cohort"
     )
 
     import altair as alt
@@ -5379,22 +5394,6 @@ def render_goalies() -> None:
     if "MP-GSAx" in base.columns:
         _gpn = pd.to_numeric(base["GP"], errors="coerce")
         base["MP-GSAx/60"] = np.where(_gpn > 0, base["MP-GSAx"] / _gpn, np.nan)
-    # Per-metric qualification. PREFER the producer's `qualified` flag when the
-    # data file carries it (correct, e.g. pooled requires a season with ≥25 GP,
-    # not just accumulated games). Fall back to an in-app floor only when the
-    # column is absent (older data file), so the tab never crashes. Playoffs have
-    # no floor → rank everyone.
-    _gsax_floor = 300 if is_pooled else (200 if is_2yr else 100)
-    _fallback = {"qual_gsax": ("total_faced", _gsax_floor),
-                 "qual_qn": ("GP_qn", 25), "qual_qs": ("GP_qs", 25),
-                 "qual_qg": ("GP_qg", 25)}
-    for _qc, (_col, _flr) in _fallback.items():
-        if playoffs:
-            base[_qc] = True
-        elif _qc in base.columns:
-            base[_qc] = base[_qc].fillna(False).astype(bool)
-        else:
-            base[_qc] = base.get(_col, pd.Series(np.nan, index=base.index)).fillna(0) >= _flr
     _gid_of = dict(zip(base["Goalie"], base["goalie_id"]))   # name → id for drill-in
 
     c1, c2, c3, c4 = st.columns([1.8, 1.1, 1.1, 0.9])
@@ -5460,10 +5459,24 @@ def render_goalies() -> None:
         _goalie_drill(int(_gl_drill), name_map.get(int(_gl_drill), str(_gl_drill)))
         return
 
+    # Per-metric qualification — the Min Shots Faced / Min GP sliders ARE the
+    # qualifying floor (each metric is ranked only over goalies clearing its own
+    # `qual_*` bar; others render "(UR)"). Playoffs have no floor → rank everyone.
+    if playoffs:
+        for _qc in ("qual_gsax", "qual_qn", "qual_qs", "qual_qg"):
+            base[_qc] = True
+    else:
+        base["qual_gsax"] = (base.get("total_faced", pd.Series(np.nan, index=base.index))
+                             .fillna(0) >= min_shots)
+        for _qc, _col in (("qual_qn", "GP_qn"), ("qual_qs", "GP_qs"), ("qual_qg", "GP_qg")):
+            base[_qc] = (base.get(_col, pd.Series(np.nan, index=base.index))
+                        .fillna(0) >= min_gp)
+
     # Ranking pool = ALL goalies (set before the Min-Shots filter so it never
-    # changes ranks); each metric is ranked only over goalies that clear ITS
-    # qualifying bar (per the `qual_*` flags) — others render "(UR)". The Min-Shots
-    # slider then filters which rows are shown, and the Team filter narrows further.
+    # changes ranks a second time via visibility); each metric is ranked only
+    # over goalies that clear ITS qualifying bar (per the `qual_*` flags above)
+    # — others render "(UR)". The Min-Shots/Min-GP sliders then also filter which
+    # rows are shown, and the Team filter narrows further.
     rank_pool = base.copy()
     base = base[base["total_faced"].fillna(0) >= min_shots]
     base = base[base["GP"].fillna(0) >= min_gp]
@@ -5538,18 +5551,18 @@ def render_goalies() -> None:
         _tc = (_coh[_coh["Team"] == goalie_team] if goalie_team != "All" else None)
         _apply_ranks(disp, fmt, _coh, [_m], second_cohort=_tc, mark_unranked=True,
                      qualified=base[_qc])
-    _shot_floor = ("300 net-front shots" if is_pooled
-                   else "200 net-front shots" if is_2yr else "100 net-front shots")
     if goalie_team != "All":
         st.caption(f"Each metric shows **(league rank / {goalie_team} rank)**. Every "
                    f"goalie is listed; a metric is ranked only if the goalie clears its "
-                   f"bar — **NFI-GSAx** ≥ {_shot_floor}, **QNFG / QG / {_qg_label}** ≥ 25 GP "
-                   f"— else **(UR)** = unranked.")
+                   f"bar — **NFI-GSAx** ≥ {min_shots:,} shots faced, **QNFG / QG / "
+                   f"{_qg_label}** ≥ {min_gp} GP — else **(UR)** = unranked. The Min Shots "
+                   "Faced / Min GP sliders set these bars directly.")
     else:
         st.caption(f"Each metric shows its **(rank)**. Every goalie is listed; a metric "
                    f"is ranked only if the goalie clears its bar — **NFI-GSAx** "
-                   f"≥ {_shot_floor}, **QNFG / QG / {_qg_label}** ≥ 25 GP — else "
-                   f"**(UR)** = unranked.")
+                   f"≥ {min_shots:,} shots faced, **QNFG / QG / {_qg_label}** ≥ {min_gp} GP "
+                   "— else **(UR)** = unranked. The Min Shots Faced / Min GP sliders set "
+                   "these bars directly.")
     st.caption("**QG** = goals-saved-above-expected, as a game rate (formerly GQG) — "
                "the share of a goalie's games where their all-shot GSAx ≥ 0 (beat "
                "expected on a danger/xG-weighted basis), not raw save%.")
@@ -5977,68 +5990,41 @@ def render_trade_analyzer() -> None:
 
 def _trade_rawrel_scatter(df_sel: pd.DataFrame, y_col: str, y_title: str,
                           dl_name: str, full_df: pd.DataFrame = None) -> None:
-    """Faceted Raw xG% | Rel xG% scatter for the selected trade players: x = the
-    xG measure (raw xG% left, RelxG% right), y = y_col (PDO or NFI%). Matches the
-    leaderboard scatters' xG-on-x orientation. x-scales are independent because
-    raw xG% (~40-60) and RelxG% (~±5) differ hugely; y (PDO or NFI%) is shared.
-    full_df (the league-wide frame) sets every axis domain so the picked players
-    sit in real context rather than auto-zoomed to their own span."""
+    """Two SEPARATE scatters for the selected trade players — Raw xG% and
+    Rel xG%, each its own image with its own download button (previously one
+    faceted image; split per user request so each half can be viewed/posted on
+    its own). x = the xG measure (raw xG% or RelxG%), y = y_col (PDO or NFI%),
+    matching the leaderboard scatters' xG-on-x orientation. full_df (the
+    league-wide frame) sets each axis domain so the picked players sit in real
+    context rather than auto-zoomed to their own span."""
     import altair as alt
     if df_sel is None or df_sel.empty or not {y_col, "xG%", "RelxG%", "Player"}.issubset(df_sel.columns):
         st.caption("No data for the selected players in this scope.")
         return
-    rows = []
-    for _, r in df_sel.iterrows():
-        if pd.isna(r[y_col]):
-            continue
-        for meas, col in (("Raw xG%", "xG%"), ("Rel xG%", "RelxG%")):
-            if pd.notna(r[col]):
-                rows.append({"Player": r["Player"], "yv": float(r[y_col]),
-                             "Measure": meas, "xv": float(r[col]),
-                             "_label": str(r["Player"]).split()[-1]})
-    if not rows:
-        st.caption("No data for the selected players in this scope.")
-        return
-    d = pd.DataFrame(rows)
-    # League-wide domains: y (shared across facets) set explicitly; x differs per
-    # facet (raw vs rel), so hold each facet's range with transparent anchor
-    # points at the league min/max of that measure (independent-x facets can't
-    # take a single explicit x-domain).
-    _dom = full_df if (full_df is not None and not full_df.empty) else d
-    _ydom = _tight_domain(_dom[y_col].dropna() if y_col in _dom else d["yv"],
+    _dom = full_df if (full_df is not None and not full_df.empty) else df_sel
+    _ydom = _tight_domain(_dom[y_col].dropna() if y_col in _dom else df_sel[y_col].dropna(),
                           pad_frac=0.15, min_pad=1e-6)
-    _anchor_rows = []
-    for meas, col in (("Raw xG%", "xG%"), ("Rel xG%", "RelxG%")):
-        _src = _dom[col].dropna() if col in _dom else d.loc[d["Measure"] == meas, "xv"]
-        _xd = _tight_domain(_src, pad_frac=0.15, min_pad=1e-6)
-        if _xd:
-            _ymid = (_ydom[0] + _ydom[1]) / 2 if _ydom else float(d["yv"].iloc[0])
-            _anchor_rows += [{"Player": "", "yv": _ymid, "Measure": meas, "xv": _xd[0],
-                              "_label": "", "_anchor": True},
-                             {"Player": "", "yv": _ymid, "Measure": meas, "xv": _xd[1],
-                              "_label": "", "_anchor": True}]
-    d["_anchor"] = False
-    d_all = pd.concat([d, pd.DataFrame(_anchor_rows)], ignore_index=True) if _anchor_rows else d
-    base = alt.Chart(d_all).encode(
-        x=alt.X("xv:Q", title=None, scale=alt.Scale(zero=False)),
-        y=alt.Y("yv:Q", title=y_title, scale=alt.Scale(domain=_ydom, zero=False)))
-    # Invisible anchor points expand each facet's auto x-domain to the league span.
-    anchors = base.transform_filter("datum._anchor == true").mark_point(opacity=0)
-    base = base.transform_filter("datum._anchor != true")
-    pts = base.mark_circle(size=150, opacity=0.8, color=PALETTE["blue"]).encode(
-        tooltip=[alt.Tooltip("Player:N"), alt.Tooltip("Measure:N"),
-                 alt.Tooltip("xv:Q", format=".2f", title="xG measure"),
-                 alt.Tooltip("yv:Q", format=".3f", title=y_title)])
-    txt = base.mark_text(align="left", dx=8, dy=-4, fontSize=12, fontWeight="bold",
-                         color=PALETTE["orange"]).encode(text="_label:N")
-    # Header at the BOTTOM (orient="bottom") so "Raw xG%" / "Rel xG%" sit next to
-    # the x-axis they label, rather than reading like a title at the top.
-    chart = (anchors + pts + txt).properties(width=340, height=320).facet(
-        column=alt.Column("Measure:N", sort=["Raw xG%", "Rel xG%"], title=None,
-                          header=alt.Header(labelFontWeight="bold", labelFontSize=13,
-                                            orient="bottom"))
-        ).resolve_scale(x="independent")
-    _show_chart(chart, dl_name=dl_name, brand_width=340 * 2 + 80)
+    for meas, col, suf in (("Raw xG%", "xG%", "-raw"), ("Rel xG%", "RelxG%", "-rel")):
+        rows = [{"Player": r["Player"], "yv": float(r[y_col]), "xv": float(r[col]),
+                "_label": str(r["Player"]).split()[-1]}
+               for _, r in df_sel.iterrows() if pd.notna(r.get(y_col)) and pd.notna(r.get(col))]
+        if not rows:
+            continue
+        d = pd.DataFrame(rows)
+        _xdom = _tight_domain(_dom[col].dropna() if col in _dom else d["xv"],
+                              pad_frac=0.15, min_pad=1e-6)
+        st.markdown(f"<h5 style='color:{PALETTE['text']}; margin-top:0.6rem;'>{meas}</h5>",
+                   unsafe_allow_html=True)
+        base = alt.Chart(d).encode(
+            x=alt.X("xv:Q", title=meas, scale=alt.Scale(domain=_xdom, zero=False)),
+            y=alt.Y("yv:Q", title=y_title, scale=alt.Scale(domain=_ydom, zero=False)))
+        pts = base.mark_circle(size=150, opacity=0.8, color=PALETTE["blue"]).encode(
+            tooltip=[alt.Tooltip("Player:N"), alt.Tooltip("xv:Q", format=".2f", title=meas),
+                     alt.Tooltip("yv:Q", format=".3f", title=y_title)])
+        txt = base.mark_text(align="left", dx=8, dy=-4, fontSize=12, fontWeight="bold",
+                             color=PALETTE["orange"]).encode(text="_label:N")
+        chart = (pts + txt).properties(width=340, height=320)
+        _show_chart(chart, dl_name=dl_name + suf, brand_width=340)
 
 
 # ---------------------------------------------------------------------------
@@ -6097,17 +6083,143 @@ def _delta_fmt(avg, dec=2, pct=False):
     return f
 
 
-def _render_ref_league(df: pd.DataFrame, season_label: str, name_q: str) -> None:
+def _ref_league_avg(df: pd.DataFrame, min_games: int = REF_MIN_GAMES) -> dict:
+    """Per-referee table → league-average rate for every metric column,
+    computed over referees clearing the min-games floor (mirrors the league
+    table's own highlighted LEAGUE AVERAGE row). Shared by the league table
+    and the single-referee bar chart so both quote the same number."""
+    tbl = _ref_table(df)
+    tbl = tbl[tbl["Games"] >= min_games]
+    metric_cols = ["Pen/Game", "Home Pen%", "Away Pen%"] + [f"{t}/G" for t in REF_TYPES]
+    return {c: float(tbl[c].mean()) for c in metric_cols if c in tbl.columns}
+
+
+def _ref_bar_chart(ref: str, df: pd.DataFrame, season_label: str) -> None:
+    """One referee's penalty-call rate per game, by type, vs the league-average
+    referee — a diverging bar (mirrors the QG bar charts) but each bar keeps its
+    OWN baseline via a per-bar tick (penalty types don't share one rate), the
+    same pattern the goalie consistency bar uses for its 3 different baselines."""
+    import altair as alt
+    tbl = _ref_table(df)
+    r = tbl[tbl["Referee"] == ref]
+    if r.empty:
+        st.caption(f"No data for {ref} in this view.")
+        return
+    r = r.iloc[0]
+    league = _ref_league_avg(df)
+    order = ["Pen/Game"] + [f"{t}/G" for t in REF_TYPES]
+    rows = [{"Metric": m, "value": float(r[m]), "base": league[m],
+            "color": PALETTE["blue"] if r[m] >= league[m] else PALETTE["orange"]}
+           for m in order if m in r.index and pd.notna(r[m]) and m in league]
+    if not rows:
+        st.caption(f"No data for {ref} in this view.")
+        return
+    d = pd.DataFrame(rows)
+    _vals = pd.concat([d["value"], d["base"]])
+    dom = [0, float(_vals.max()) * 1.15]
+    st.caption(f"**{ref}** — penalty calls per game by type, across all teams, vs the "
+               "**league-average referee** (grey tick). Blue bar = above league average, "
+               "orange = below.")
+    bars = alt.Chart(d).mark_bar(size=34).encode(
+        x=alt.X("Metric:N", sort=order,
+                axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold")),
+        y=alt.Y("base:Q", scale=alt.Scale(domain=dom), title="Per game"),
+        y2="value:Q",
+        color=alt.Color("color:N", scale=None, legend=None),
+        tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".2f", title=ref),
+                 alt.Tooltip("base:Q", format=".2f", title="League avg")])
+    ticks = alt.Chart(d).mark_tick(color=PALETTE["text_secondary"], thickness=2,
+                                   size=38).encode(x=alt.X("Metric:N", sort=order), y="base:Q")
+    chart = (bars + ticks).properties(title=alt.TitleParams(
+        text=f"{ref} — Penalty Calls per Game — {season_label}",
+        color=PALETTE["text"], fontSize=13))
+    _show_chart(chart, dl_name=f"Ref-bars-{ref.replace(' ', '-')}")
+
+
+def _ref_team_bar_chart(ref: str, df: pd.DataFrame, team: str, season_label: str) -> None:
+    """One referee's penalty-call rate against ONE team, split Home/Away, by
+    type — each bar carries TWO baseline ticks: the league-average rate (grey)
+    and this same referee's own average rate (orange), both for that penalty
+    type/side across all teams — so a spike reads as either "referees in
+    general call more on this team" or "this ref specifically does" at a
+    glance, instead of collapsing both signals into one number."""
+    import altair as alt
+    dft = df[(df["home_team"] == team) | (df["away_team"] == team)]
+    g = dft[dft["ref"] == ref]
+    if g.empty:
+        st.caption(f"{ref} hasn't worked a game involving {team} in this view.")
+        return
+    against = dft[dft["penalized_team"] == team]
+    ag = against[against["ref"] == ref]
+    distinct_games = df["game_id"].nunique()
+    ref_games_all = df[df["ref"] == ref]["game_id"].nunique()
+    games_home = g[g["home_team"] == team]["game_id"].nunique()
+    games_away = g[g["away_team"] == team]["game_id"].nunique()
+
+    order = ["All"] + REF_TYPES
+    rows = []
+    for t in order:
+        pt = None if t == "All" else t
+        for side, gcount in (("home", games_home), ("away", games_away)):
+            if gcount <= 0:
+                continue
+            sub_ag = ag if pt is None else ag[ag["penalty_type"] == pt]
+            value = float((sub_ag["home_or_away"] == side).sum()) / gcount
+            lg_sub = df if pt is None else df[df["penalty_type"] == pt]
+            league_base = (((lg_sub["home_or_away"] == side).sum() / 2) / distinct_games
+                          if distinct_games else np.nan)
+            ref_sub = df[df["ref"] == ref] if pt is None else df[(df["ref"] == ref) & (df["penalty_type"] == pt)]
+            ref_base = (((ref_sub["home_or_away"] == side).sum()) / ref_games_all
+                       if ref_games_all else np.nan)
+            rows.append({"Metric": t, "Side": side.capitalize(), "value": value,
+                        "league_base": league_base, "ref_base": ref_base})
+    d = pd.DataFrame(rows)
+    if d.empty or d["value"].isna().all():
+        st.caption(f"No data for {ref} vs {team} in this view.")
+        return
+    _vals = pd.concat([d["value"], d["league_base"], d["ref_base"]]).dropna()
+    dom = [0, float(_vals.max()) * 1.2] if len(_vals) else [0, 1]
+
+    st.caption(f"**{ref}** vs **{team}** — penalty calls per game by type, split Home/Away "
+               "for the team. Grey tick = league-average rate; orange tick = this referee's "
+               "own average rate (both for that penalty type/side, across all teams).")
+    bars = alt.Chart(d).mark_bar(size=16).encode(
+        x=alt.X("Metric:N", sort=order,
+                axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold")),
+        xOffset=alt.XOffset("Side:N", sort=["Home", "Away"]),
+        y=alt.Y("value:Q", scale=alt.Scale(domain=dom), title="Per game"),
+        color=alt.Color("Side:N", sort=["Home", "Away"],
+                        scale=alt.Scale(domain=["Home", "Away"],
+                                        range=[PALETTE["blue"], PALETTE["lightblue"]]),
+                        legend=alt.Legend(orient="bottom", title=None)),
+        tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("Side:N"),
+                 alt.Tooltip("value:Q", format=".2f", title=ref),
+                 alt.Tooltip("league_base:Q", format=".2f", title="League avg"),
+                 alt.Tooltip("ref_base:Q", format=".2f", title=f"{ref} avg")])
+    lg_ticks = alt.Chart(d).mark_tick(color=PALETTE["text_secondary"], thickness=2, size=15).encode(
+        x=alt.X("Metric:N", sort=order), xOffset=alt.XOffset("Side:N", sort=["Home", "Away"]),
+        y="league_base:Q")
+    ref_ticks = alt.Chart(d).mark_tick(color=PALETTE["orange"], thickness=2, size=15).encode(
+        x=alt.X("Metric:N", sort=order), xOffset=alt.XOffset("Side:N", sort=["Home", "Away"]),
+        y="ref_base:Q")
+    chart = (bars + lg_ticks + ref_ticks).properties(title=alt.TitleParams(
+        text=f"{ref} vs {team} — Penalty Calls per Game — {season_label}",
+        color=PALETTE["text"], fontSize=13))
+    _show_chart(chart, dl_name=f"Ref-team-bars-{ref.replace(' ', '-')}-{team}")
+
+
+def _render_ref_league(df: pd.DataFrame, season_label: str, name_q: str):
     """League-wide referee table. The top row is the highlighted LEAGUE AVERAGE
     (plain values); every referee cell shows its value with an inline
-    (± vs league average) bracket."""
+    (± vs league average) bracket. Click a referee's row to drill into their
+    penalty-call bar chart below. Returns the clicked referee's name, or None."""
     tbl = _ref_table(df)
     tbl = tbl[tbl["Games"] >= REF_MIN_GAMES].copy()
     if tbl.empty:
         st.info(f"No referees meet the {REF_MIN_GAMES}-game floor for this view.")
-        return
+        return None
     metric_cols = ["Pen/Game", "Home Pen%", "Away Pen%"] + [f"{t}/G" for t in REF_TYPES]
-    avg = {c: float(tbl[c].mean()) for c in metric_cols if c in tbl.columns}
+    avg = _ref_league_avg(df)
     pct_cols = {"Home Pen%", "Away Pen%"}
 
     tbl = tbl.sort_values("Pen/Game", ascending=False).reset_index(drop=True)
@@ -6115,7 +6227,7 @@ def _render_ref_league(df: pd.DataFrame, season_label: str, name_q: str) -> None
         tbl = tbl[tbl["Referee"].str.lower().str.contains(name_q, na=False)]
     if tbl.empty:
         st.info("No referees match the name filter.")
-        return
+        return None
 
     def _plain(v, c):
         if pd.isna(v):
@@ -6147,10 +6259,18 @@ def _render_ref_league(df: pd.DataFrame, season_label: str, name_q: str) -> None
         "penalties per game than the league-average referee. Home Pen% = share of a "
         "referee's penalties assessed to the home team."
     )
-    _show_df(disp.style.apply(_bold_avg, axis=1), width="stretch", hide_index=True)
+    st.caption("Click a referee's row to see their penalty-call bar chart below.")
+    _event = _show_df(disp.style.apply(_bold_avg, axis=1), width="stretch", hide_index=True,
+                      on_select="rerun", selection_mode="single-row", key="ref_league_tbl")
+    _sel = getattr(getattr(_event, "selection", None), "rows", None)
+    if _sel and 0 <= _sel[0] < len(disp):
+        _clicked = disp["Referee"].iloc[_sel[0]]
+        if _clicked != "LEAGUE AVERAGE":
+            return _clicked
+    return None
 
 
-def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str) -> None:
+def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str):
     """Per-team view: (A) what each referee calls AGAINST this team — every rate
     (overall and per penalty type) carries a two-sided bracket (Δ vs league avg /
     Δ vs that ref's own average); (B) the team's penalties-taken per game by type,
@@ -6223,7 +6343,13 @@ def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str
                 f"rate against all teams — positive means the referee calls more against "
                 f"{team} than they normally do."
             )
-            _show_df(ta[cols].reset_index(drop=True), width="stretch", hide_index=True)
+            st.caption("Click a referee's row to see their Home/Away bar chart vs "
+                      f"{team} below.")
+            ta_disp = ta[cols].reset_index(drop=True)
+            _event = _show_df(ta_disp, width="stretch", hide_index=True,
+                              on_select="rerun", selection_mode="single-row",
+                              key=f"ref_team_tbl_{team}")
+            _sel = getattr(getattr(_event, "selection", None), "rows", None)
 
     # ---- Table B: TEAM penalties taken per game by type ----
     st.markdown(f"**{team} penalties taken per game**")
@@ -6242,6 +6368,10 @@ def _render_ref_team(df: pd.DataFrame, season_label: str, team: str, name_q: str
         f"{team} takes more of that penalty per game than a league-average team."
     )
     _show_df(pd.DataFrame(brows), width="stretch", hide_index=True)
+
+    if rows and not ta.empty and _sel and 0 <= _sel[0] < len(ta_disp):
+        return ta_disp["Referee"].iloc[_sel[0]]
+    return None
 
 
 def render_referees() -> None:
@@ -6295,16 +6425,45 @@ def render_referees() -> None:
 
     teams = sorted({t for t in set(df["home_team"]) | set(df["away_team"])
                     if isinstance(t, str) and len(t) == 3})
-    c1, c2 = st.columns([1.0, 1.6])
+    _refs_all = sorted(df["ref"].dropna().unique().tolist())
+    c0, c1, c2 = st.columns([1.5, 1.0, 1.3])
+    with c0:
+        ref_pick = st.selectbox(
+            "Find a referee", _refs_all, index=None, placeholder="", key="refs_search",
+            help="Type to search by name; pick one to see their penalty-call chart.")
     with c1:
         team_sel = st.selectbox("Team", ["All teams"] + teams, key="refs_team")
     with c2:
         name_q = st.text_input("Referee name contains", key="refs_name").strip().lower()
 
+    if ref_pick:
+        st.session_state["_ref_drill"] = ref_pick
+
     if team_sel == "All teams":
-        _render_ref_league(df, season_label, name_q)
+        _clicked = _render_ref_league(df, season_label, name_q)
     else:
-        _render_ref_team(df, season_label, team_sel, name_q)
+        _clicked = _render_ref_team(df, season_label, team_sel, name_q)
+    if _clicked:
+        st.session_state["_ref_drill"] = _clicked
+
+    _drill = st.session_state.get("_ref_drill")
+    if _drill and _drill not in _refs_all:
+        _drill = None
+        st.session_state["_ref_drill"] = None
+    if _drill:
+        st.markdown("---")
+        _h, _b = st.columns([4, 1])
+        with _h:
+            st.markdown(f"### {_drill}")
+        with _b:
+            st.button("✕ Clear", key="refs_drill_clear",
+                      on_click=lambda: st.session_state.update(
+                          _ref_drill=None, refs_search=None))
+        _set_dl_title(_drill)
+        if team_sel == "All teams":
+            _ref_bar_chart(_drill, df, season_label)
+        else:
+            _ref_team_bar_chart(_drill, df, team_sel, season_label)
 
 
 # ---------------------------------------------------------------------------
