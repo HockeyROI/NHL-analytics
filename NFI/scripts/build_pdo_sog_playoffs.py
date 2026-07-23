@@ -30,7 +30,7 @@ GAME_CSV = f"{ROOT}/Data/game_ids.csv"
 COUNTS_CSV = f"{ROOT}/NFI/output/player_counts_by_state_zone_playoffs.csv"
 OUT_CSV = f"{ROOT}/NFI/output/player_pdo_5v5_playoffs.csv"
 OUT_CSV_ALLSIT = f"{ROOT}/NFI/output/player_pdo_allsit_playoffs.csv"
-SHOT_XG_CSV = f"{ROOT}/NFI/output/shot_xg_per_event.csv"
+SHOT_XG_CSV = f"{ROOT}/xG/output/shot_xg_per_event.csv"  # v2 model (xG/build_xg.py)
 
 TOI_FLOOR_MIN = 200.0
 POOL_LABEL = "all_playoffs"

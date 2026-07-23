@@ -809,6 +809,18 @@ def render_methodology() -> None:
             "players on the per-60 rates and shares, not raw totals.",
         )
         + _meth_framework(
+            "Expected Goals (xG) — our own model",
+            "The xG behind <b>PDOxG</b> and the on-ice <b>xGF/xGA</b> (incl. the per-situation "
+            "engine) is HockeyROI's own — a Fenwick-based gradient-boosted model "
+            "(<code>xG/build_xg.py</code>) trained on shot geometry (distance / angle), shot type, "
+            "and pre-shot context (rebound, time since last attempt, prior-shot distance, running "
+            "score & strength state, home/away). Held-out <b>AUC 0.755</b>, tightly calibrated, and "
+            "its player-season xG totals correlate <b>0.99 with MoneyPuck's</b> published xGoal — a "
+            "fully in-house model that tracks the public benchmark closely. "
+            "<i>(The Quality-Games xG is a separate, deliberately MoneyPuck-sourced input, labeled "
+            "as such — not this model.)</i>",
+        )
+        + _meth_framework(
             "xG — Expected Goals",
             "On-ice expected goals, MoneyPuck-style, split into For and Against. <b>xGF/60</b> and "
             "<b>xGA/60</b> are the raw on-ice expected goals for / against per 60 while the player "

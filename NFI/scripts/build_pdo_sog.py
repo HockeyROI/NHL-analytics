@@ -37,7 +37,7 @@ GAME_CSV = f"{ROOT}/Data/game_ids.csv"
 COUNTS_CSV = f"{ROOT}/NFI/output/player_counts_by_state_zone_per_season.csv"
 OUT_CSV = f"{ROOT}/NFI/output/player_pdo_5v5_per_season.csv"
 OUT_CSV_ALLSIT = f"{ROOT}/NFI/output/player_pdo_allsit_per_season.csv"
-SHOT_XG_CSV = f"{ROOT}/NFI/output/shot_xg_per_event.csv"  # per-event xG (build_xg.py)
+SHOT_XG_CSV = f"{ROOT}/xG/output/shot_xg_per_event.csv"  # per-event xG (xG/build_xg.py, v2)
 
 SEASONS = {"20212022", "20222023", "20232024", "20242025", "20252026"}
 TOI_FLOOR_MIN = 200.0

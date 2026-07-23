@@ -414,6 +414,31 @@ Added 2026-07: a per-player faceoff-**start**-zone breakdown — the plain share
 
 ---
 
+## Expected Goals (xG) model
+
+HockeyROI's expected-goals model is **homegrown** (`xG/build_xg.py` → `xG/output/shot_xg_per_event.csv`). It powers **PDOxG** and the on-ice **xGF/xGA** rates (including the per-situation engine). *(The Quality-Games xG — `xG-QG%`, `RelxG-QG%` — is a separate, deliberately MoneyPuck-sourced input and is labeled as such; it is not this model.)*
+
+### Target and shot set
+
+`P(goal | unblocked shot attempt)` over the Fenwick set `{shot-on-goal, missed-shot, goal}`, periods 1–3, empty-net excluded. Fenwick-based (misses are scored too) so on-ice xGF/xGA count missed shots, matching the MoneyPuck basis.
+
+### Features
+
+- **Geometry**: distance and angle to net (net at normalized x=+89), their squares and interaction.
+- **Shot type** (wrist/slap/snap/backhand/tip/deflection/wrap, one-hot).
+- **Pre-shot sequence**: rebound flag (attempt within 3s of the previous attempt), time since last attempt (and its log), the previous shot's distance.
+- **Game state**: running score differential (shooter perspective, ±3) and strength differential (shooter skaters − opponent skaters, ±2), home/away.
+
+No "rush" flag — that requires full non-shot play-by-play (zone entries) the pipeline doesn't store; it's the one MoneyPuck feature omitted.
+
+### Model and validation
+
+`HistGradientBoostingClassifier` (400 trees, lr 0.05, 31 leaves, L2=1, min-leaf=200). On a held-out 20% split: **AUC 0.755**, **log-loss 0.217** (vs 0.244 baseline), and calibration is tight across all ten deciles (predicted ≈ actual at every level, e.g. 0.005→0.006 and 0.198→0.196). Against MoneyPuck's published `xGoal`, player-season xG totals correlate **Pearson r 0.989 / Spearman 0.991** (2,557 player-seasons; mean 11.5 vs MoneyPuck 12.5). The model is retrained and every Fenwick event re-scored on each build.
+
+This v2 supersedes the earlier geometry-only logistic model (`NFI/scripts/build_xg.py`, now deprecated).
+
+---
+
 ## PDO
 
 Added 2026-07: a descriptive shooting%/save% luck proxy, shown as a raw column beside xG on the Player List (no relative or Quality-Games version; not used for ranking).

@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Per-shot expected goals (xG) — SOG-conditional, for the PDOxG metric.
+"""DEPRECATED (2026-07-23) — superseded by xG/build_xg.py (v2).
+
+The canonical HockeyROI xG now lives at xG/build_xg.py → xG/output/
+shot_xg_per_event.csv: a Fenwick-based gradient-boosted model with pre-shot
+features (rebound, time-since-last, score/strength state) that correlates
+0.99 with MoneyPuck's player-season xGoal. All consumers (build_pdo_sog[_
+playoffs].py, build_situation_onice.py) were repointed to the xG/ folder.
+This v1 geometry-only logistic model and its NFI/output/shot_xg_per_event.csv
+output are retained only for reference/history; do not use for new work.
+
+--- original v1 docstring below ---
+Per-shot expected goals (xG) — SOG-conditional, for the PDOxG metric.
 
 Trains a logistic model of P(goal | shot-on-goal) from shot geometry
 (distance, angle, shot_type) and scores every shot-on-goal / goal event.

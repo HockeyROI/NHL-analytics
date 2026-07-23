@@ -42,7 +42,7 @@ import pandas as pd
 
 ROOT = Path(os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI"))
 SHOT_CSV = ROOT / "Data" / "nhl_shot_events.csv"
-XG_CSV = ROOT / "NFI" / "output" / "shot_xg_per_event.csv"
+XG_CSV = ROOT / "xG" / "output" / "shot_xg_per_event.csv"  # v2 model (xG/build_xg.py)
 SHIFT_CSV = ROOT / "NFI" / "Geometry_post" / "Data" / "shift_data.csv"
 GAMES = ROOT / "Data" / "game_ids.csv"
 POSITIONS = ROOT / "NFI" / "Output" / "player_positions.csv"
