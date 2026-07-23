@@ -734,7 +734,7 @@ def _aggregate_nfi_pooled(df: pd.DataFrame) -> pd.DataFrame:
 GITHUB_METHODOLOGY_URL = (
     "https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md"
 )
-TAB_LABELS = ["Player List", "Goalie List",
+TAB_LABELS = ["Player List", "Goalie List", "Box Score",
               "Trade Analyzer", "Teams", "Referees", "Methodology"]
 
 
@@ -1244,7 +1244,7 @@ def _situation_toggle_state() -> str:
     """Shared situation-scope toggle (set by the widget in render_players, read
     wherever the per-situation suite is built this run — same shared-session
     pattern as _pdo_toggle_state). Defaults to 5v5 (the app's native basis)."""
-    s = st.session_state.get("players_situation", "5v5")
+    s = st.session_state.get("g_situation", "5v5")
     return s if s in SITUATION_BUCKETS else "5v5"
 
 
@@ -3221,16 +3221,15 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
     lbl = season_label or ("Playoffs" if playoffs else "")
     faced = kind == "goalie"
     with st.expander("🏒 Shot map", expanded=False):
-        mode = st.radio("Show", ["All shots + goals", "Goals only"], horizontal=True,
+        mode = st.radio("Show", ["Goals only", "All shots + goals"], horizontal=True,
                         key=f"shotmode_{kind}_{ident}", label_visibility="collapsed")
         goals_only = mode == "Goals only"
-        title = f"{name} — {lbl} " + ("Goal Map" if goals_only else "Shot Map") + (" (faced)" if faced else "")
+        nm = name + (" (shots faced)" if faced else "")
         shown = ng if goals_only else len(shots)
         noun = ("goals allowed" if faced else "goals") if goals_only else (
             "shots faced" if faced else "shots")
-        sub = f"{shown:,} {noun}" + (f" · {ng} allowed" if faced and not goals_only else "") \
-            + ("  ·  goalie's-eye view" if faced else "")
-        fig = _sc.shot_chart(shots, title, subtitle=sub, team=team,
+        stat = f"{shown:,} {noun}" + ("  ·  goalie's-eye view" if faced else "")
+        fig = _sc.shot_chart(shots, nm, season=str(lbl), stat=stat, team=team,
                              goalie_view=gv, goals_only=goals_only)
         if fig is not None:
             st.pyplot(fig, clear_figure=True)
@@ -3278,24 +3277,6 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                    if any(pd.notna(v) for v in _player_qg_vals(pid, trend, s).values())]
             if _wd:
                 _yr = _wd[-1]
-    # Per-situation splits — the player's on-ice/individual metrics in every
-    # game state at once (independent of the leaderboard Situation toggle).
-    _sit_tbl = _player_situation_table(int(pid), season_label=season_label)
-    if not _sit_tbl.empty:
-        st.markdown(f"<div style='color:{PALETTE['text']}; font-size:1.1rem; "
-                    "font-weight:700; margin:0.5rem 0 0.2rem;'>Situation splits</div>",
-                    unsafe_allow_html=True)
-        st.caption("On-ice & individual by game state (current scope). PP=5v4+5v3+4v3, "
-                   "PK=4v5+3v5+3v4. xG uses the HockeyROI model.")
-        _sd = _sit_tbl.copy()
-        _sd["TOI"] = _sd["TOI"].map(lambda x: "—" if pd.isna(x) else f"{x:,.0f}")
-        for _c in ("TOI/GP", "xGF/60", "xGA/60", "GF/60", "ixG"):
-            _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}")
-        for _c in ("CF%", "xGF%"):
-            _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.1f}%")
-        _sd["iG"] = _sd["iG"].map(lambda x: "—" if pd.isna(x) else f"{x:.0f}")
-        _show_df(_sd, width="stretch", hide_index=True, key=f"pl_sit_{int(pid)}")
-
     # Shot map (dots + goals bordered; per-season parquet data, team-coloured).
     _pteam = (str(_prow_any["team"].iloc[0])
               if len(_prow_any) and "team" in _prow_any.columns
@@ -4193,12 +4174,121 @@ def _xgqg_nfiqg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
         domain_df=domain_df, year_label=year_label)
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_box_score() -> pd.DataFrame:
+    """NHL Stats API box score (build_box_score.py) + PBP supplement
+    (build_box_score_pbp.py: A1/A2, hits_taken, rebounds_created, FO W/L),
+    merged per (player_id, season, game_type)."""
+    fp = REPO_ROOT / "Data" / "box_score_skaters.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    d = pd.read_csv(fp, dtype={"season": str}).drop_duplicates()
+    pbp_fp = REPO_ROOT / "Data" / "box_score_pbp.csv"
+    if pbp_fp.exists():
+        p = pd.read_csv(pbp_fp, dtype={"season": str})
+        d = d.merge(p, on=["player_id", "season", "game_type"], how="left")
+    return d
+
+
+# Box-score count columns (summed across pooled scopes); rates recomputed after.
+_BOX_SUMS = ["GP", "goals", "assists", "A1", "A2", "points", "shots", "ppGoals",
+             "ppPoints", "shPoints", "hits", "hits_taken", "blockedShots",
+             "takeaways", "giveaways", "minorPenalties", "majorPenalties",
+             "penaltyMinutes", "penaltiesDrawn", "rebounds_created",
+             "faceoffs_won", "faceoffs_lost", "gameWinningGoals"]
+
+
+def render_box_score() -> None:
+    st.markdown(
+        f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Box Score</h2>",
+        unsafe_allow_html=True)
+    season_label, game_type = render_scoped_filters("box")
+    if _block_ref_only(season_label):
+        return
+    _set_dl_title(None)
+    playoffs = game_type == "Playoffs"
+    d = load_box_score()
+    if d.empty:
+        st.error("Box-score data not found (`Data/box_score_skaters.csv`). "
+                 "Run `NFI/scripts/build_box_score.py` + `build_box_score_pbp.py`.")
+        return
+    seasons = _shot_chart_seasons(season_label, playoffs)      # None = all
+    gt = "playoff" if playoffs else "regular"
+    d = d[d["game_type"] == gt]
+    if seasons is not None:
+        d = d[d["season"].isin(seasons)]
+    if d.empty:
+        st.info("No box-score data for this scope.")
+        return
+
+    # aggregate across the scope's seasons (sum counts) — one row per player
+    sums = {c: (c, "sum") for c in _BOX_SUMS if c in d.columns}
+    agg = d.groupby("player_id").agg(
+        player_name=("player_name", "last"), position=("position", "last"),
+        team=("team", "last"), toi_sec=("toi_per_game_sec", "mean"), **sums
+    ).reset_index()
+    # recompute rate stats from summed counts
+    agg["Sh%"] = np.where(agg["shots"] > 0, agg["goals"] / agg["shots"] * 100, np.nan)
+    _fo = agg.get("faceoffs_won", 0) + agg.get("faceoffs_lost", 0)
+    agg["FO%"] = np.where(_fo > 0, agg.get("faceoffs_won", 0) / _fo * 100, np.nan)
+    agg["TOI/GP"] = agg["toi_sec"] / 60.0
+    agg["team"] = agg["team"].astype(str).str.split(",").str[-1]   # most recent team
+
+    c1, c2, c3 = st.columns([1.5, 1.0, 1.3])
+    with c1:
+        _psel = st.selectbox("Search a player", sorted(agg["player_name"].dropna().unique()),
+                             index=None, placeholder="", key="box_search")
+    with c2:
+        pos = st.radio("Position", ["All", "F", "D"], horizontal=True, key="box_pos")
+    with c3:
+        min_gp = st.slider("Min GP", 0, 82, 20, 1, key="box_mingp")
+    if pos == "F":
+        agg = agg[agg["position"].isin(["C", "L", "R"])]
+    elif pos == "D":
+        agg = agg[agg["position"] == "D"]
+    agg = agg[agg["GP"].fillna(0) >= min_gp]
+    if _psel:
+        agg = agg[agg["player_name"] == _psel]
+    if agg.empty:
+        st.info("No players match the filters.")
+        return
+
+    ren = {"player_name": "Player", "position": "Pos", "team": "Team", "goals": "G",
+           "assists": "A", "points": "Pts", "shots": "Sh", "ppPoints": "PPP",
+           "shPoints": "SHP", "hits": "Hits", "hits_taken": "Hits Taken",
+           "blockedShots": "Blocks", "takeaways": "TK", "giveaways": "GV",
+           "minorPenalties": "Min Pen", "majorPenalties": "Maj Pen",
+           "penaltyMinutes": "PIM", "penaltiesDrawn": "Pen Drawn",
+           "rebounds_created": "Reb Created", "faceoffs_won": "FO W",
+           "faceoffs_lost": "FO L", "gameWinningGoals": "GWG"}
+    agg = agg.rename(columns=ren)
+    cols = ["Player", "Pos", "Team", "GP", "TOI/GP",
+            "G", "A1", "A2", "A", "Pts", "PPP", "SHP", "Sh", "Sh%", "GWG",
+            "Reb Created", "TK", "GV",
+            "Hits", "Hits Taken", "Blocks", "Min Pen", "Maj Pen", "PIM", "Pen Drawn",
+            "FO W", "FO L", "FO%"]
+    cols = [c for c in cols if c in agg.columns]
+    disp = agg.sort_values("Pts", ascending=False)[cols].reset_index(drop=True)
+    fmt = {}
+    for c in cols:
+        if c in ("Sh%", "FO%"):
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
+        elif c == "TOI/GP":
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+        elif c not in ("Player", "Pos", "Team"):
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
+    st.caption(f"{len(disp)} skaters · {season_label} · {gt} · sorted by Points. "
+               "Source: NHL Stats API; A1/A2, Hits Taken, Reb Created from play-by-play "
+               "(2022-26 only). Cap hit coming soon.")
+    _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+
+
 def render_players() -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Player List</h2>",
         unsafe_allow_html=True,
     )
-    season_label, game_type = render_scoped_filters("players")
+    season_label, game_type = render_scoped_filters("players", show_situation=True)
     if _block_ref_only(season_label):
         return
     _set_dl_title(None)                    # only drill-in charts get a name
@@ -4306,15 +4396,8 @@ def render_players() -> None:
         st.caption("The shot-scope toggle applies only to **PDO** — other xG columns "
                    "are unaffected.")
     if "Situations" in display_fams:
-        st.session_state.setdefault("players_situation", "5v5")
-        st.radio("Situation", list(SITUATION_BUCKETS), horizontal=True,
-                 key="players_situation",
-                 help="Reframes every 'Sit ' column to this game state. PP = "
-                      "5v4+5v3+4v3, PK = 4v5+3v5+3v4. The other families "
-                      "(RelNFI/QG/Zone) stay 5v5-native.")
-        st.caption("**Situation** drives the **Sit** columns only (possession/xG/"
-                   "individual for the chosen state). PP=5v4+5v3+4v3, PK=4v5+3v5+3v4. "
-                   "RelNFI/QG/Zone Impact remain 5v5.")
+        st.caption("**Sit** columns follow the **Situation** filter above (next to Game "
+                   "type). PP=5v4+5v3+4v3, PK=4v5+3v5+3v4. RelNFI/QG/Zone stay 5v5.")
     with tcol:
         if playoffs:
             min_toi = st.slider("Min ES TOI (min)", 0, 1500, rank_floor, 25,
@@ -4713,19 +4796,6 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
     hdf = pd.DataFrame([{m: v for m, v in items}])[[m for m, _ in items]]
     _show_df(hdf, width="stretch", hide_index=True)
 
-    # Per-situation splits (pooled playoffs) — same table as the regular drill-in.
-    _st = _player_situation_table(int(pid), playoffs=True)
-    if not _st.empty:
-        st.caption("Situation splits (pooled playoffs) — PP=5v4+5v3+4v3, PK=4v5+3v5+3v4.")
-        _sd = _st.copy()
-        _sd["TOI"] = _sd["TOI"].map(lambda x: "—" if pd.isna(x) else f"{x:,.0f}")
-        for _c in ("TOI/GP", "xGF/60", "xGA/60", "GF/60", "ixG"):
-            _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}")
-        for _c in ("CF%", "xGF%"):
-            _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.1f}%")
-        _sd["iG"] = _sd["iG"].map(lambda x: "—" if pd.isna(x) else f"{x:.0f}")
-        _show_df(_sd, width="stretch", hide_index=True, key=f"po_sit_{int(pid)}")
-
     # Combined NFI+xG Quality-Games bar (Raw+Rel paired) and the Zone Impact bar
     # — same charts as the regular-season drill-in, built from this player's
     # pooled playoff row, both on the shared fixed 30–75 y-axis.
@@ -4986,7 +5056,7 @@ def render_teams() -> None:
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Teams</h2>",
         unsafe_allow_html=True,
     )
-    season_label, game_type = render_scoped_filters("teams")
+    season_label, game_type = render_scoped_filters("teams", show_situation=True)
     if _block_ref_only(season_label):
         return
     _set_dl_title(None)
@@ -5002,11 +5072,6 @@ def render_teams() -> None:
     qg = load_team_qg()
     key = SEASON_KEY.get(season_label, "pooled")
     is_pooled = key in ("pooled", "pooled_2yr")
-    st.session_state.setdefault("teams_situation", "5v5")
-    st.radio("Situation", list(SITUATION_BUCKETS), horizontal=True,
-             key="teams_situation",
-             help="Reframes the 'Sit' team columns to this game state "
-                  "(PP=5v4+5v3+4v3, PK=4v5+3v5+3v4). NFI/QG/Zone stay 5v5-native.")
     # "pooled_2yr" aggregates only 2024–2026; full pooled aggregates all four.
     pooled_seasons = POOLED_2YR_SEASONS if key == "pooled_2yr" else POOLED_SEASONS
 
@@ -5071,8 +5136,8 @@ def render_teams() -> None:
                .rename(columns=dict(zip(_zbase, zcols))))
         team = team.merge(tzw, on="team", how="left")
 
-    # Per-situation team suite — driven by the Situation toggle.
-    tsit = _team_situation_metrics(key, st.session_state.get("teams_situation", "5v5"))
+    # Per-situation team suite — driven by the global Situation filter.
+    tsit = _team_situation_metrics(key, _situation_toggle_state())
     if not tsit.empty:
         team = team.merge(tsit[["Team"] + TEAM_SIT_COLS].rename(columns={"Team": "team"}),
                           on="team", how="left")
@@ -6411,19 +6476,6 @@ def render_trade_analyzer() -> None:
             st.info("No per-season data available for this player.")
         else:
             _show_df(disp, width="stretch", hide_index=True)
-        # Situation splits (same table as the single-player drill-in).
-        _st = _player_situation_table(int(pid), season_label=season_label)
-        if not _st.empty:
-            st.caption("Situation splits — on-ice & individual by game state "
-                       "(PP=5v4+5v3+4v3, PK=4v5+3v5+3v4).")
-            _sd = _st.copy()
-            _sd["TOI"] = _sd["TOI"].map(lambda x: "—" if pd.isna(x) else f"{x:,.0f}")
-            for _c in ("TOI/GP", "xGF/60", "xGA/60", "GF/60", "ixG"):
-                _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}")
-            for _c in ("CF%", "xGF%"):
-                _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.1f}%")
-            _sd["iG"] = _sd["iG"].map(lambda x: "—" if pd.isna(x) else f"{x:.0f}")
-            _show_df(_sd, width="stretch", hide_index=True, key=f"trade_sit_{int(pid)}")
 
     # Then the side-by-side comparison charts — one panel per player. Bars = the
     # filter's year; the secondary line image = QG % over time. NFI and xG are
@@ -7054,7 +7106,7 @@ def render_referees() -> None:
 POOLED_4YR_LABEL = "4yr (2022-2026)"
 
 
-def render_scoped_filters(scope: str) -> tuple[str, str]:
+def render_scoped_filters(scope: str, show_situation: bool = False) -> tuple[str, str]:
     """Season + game-type filters rendered INSIDE each tab (next to that tab's own
     filters), but kept GLOBAL: every tab writes to and reads from the same shared
     session_state, so changing the season on one tab changes it everywhere. Each
@@ -7081,7 +7133,18 @@ def render_scoped_filters(scope: str) -> tuple[str, str]:
     def _sync_ssn():
         st.session_state["g_season_pick"] = st.session_state[_ss_key]
 
-    c1, c2 = st.columns([1.2, 2.4])
+    _sit_key = f"g_sit_{scope}"
+
+    def _sync_sit():
+        st.session_state["g_situation"] = st.session_state[_sit_key]
+
+    if show_situation:
+        st.session_state.setdefault("g_situation", "5v5")
+        st.session_state[_sit_key] = st.session_state["g_situation"]
+        cols = st.columns([1.2, 1.7, 1.5])
+    else:
+        cols = st.columns([1.2, 2.4])
+    c1, c2 = cols[0], cols[1]
     with c1:
         if is_playoffs:
             st.selectbox("Season", season_opts,
@@ -7094,6 +7157,12 @@ def render_scoped_filters(scope: str) -> tuple[str, str]:
     with c2:
         game_type = st.radio("Game type", ["Regular Season", "Playoffs"],
                              horizontal=True, key=_gt_key, on_change=_sync_gt)
+    if show_situation:
+        with cols[2]:
+            st.selectbox("Situation", list(SITUATION_BUCKETS), key=_sit_key,
+                         on_change=_sync_sit,
+                         help="Applies to the 'Sit' metric columns / Situation-splits "
+                              "(PP=5v4+5v3+4v3, PK=4v5+3v5+3v4). NFI/QG/Zone stay 5v5.")
     if game_type == "Playoffs":
         st.caption("Playoffs pool all seasons (2022-23 → 2024-25); the Season filter "
                    "is locked to the pooled view. Season & game type apply to all tabs.")
@@ -7133,12 +7202,14 @@ def main() -> None:
     # The Season + Game-type filter now lives at the top of each tab (rendered by
     # render_scoped_filters), grouped with that tab's own filters but kept in sync
     # across tabs — rather than a standalone row above the tabs.
-    (player_list_tab, goalie_list_tab,
+    (player_list_tab, goalie_list_tab, box_tab,
      trade_tab, teams_tab, refs_tab, meth_tab) = st.tabs(TAB_LABELS)
     with player_list_tab:
         render_players()
     with goalie_list_tab:
         render_goalies()
+    with box_tab:
+        render_box_score()
     with trade_tab:
         render_trade_analyzer()
     with teams_tab:

@@ -48,16 +48,22 @@ TEAM_COLORS: dict[str, tuple[str, str]] = {
 }
 _DEFAULT_COLOR = ("#4C6EF5", "#111111")
 
-# Shot-type palette (stable, distinct)
+# Brand (match the app's Altair charts)
+NAVY = "#1B3A5C"        # PALETTE["text"] — titles, numbers, wordmark "HOCKEY"
+ORANGE = "#FF6B35"      # PALETTE["orange"] — wordmark "ROI"
+GREY = "#888888"        # text_secondary
+GOAL_EDGE = "#111111"   # goal dots: black perimeter
+
+# Shot-type palette — per user: snap=orange, slap=yellow, backhand=purple
 SHOT_TYPE_COLORS = {
-    "wrist": "#4C9BE8", "snap": "#2F5FBF", "slap": "#E8934A", "backhand": "#F2C744",
-    "tip-in": "#5FBF7F", "deflected": "#2E8B57", "wrap-around": "#B05FD6",
-    "bat": "#D65FA6", "between-legs": "#9C6B4A", "poke": "#8FA0A8",
+    "wrist": "#4C9BE8", "snap": "#FF6B35", "slap": "#F2C744", "backhand": "#8E5BD6",
+    "tip-in": "#3FB37F", "deflected": "#2E8B57", "wrap-around": "#D65FA6",
+    "bat": "#E86AA6", "between-legs": "#9C6B4A", "poke": "#8FA0A8",
     "cradle": "#8FA0A8", "unknown": "#9AA5AD",
 }
-ICE = "#FFFFFF"
-ICE_LINE = "#9DBBD6"
-GOAL_RED = "#C33"
+ICE = "#F4F8FC"         # super-light blue — no border needed
+ICE_LINE = "#BFD4E6"    # subtle interior lines (blue line / goal line / circles)
+GOAL_RED = "#D4706A"
 
 
 def team_color(team: str) -> tuple[str, str]:
@@ -86,29 +92,34 @@ def load_shots(seasons: list[str] | None = None, game_type: str = "regular") -> 
 
 
 def _draw_rink(ax) -> None:
-    """Offensive half, net at the right. Data coords (x ~25-99, y -42..42)."""
+    """Offensive half, net at the right. No border — the ice is just the light
+    axes background (data coords x ~25-99, y -42..42)."""
     ax.set_xlim(24, 100)
     ax.set_ylim(-43, 43)
     ax.set_aspect("equal")
-    ax.axis("off")
-    ax.add_patch(Rectangle((24, -43), 76, 86, facecolor=ICE, edgecolor=ICE_LINE, lw=1.5, zorder=0))
-    ax.axvline(25, color=ICE_LINE, lw=3, alpha=0.8, zorder=1)      # blue line
-    ax.text(25, 40, "BLUE LINE", color=ICE_LINE, fontsize=7, ha="left", va="top", weight="bold")
-    ax.axvline(89, color=GOAL_RED, lw=2, alpha=0.85, zorder=1)     # goal line
-    ax.text(89, 40, "GOAL LINE", color=GOAL_RED, fontsize=7, ha="right", va="top", weight="bold")
-    ax.add_patch(Rectangle((89, -3), 4, 6, facecolor="#C33", alpha=0.75, zorder=2))  # net
-    ax.add_patch(Arc((89, 0), 16, 12, theta1=90, theta2=270, color=ICE_LINE, lw=1, alpha=0.6))
-    for cy in (-22, 22):                                            # faceoff circles
-        ax.add_patch(plt.Circle((69, cy), 15, fill=False, edgecolor=ICE_LINE, lw=0.8, alpha=0.4))
-        ax.add_patch(plt.Circle((69, cy), 0.8, color=ICE_LINE, alpha=0.5))
+    ax.set_facecolor(ICE)                 # ice = light background, no perimeter
+    for s in ax.spines.values():
+        s.set_visible(False)
+    ax.set_xticks([]); ax.set_yticks([])
+    ax.axvline(25, color="#8FB2D4", lw=2.5, alpha=0.7, zorder=1)   # blue line
+    ax.text(25, 41, "BLUE LINE", color="#6F93B5", fontsize=7.5, ha="left",
+            va="top", weight="bold", family="sans-serif")
+    ax.axvline(89, color=GOAL_RED, lw=1.8, alpha=0.8, zorder=1)    # goal line
+    ax.text(88, 41, "GOAL LINE", color=GOAL_RED, fontsize=7.5, ha="right",
+            va="top", weight="bold", family="sans-serif")
+    ax.add_patch(Rectangle((89, -3), 3.5, 6, facecolor=GOAL_RED, alpha=0.8, zorder=2))
+    ax.add_patch(Arc((89, 0), 14, 11, theta1=90, theta2=270, color=ICE_LINE, lw=1, alpha=0.7))
+    for cy in (-22, 22):                                           # faceoff circles
+        ax.add_patch(plt.Circle((69, cy), 15, fill=False, edgecolor=ICE_LINE, lw=0.9, alpha=0.6))
+        ax.add_patch(plt.Circle((69, cy), 0.8, color=ICE_LINE, alpha=0.7))
 
 
-def shot_chart(shots: pd.DataFrame, title: str, subtitle: str = "",
+def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
                team: str | None = None, goalie_view: bool = False,
                show_bubbles: bool = True, goals_only: bool = False,
-               footer: str = "@HockeyROI | hockeyROI.substack.com"):
+               url: str = "hockeyROI.substack.com"):
     """Render a shot chart figure. Returns the matplotlib Figure (or None).
-    goals_only: plot just the goals (still bordered); otherwise all shots."""
+    Header stacks: NAME (big) / season / stat line. goals_only: just goals."""
     if shots is None or shots.empty:
         return None
     d = shots.dropna(subset=["x_coord_norm", "y_coord_norm"]).copy()
@@ -122,40 +133,49 @@ def shot_chart(shots: pd.DataFrame, title: str, subtitle: str = "",
     prim, accent = team_color(team) if team else _DEFAULT_COLOR
     st = d["shot_type"].fillna("unknown").str.lower()
     cols = st.map(SHOT_TYPE_COLORS).fillna("#9AA5AD").to_numpy()
-    # density layer uses whatever points are shown (all shots, or goals only)
-    bx, by = (x[goal], y[goal]) if goals_only else (x, y)
-
-    fig, ax = plt.subplots(figsize=(8.2, 5.6), dpi=150)
+    fig, ax = plt.subplots(figsize=(8.2, 5.8), dpi=150)
     fig.patch.set_facecolor("white")
     _draw_rink(ax)
-
-    if show_bubbles and len(bx) >= 12:   # grouping/density layer
-        ax.hexbin(bx, by, gridsize=16, extent=(25, 99, -42, 42), mincnt=1,
-                  cmap="Blues", alpha=0.35, zorder=1, linewidths=0)
 
     if not goals_only:
         # non-goal shots: colored by type, no border. Size/alpha shrink with
         # volume so high-count goalies/teams read as a heat cloud, not a blob.
         n = len(x)
-        ds, da = (42, 0.72) if n < 400 else (24, 0.5) if n < 1200 else (13, 0.4)
+        ds, da = (48, 0.75) if n < 400 else (26, 0.5) if n < 1200 else (14, 0.4)
         ax.scatter(x[~goal], y[~goal], s=ds, c=cols[~goal], alpha=da,
                    edgecolors="none", zorder=3)
-    # goals: same fill, thick dark outer border — always prominent
-    ax.scatter(x[goal], y[goal], s=70, c=cols[goal], alpha=0.95,
-               edgecolors=accent, linewidths=1.8, zorder=4)
+    # goals: shot-type fill + black outer border
+    ax.scatter(x[goal], y[goal], s=88, c=cols[goal], alpha=0.95,
+               edgecolors=GOAL_EDGE, linewidths=1.6, zorder=4)
 
-    ax.set_title(title, fontsize=15, weight="bold", color="#1A1A1A", loc="left", pad=10)
-    if subtitle:
-        ax.text(0.0, 1.005, subtitle, transform=ax.transAxes, fontsize=9,
-                color="#666", ha="left", va="bottom")
-    # legend: shot types present + goal marker
-    present = [t for t in SHOT_TYPE_COLORS if t in set(st)]
+    # stacked header: NAME (big) / season / stat line
+    ax.text(0.0, 1.15, name.upper(), transform=ax.transAxes, fontsize=17,
+            weight="bold", color=NAVY, ha="left", va="bottom", family="sans-serif")
+    if season:
+        ax.text(0.0, 1.085, season, transform=ax.transAxes, fontsize=11.5,
+                color=NAVY, ha="left", va="bottom", family="sans-serif")
+    if stat:
+        ax.text(0.0, 1.02, stat, transform=ax.transAxes, fontsize=9.5,
+                color=GREY, ha="left", va="bottom", family="sans-serif")
+    # legend: shot types present + a white/black "Goal" marker
+    present = [t for t in SHOT_TYPE_COLORS if t in set(st) and t != "unknown"]
     handles = [plt.Line2D([0], [0], marker="o", ls="", mfc=SHOT_TYPE_COLORS[t],
-                          mec="none", ms=7, label=t.title()) for t in present[:8]]
-    handles.append(plt.Line2D([0], [0], marker="o", ls="", mfc="#ccc",
-                              mec=accent, mew=1.8, ms=8, label="Goal"))
-    ax.legend(handles=handles, loc="lower left", ncol=4, fontsize=7,
-              frameon=False, bbox_to_anchor=(0.0, -0.16))
-    fig.text(0.5, 0.005, footer, ha="center", fontsize=7, color="#999", style="italic")
-    fig.tight_layout(rect=(0, 0.02, 1, 1))
+                          mec="none", ms=8, label=t.replace("-", " ").title())
+               for t in present[:8]]
+    handles.append(plt.Line2D([0], [0], marker="o", ls="", mfc="white",
+                              mec=GOAL_EDGE, mew=1.6, ms=9, label="Goal"))
+    leg = ax.legend(handles=handles, loc="upper center", ncol=5, fontsize=8,
+                    frameon=False, bbox_to_anchor=(0.5, -0.02),
+                    handletextpad=0.3, columnspacing=1.1)
+    for txt in leg.get_texts():
+        txt.set_color(NAVY)
+    # two-colour HOCKEY·ROI wordmark + url, centred at the bottom (app charts)
+    fig.text(0.5, 0.045, "HOCKEY", ha="right", va="bottom", color=NAVY,
+             weight="bold", fontsize=12, family="sans-serif")
+    fig.text(0.5, 0.045, "ROI", ha="left", va="bottom", color=ORANGE,
+             weight="bold", fontsize=12, family="sans-serif")
+    if url:
+        fig.text(0.5, 0.02, url, ha="center", va="bottom", color=GREY,
+                 fontsize=7.5, style="italic", family="sans-serif")
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.84, bottom=0.17)
     return fig
