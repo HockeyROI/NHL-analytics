@@ -558,6 +558,8 @@ _ABBR_FULL = {
     "Sit iG": "Individual Goals (total) — selected situation",
     "Sit PP xGF+CF/60": "Power-play value: on-ice xGF/60 + CF/60 (higher = better) — use with PP situation",
     "Sit PK xGA+CA/60": "Penalty-kill value: on-ice xGA/60 + CA/60 (LOWER = better) — use with PK situation",
+    "Sit RelCF%": "Relative Corsi For % — on-ice CF% minus the team's CF% with the player OFF (selected situation; season-aggregate on/off, exact for one-team players, approximate across mid-scope trades, blank for heavy multi-team cases)",
+    "Sit RelxGF%": "Relative xGF % — on-ice xGF% minus the team's xGF% with the player OFF (selected situation; season-aggregate on/off, exact for one-team players, approximate across trades)",
 }
 
 
@@ -798,10 +800,14 @@ def render_methodology() -> None:
             "<i>situation_code</i>, on-ice players from the shift intervals, and time-on-ice per "
             "situation is reconstructed the same way (so every rate is counts ÷ that situation's TOI, "
             "by ratio-of-sums). Columns: <b>CF/CA, FF/FA, xGF/xGA, GF/GA</b> per-60 and their shares "
-            "(<b>CF%/FF%/xGF%/GF%</b>), individual <b>iCF/ixG/iG</b> per-60, plus dedicated "
-            "special-teams value scores — <b>PP xGF+CF/60</b> (higher = better) and "
-            "<b>PK xGA+CA/60</b> (lower = better), an NST-style single number for power-play offense "
-            "and penalty-kill defense. xG is the HockeyROI model (not MoneyPuck). "
+            "(<b>CF%/FF%/xGF%/GF%</b>), individual <b>iCF/ixG/iG</b> per-60, on/off relatives "
+            "(<b>Sit RelCF%/RelxGF%</b> — the player's share minus his team's share with him off, "
+            "per situation; a season-aggregate on/off, exact for one-team players and approximate "
+            "across mid-scope trades), plus dedicated special-teams value scores — "
+            "<b>PP xGF+CF/60</b> (higher = better) and <b>PK xGA+CA/60</b> (lower = better), an "
+            "NST-style single number for power-play offense and penalty-kill defense. xG is the "
+            "HockeyROI model (not MoneyPuck), and a matching Situation toggle on the Teams tab gives "
+            "team-level versions of all these. "
             "<b>Scope note:</b> the bespoke 5v5-native families — RelNFI, Quality Games, Zone Impact "
             "— stay on their 5v5 basis and are <i>not</i> re-derived per situation (their "
             "team-relative / per-game-median / faceoff-anchored constructions assume even strength). "
@@ -1326,7 +1332,69 @@ def _situation_metrics(scope_key: str, bucket_label: str,
     # CF/60; PK defence = xGA/60 + CA/60 (lower is better on PK).
     out["Sit PP xGF+CF/60"] = out["Sit xGF/60"] + out["Sit CF/60"]
     out["Sit PK xGA+CA/60"] = out["Sit xGA/60"] + out["Sit CA/60"]
+    # raw on-ice counts kept (prefixed, not displayed) for the on/off Rel calc
+    for c in ("CF", "CA", "xGF", "xGA"):
+        out[f"_sr_{c}"] = g[c].values
+    out["_sr_toi"] = toi.values
     return out
+
+
+def _team_situation_raw(scope_key: str, bucket_label: str,
+                        playoffs: bool = False) -> pd.DataFrame:
+    """Per-team RAW summed on-ice counts for a scope+bucket (for the on/off
+    team-without-player baseline). Keyed on 'team'."""
+    df = load_team_situation_onice()
+    if df.empty:
+        return pd.DataFrame()
+    df = df[df["game_type"] == ("playoff" if playoffs else "regular")]
+    seasons = _situation_seasons(scope_key, playoffs)
+    if seasons is not None:
+        df = df[df["season"].isin(seasons)]
+    mats = SITUATION_BUCKETS.get(bucket_label, ["5v5"])
+    if mats is not None:
+        df = df[df["situation"].isin(mats)]
+    if df.empty:
+        return pd.DataFrame()
+    g = df.groupby("team")[["CF", "CA", "xGF", "xGA", "toi_min"]].sum().reset_index()
+    return g.rename(columns={c: f"_tr_{c}" for c in ("CF", "CA", "xGF", "xGA")}
+                    ).rename(columns={"toi_min": "_tr_toi"})
+
+
+def _add_situation_rel(base: pd.DataFrame, scope_key: str, bucket_label: str,
+                       playoffs: bool = False) -> pd.DataFrame:
+    """Add per-situation on/off relatives (Sit RelCF% / Sit RelxGF%) =
+    player's on-ice share minus the SAME team's share with the player OFF.
+    Computed only where the without-player split is clean (single team,
+    non-traded); traded players and multi-team pooled scopes -> NaN, since a
+    single season-team total can't isolate the player's off-ice context there.
+    Mirrors the existing 5v5 RelNFI's on/off definition, per situation."""
+    need = [f"_sr_{c}" for c in ("CF", "CA", "xGF", "xGA")] + ["_sr_toi"]
+    if base.empty or "team" not in base.columns or not all(c in base.columns for c in need):
+        return base
+    tr = _team_situation_raw(scope_key, bucket_label, playoffs)
+    if tr.empty:
+        return base
+    base = base.merge(tr, on="team", how="left")
+    wo_cf = base["_tr_CF"] - base["_sr_CF"]
+    wo_ca = base["_tr_CA"] - base["_sr_CA"]
+    wo_xgf = base["_tr_xGF"] - base["_sr_xGF"]
+    wo_xga = base["_tr_xGA"] - base["_sr_xGA"]
+    wo_toi = base["_tr_toi"] - base["_sr_toi"]
+    valid = ((wo_toi > 1) & (wo_cf >= 0) & (wo_ca >= 0) & (wo_xgf >= 0)
+             & (wo_xga >= 0) & (base["_sr_toi"] > 0))
+
+    def _share(f, a):
+        d = f + a
+        return np.where(d > 0, f / d * 100.0, np.nan)
+
+    p_cf = _share(base["_sr_CF"], base["_sr_CA"])
+    p_xgf = _share(base["_sr_xGF"], base["_sr_xGA"])
+    w_cf = _share(wo_cf, wo_ca)
+    w_xgf = _share(wo_xgf, wo_xga)
+    base["Sit RelCF%"] = np.where(valid, p_cf - w_cf, np.nan)
+    base["Sit RelxGF%"] = np.where(valid, p_xgf - w_xgf, np.nan)
+    return base.drop(columns=[c for c in base.columns
+                              if c.startswith("_tr_") or c.startswith("_sr_")])
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -3553,6 +3621,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         sit = _situation_metrics("pooled", _situation_toggle_state(), playoffs=True)
         if not sit.empty and not base.empty:
             base = base.merge(sit, on="player_id", how="left")
+            base = _add_situation_rel(base, "pooled", _situation_toggle_state(), playoffs=True)
+        base = base.drop(columns=[c for c in base.columns
+                                  if c.startswith("_sr_") or c.startswith("_tr_")],
+                         errors="ignore")
         return base, True
 
     nfi = load_nfi_player()
@@ -3642,6 +3714,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     sit = _situation_metrics(key, _situation_toggle_state(), playoffs=False)
     if not sit.empty and not base.empty:
         base = base.merge(sit, on="player_id", how="left")
+        base = _add_situation_rel(base, key, _situation_toggle_state(), playoffs=False)
+    base = base.drop(columns=[c for c in base.columns
+                              if c.startswith("_sr_") or c.startswith("_tr_")],
+                     errors="ignore")
     return base, is_pooled
 
 
@@ -3676,6 +3752,7 @@ PLAYER_FAMILY_COLS = {
                    "Sit xGF/60", "Sit xGA/60", "Sit xGF%",
                    "Sit GF/60", "Sit GA/60", "Sit GF%",
                    "Sit iCF/60", "Sit ixG/60", "Sit iG/60", "Sit ixG", "Sit iG",
+                   "Sit RelCF%", "Sit RelxGF%",
                    "Sit PP xGF+CF/60", "Sit PK xGA+CA/60"],
 }
 SITUATION_FAMILY_COLS = PLAYER_FAMILY_COLS["Situations"]
@@ -4365,6 +4442,9 @@ def render_players() -> None:
     for c in ("Sit CF%", "Sit FF%", "Sit xGF%", "Sit GF%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
+    for c in ("Sit RelCF%", "Sit RelxGF%"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
     if "Sit TOI/GP" in disp.columns:
         fmt["Sit TOI/GP"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "Sit iG" in disp.columns:

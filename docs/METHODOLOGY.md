@@ -338,11 +338,11 @@ Built by `NFI/scripts/build_situation_onice.py` (on-ice counts → `Data/player_
 
 ### Columns
 
-Per-60: `CF/CA, FF/FA, xGF/xGA, GF/GA`; shares `CF%/FF%/xGF%/GF%`; individual `iCF/ixG/iG` per-60 (+ `ixG`/`iG` totals). Two dedicated special-teams value scores (NST-style): **PP xGF+CF/60** (higher = better power-play offense) and **PK xGA+CA/60** (lower = better penalty-kill defense).
+Per-60: `CF/CA, FF/FA, xGF/xGA, GF/GA`; shares `CF%/FF%/xGF%/GF%`; individual `iCF/ixG/iG` per-60 (+ `ixG`/`iG` totals). On/off relatives **Sit RelCF% / Sit RelxGF%** (the player's on-ice share minus his team's share with him **off**, per situation — a season-aggregate on/off: exact for one-team players, approximate across mid-scope trades, and self-blanked for heavy multi-team cases). Two dedicated special-teams value scores (NST-style): **PP xGF+CF/60** (higher = better power-play offense) and **PK xGA+CA/60** (lower = better penalty-kill defense). All of these also exist **team-level** via a matching Situation toggle on the Teams tab (`Data/team_situation_onice.csv`, `NFI/scripts/build_situation_onice_team.py`).
 
 ### Scope and caveats
 
-- The bespoke 5v5-native families — **RelNFI, Quality Games, Zone Impact** — are **not** re-derived per situation. Their team-relative (on/off), per-game-median, and faceoff-anchored constructions assume even strength, so they stay on the 5v5 basis and are labeled accordingly outside 5v5.
+- The **canonical RelNFI** (game-level team-without-me from the FA pipeline), **Quality Games**, and **Zone Impact** are **not** re-derived per situation — their per-game-median and faceoff-anchored constructions assume even strength, so they stay 5v5 and are labeled accordingly. The per-situation `Sit RelCF%/RelxGF%` above are a lighter season-aggregate on/off, not a replacement for the game-level RelNFI.
 - Per-situation **league totals** carry an on-ice roster-size multiplier (5 for-skaters vs 4 against-skaters on a power play) plus shift-reconstruction noise, so player comparison should use the per-60 **rates** and **shares**, not raw summed totals. 5v5 for/against totals are league-symmetric to <0.2% as a correctness check.
 
 Validation (2026-07-22): 5v5 league ΣxGF≈ΣxGA and ΣGF≈ΣGA to <0.2%; McDavid 2025-26 5v5 xGF% 55.9 with individual ixG 23.9 ≈ 24 actual goals; PP xGF/60 leaders and PK lowest-xGA/60 lists match expectation.
