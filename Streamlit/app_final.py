@@ -560,6 +560,8 @@ _ABBR_FULL = {
     "Sit PK xGA+CA/60": "Penalty-kill value: on-ice xGA/60 + CA/60 (LOWER = better) — use with PK situation",
     "Sit RelCF%": "Relative Corsi For % — on-ice CF% minus the team's CF% with the player OFF (selected situation; season-aggregate on/off, exact for one-team players, approximate across mid-scope trades, blank for heavy multi-team cases)",
     "Sit RelxGF%": "Relative xGF % — on-ice xGF% minus the team's xGF% with the player OFF (selected situation; season-aggregate on/off, exact for one-team players, approximate across trades)",
+    "Sit PDO": "PDO (luck) — on-ice SH% + SV% (SOG-based) for the selected situation; ~100 = neutral, higher = running hot. Raw, NOT xG-adjusted (that's PDOxG).",
+    "Sit PDOxG": "PDOxG — PDO net of expected: (SH% − xSH%) + (SV% − xSV%) from the xG model, SOG-based. 0-centered; + = finishing/goaltending above xG. Selected situation.",
 }
 
 
@@ -1279,8 +1281,8 @@ def _situation_seasons(scope_key: str, playoffs: bool) -> list[str] | None:
 
 
 # internal count columns produced by the engine
-_SIT_COUNTS = ["CF", "FF", "xGF", "GF", "CA", "FA", "xGA", "GA",
-               "iCF", "iFF", "ixG", "iG", "toi_min"]
+_SIT_COUNTS = ["CF", "FF", "xGF", "GF", "CA", "FA", "xGA", "GA", "SOGF", "SOGA",
+               "xGFs", "xGAs", "iCF", "iFF", "ixG", "iG", "toi_min"]
 
 
 def _situation_metrics(scope_key: str, bucket_label: str,
@@ -1332,6 +1334,16 @@ def _situation_metrics(scope_key: str, bucket_label: str,
     # CF/60; PK defence = xGA/60 + CA/60 (lower is better on PK).
     out["Sit PP xGF+CF/60"] = out["Sit xGF/60"] + out["Sit CF/60"]
     out["Sit PK xGA+CA/60"] = out["Sit xGA/60"] + out["Sit CA/60"]
+    # PDO (raw luck) = on-ice SH% + SV%, SOG-based, per situation (NST-style)
+    _ok_pdo = (g["SOGF"] > 0) & (g["SOGA"] > 0)
+    _sh = np.where(g["SOGF"] > 0, g["GF"] / g["SOGF"], np.nan)
+    _sv = np.where(g["SOGA"] > 0, 1 - g["GA"] / g["SOGA"], np.nan)
+    out["Sit PDO"] = np.where(_ok_pdo, (_sh + _sv) * 100, np.nan)
+    # PDOxG = luck NET of expected: (SH% - xSH%) + (SV% - xSV%), SOG-based xG.
+    # 0-centred; positive = finishing/goaltending above what xG predicts.
+    _xsh = np.where(g["SOGF"] > 0, g["xGFs"] / g["SOGF"], np.nan)
+    _xsv = np.where(g["SOGA"] > 0, 1 - g["xGAs"] / g["SOGA"], np.nan)
+    out["Sit PDOxG"] = np.where(_ok_pdo, ((_sh - _xsh) + (_sv - _xsv)) * 100, np.nan)
     # raw on-ice counts kept (prefixed, not displayed) for the on/off Rel calc
     for c in ("CF", "CA", "xGF", "xGA"):
         out[f"_sr_{c}"] = g[c].values
@@ -3800,7 +3812,7 @@ PLAYER_FAMILY_COLS = {
                    "Sit GF/60", "Sit GA/60", "Sit GF%",
                    "Sit iCF/60", "Sit ixG/60", "Sit iG/60", "Sit ixG", "Sit iG",
                    "Sit RelCF%", "Sit RelxGF%",
-                   "Sit PP xGF+CF/60", "Sit PK xGA+CA/60"],
+                   "Sit PP xGF+CF/60", "Sit PK xGA+CA/60", "Sit PDO", "Sit PDOxG"],
 }
 SITUATION_FAMILY_COLS = PLAYER_FAMILY_COLS["Situations"]
 
@@ -4594,6 +4606,10 @@ def render_players() -> None:
     for c in ("Sit RelCF%", "Sit RelxGF%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
+    if "Sit PDO" in disp.columns:
+        fmt["Sit PDO"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    if "Sit PDOxG" in disp.columns:
+        fmt["Sit PDOxG"] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
     if "Sit TOI/GP" in disp.columns:
         fmt["Sit TOI/GP"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "Sit iG" in disp.columns:
@@ -5689,8 +5705,8 @@ def _goalie_gsax_bar(row, qg_scope_suffix: str = "") -> None:
     panels = [p for p in (total, per60) if p is not None]
     if not panels:
         return
-    st.caption(f"**{row['Season']}** — GSAx vs **starter-tier average**: "
-               "total (left) / per-60 (right).")
+    st.markdown("<div style='margin-top:0.8rem;'></div>", unsafe_allow_html=True)
+    st.caption(f"**{row['Season']}** — GSAx vs **starter-tier average** (total, then per-60).")
     # Note (blue) — the starter-average baseline for the open season, like the sQS% note.
     if _ssn:
         def _fmt(mtot, m60):
@@ -5710,8 +5726,11 @@ def _goalie_gsax_bar(row, qg_scope_suffix: str = "") -> None:
                 f"<b>sQS% starter baseline save% ({_scope_label})</b> — a game clears sQS% "
                 f"when its save% beats this line: {row['Season']} {_sqs_bl:.1f}%.</div>",
                 unsafe_allow_html=True)
-    _show_chart(alt.hconcat(*panels, spacing=110), dl_name=f"Goalie-GSAx-{row['Season']}",
-                brand_width=320 * len(panels) + 110 * (len(panels) - 1))
+    # Two separate charts (total, then per-60) — each its own downloadable image.
+    if total is not None:
+        _show_chart(total, dl_name=f"Goalie-GSAx-total-{row['Season']}", brand_width=340)
+    if per60 is not None:
+        _show_chart(per60, dl_name=f"Goalie-GSAx-per60-{row['Season']}", brand_width=340)
 
 
 def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True,

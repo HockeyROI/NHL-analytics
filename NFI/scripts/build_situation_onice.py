@@ -53,11 +53,13 @@ REQUIRED_SHIFT_COLS = ["game_id", "player_id", "period", "team_abbrev",
                        "abs_start_secs", "abs_end_secs"]
 CORSI = {"shot-on-goal", "missed-shot", "goal", "blocked-shot"}
 FENWICK = {"shot-on-goal", "missed-shot", "goal"}
+SOG = {"shot-on-goal", "goal"}          # shots on goal (for PDO's SH%/SV%)
 _KEEP = {3, 4, 5, 6}
 
-# per-player accumulator field order
+# per-player accumulator field order. SOGF/SOGA + xGFs/xGAs (xG on the SOG
+# subset) feed per-situation PDO and PDOxG (both SOG-based, like build_pdo_sog).
 FIELDS = ["toi_min", "CF", "FF", "xGF", "GF", "CA", "FA", "xGA", "GA",
-          "iCF", "iFF", "ixG", "iG"]
+          "SOGF", "SOGA", "xGFs", "xGAs", "iCF", "iFF", "ixG", "iG"]
 
 
 def situation_label(own: int, opp: int) -> str:
@@ -98,6 +100,7 @@ def main() -> int:
     ev["xg"] = ev["xg"].fillna(0.0)
     ev["abs_time"] = ev["time_secs"].astype(int) + (ev["period"].astype(int) - 1) * 1200
     ev["is_fen"] = ev["event_type"].isin(FENWICK)
+    ev["is_sog"] = ev["event_type"].isin(SOG)
     ev["is_goal_i"] = ev["is_goal"].astype(int)
     sc = ev["situation_code"].astype(str).str.zfill(4)
     ev["away_sk"] = sc.str[1].astype(int)
@@ -184,7 +187,10 @@ def main() -> int:
         # ---------- event attribution ----------
         for row in ge.itertuples(index=False):
             t = int(row.abs_time)
-            on = (sh_st <= t) & (sh_en > t) & sh_valid_team
+            # (start, end] — include shifts ending exactly at the event (goals
+            # end shifts), exclude ones starting at it. Fixes on-ice GF/GA
+            # undercount vs the [start, end) convention.
+            on = (sh_st < t) & (sh_en >= t) & sh_valid_team
             if not on.any():
                 continue
             shoot_home = bool(row.shoot_home)
@@ -196,6 +202,7 @@ def main() -> int:
             for_lab = situation_label(own_sk, opp_sk)
             ag_lab = situation_label(opp_sk, own_sk)
             is_fen = bool(row.is_fen)
+            is_sog = bool(row.is_sog)
             xgv = float(row.xg)
             gl = int(row.is_goal_i)
             on_idx = np.nonzero(on)[0]
@@ -205,11 +212,15 @@ def main() -> int:
                 if p_home == shoot_home:
                     a = acc[(pid, season, gtype, for_lab)]
                     a[IDX["CF"]] += 1
+                    if is_sog:
+                        a[IDX["SOGF"]] += 1; a[IDX["xGFs"]] += xgv
                     if is_fen:
                         a[IDX["FF"]] += 1; a[IDX["xGF"]] += xgv; a[IDX["GF"]] += gl
                 else:
                     a = acc[(pid, season, gtype, ag_lab)]
                     a[IDX["CA"]] += 1
+                    if is_sog:
+                        a[IDX["SOGA"]] += 1; a[IDX["xGAs"]] += xgv
                     if is_fen:
                         a[IDX["FA"]] += 1; a[IDX["xGA"]] += xgv; a[IDX["GA"]] += gl
 
@@ -252,7 +263,7 @@ def main() -> int:
              "game_type": gtype, "situation": sit, "gp": gp}
         for f in FIELDS:
             v = vec[IDX[f]]
-            d[f] = round(v, 4) if f in ("toi_min", "xGF", "xGA", "ixG") else int(round(v))
+            d[f] = round(v, 4) if f in ("toi_min", "xGF", "xGA", "xGFs", "xGAs", "ixG") else int(round(v))
         rows.append(d)
     out = pd.DataFrame(rows).sort_values(
         ["season", "game_type", "player_id", "situation"]).reset_index(drop=True)
