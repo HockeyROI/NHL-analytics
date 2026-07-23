@@ -1329,6 +1329,63 @@ def _situation_metrics(scope_key: str, bucket_label: str,
     return out
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_team_situation_onice() -> pd.DataFrame:
+    fp = REPO_ROOT / "Data" / "team_situation_onice.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    return pd.read_csv(fp, dtype={"season": str})
+
+
+_TEAM_SIT_COUNTS = ["CF", "FF", "xGF", "GF", "CA", "FA", "xGA", "GA", "toi_min"]
+
+
+def _team_situation_metrics(scope_key: str, bucket_label: str,
+                            playoffs: bool = False) -> pd.DataFrame:
+    """Team-level per-situation possession/xG suite (team analog of
+    _situation_metrics), keyed on 'Team'. Ratio-of-sums over the scope's
+    seasons and the bucket's matchups."""
+    df = load_team_situation_onice()
+    if df.empty:
+        return pd.DataFrame()
+    df = df[df["game_type"] == ("playoff" if playoffs else "regular")]
+    seasons = _situation_seasons(scope_key, playoffs)
+    if seasons is not None:
+        df = df[df["season"].isin(seasons)]
+    mats = SITUATION_BUCKETS.get(bucket_label, ["5v5"])
+    if mats is not None:
+        df = df[df["situation"].isin(mats)]
+    if df.empty:
+        return pd.DataFrame()
+    g = df.groupby("team")[_TEAM_SIT_COUNTS].sum().reset_index()
+    toi = g["toi_min"]
+    ok = toi > 0
+
+    def per60(c):
+        return np.where(ok, g[c] / toi * 60.0, np.nan)
+
+    def share(f, a):
+        d = g[f] + g[a]
+        return np.where(d > 0, g[f] / d * 100.0, np.nan)
+
+    out = pd.DataFrame({"Team": g["team"]})
+    out["Sit TOI"] = toi
+    out["Sit CF%"], out["Sit xGF%"] = share("CF", "CA"), share("xGF", "xGA")
+    out["Sit GF%"] = share("GF", "GA")
+    out["Sit xGF/60"], out["Sit xGA/60"] = per60("xGF"), per60("xGA")
+    out["Sit CF/60"], out["Sit CA/60"] = per60("CF"), per60("CA")
+    out["Sit GF/60"], out["Sit GA/60"] = per60("GF"), per60("GA")
+    out["Sit PP xGF+CF/60"] = out["Sit xGF/60"] + out["Sit CF/60"]
+    out["Sit PK xGA+CA/60"] = out["Sit xGA/60"] + out["Sit CA/60"]
+    return out
+
+
+# Compact team Situation column set shown on the Teams tab (kept tight — the
+# team table shows every column at once, no family pills).
+TEAM_SIT_COLS = ["Sit TOI", "Sit CF%", "Sit xGF%", "Sit GF%",
+                 "Sit xGF/60", "Sit xGA/60", "Sit PP xGF+CF/60", "Sit PK xGA+CA/60"]
+
+
 _SIT_SPLIT_BUCKETS = ["5v5", "PP", "PK", "4v4", "3v3", "5v3"]
 
 
@@ -4799,6 +4856,11 @@ def render_teams() -> None:
     qg = load_team_qg()
     key = SEASON_KEY.get(season_label, "pooled")
     is_pooled = key in ("pooled", "pooled_2yr")
+    st.session_state.setdefault("teams_situation", "5v5")
+    st.radio("Situation", list(SITUATION_BUCKETS), horizontal=True,
+             key="teams_situation",
+             help="Reframes the 'Sit' team columns to this game state "
+                  "(PP=5v4+5v3+4v3, PK=4v5+3v5+3v4). NFI/QG/Zone stay 5v5-native.")
     # "pooled_2yr" aggregates only 2024–2026; full pooled aggregates all four.
     pooled_seasons = POOLED_2YR_SEASONS if key == "pooled_2yr" else POOLED_SEASONS
 
@@ -4863,6 +4925,12 @@ def render_teams() -> None:
                .rename(columns=dict(zip(_zbase, zcols))))
         team = team.merge(tzw, on="team", how="left")
 
+    # Per-situation team suite — driven by the Situation toggle.
+    tsit = _team_situation_metrics(key, st.session_state.get("teams_situation", "5v5"))
+    if not tsit.empty:
+        team = team.merge(tsit[["Team"] + TEAM_SIT_COLS].rename(columns={"Team": "team"}),
+                          on="team", how="left")
+
     _fa_disp = list(_TEAM_QG_FA.values())   # xG-QG-F%, xG-QG-A%, NFI-QG-A%, NFI-QG-S%
     for c in ["TOI", "xG-QG%", "NFI-QG%", "Attack events",
               "Suppress events"] + zcols + _fa_disp:
@@ -4873,7 +4941,8 @@ def render_teams() -> None:
     team = team.sort_values("NFI%", ascending=False, na_position="last").reset_index(drop=True)
     cols = (["Team", "GP", "TOI", "NFI%", "Attack events", "Suppress events"]
             + zcols + ["xG-QG%", "xG-QG-F%", "xG-QG-A%",
-                       "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%"])
+                       "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%"]
+            + [c for c in TEAM_SIT_COLS if c in team.columns])
     disp = team[[c for c in cols if c in team.columns]].copy()
 
     fmt = {}
@@ -4890,6 +4959,18 @@ def render_teams() -> None:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     if "GP" in disp:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
+    # Team Situation columns
+    for c in ("Sit CF%", "Sit xGF%", "Sit GF%"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
+    for c in ("Sit xGF/60", "Sit xGA/60"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    for c in ("Sit PP xGF+CF/60", "Sit PK xGA+CA/60"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    if "Sit TOI" in disp:
+        fmt["Sit TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
 
     _team_rank = (["NFI%", "Attack events", "Suppress events"] + zcols
                   + ["xG-QG%", "NFI-QG%"])
