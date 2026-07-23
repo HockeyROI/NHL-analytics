@@ -3177,6 +3177,65 @@ def _trade_line_compare(players: dict, cols: list[str], caption: str,
     _show_chart(chart, dl_name=dl_name, brand_width=_w * _n + 24 * (_n - 1) + 55)
 
 
+def _shot_chart_seasons(season_label: str | None, playoffs: bool):
+    """Map the app scope to a list of season strings for the shot parquets
+    (None = all seasons, used for the pooled playoff view)."""
+    if playoffs:
+        return None
+    key = SEASON_KEY.get(season_label, "pooled")
+    if key == "pooled":
+        return list(POOLED_SEASONS)
+    if key == "pooled_2yr":
+        return list(POOLED_2YR_SEASONS)
+    return [key]
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _load_shots_cached(seasons_tuple, game_type: str) -> pd.DataFrame:
+    import shot_charts as _sc
+    return _sc.load_shots(list(seasons_tuple) if seasons_tuple else None, game_type)
+
+
+def _render_shot_chart(kind: str, ident, name: str, team: str | None,
+                       season_label: str | None, playoffs: bool) -> None:
+    """Shot chart for a player (shots taken), goalie (shots faced), or team
+    (shots taken). Reads the committable per-season parquets."""
+    try:
+        import shot_charts as _sc
+    except Exception:
+        return
+    seasons = _shot_chart_seasons(season_label, playoffs)
+    shots = _load_shots_cached(tuple(seasons) if seasons else None,
+                               "playoff" if playoffs else "regular")
+    if shots.empty:
+        return
+    if kind == "player":
+        shots, gv = shots[shots["shooter_player_id"] == ident], False
+    elif kind == "goalie":
+        shots, gv = shots[shots["goalie_id"] == ident], True
+    else:
+        shots, gv = shots[shots["shooting_team_abbrev"] == str(ident)], False
+    if shots.empty:
+        return
+    ng = int(shots["is_goal"].sum())
+    lbl = season_label or ("Playoffs" if playoffs else "")
+    faced = kind == "goalie"
+    with st.expander("🏒 Shot map", expanded=False):
+        mode = st.radio("Show", ["All shots + goals", "Goals only"], horizontal=True,
+                        key=f"shotmode_{kind}_{ident}", label_visibility="collapsed")
+        goals_only = mode == "Goals only"
+        title = f"{name} — {lbl} " + ("Goal Map" if goals_only else "Shot Map") + (" (faced)" if faced else "")
+        shown = ng if goals_only else len(shots)
+        noun = ("goals allowed" if faced else "goals") if goals_only else (
+            "shots faced" if faced else "shots")
+        sub = f"{shown:,} {noun}" + (f" · {ng} allowed" if faced and not goals_only else "") \
+            + ("  ·  goalie's-eye view" if faced else "")
+        fig = _sc.shot_chart(shots, title, subtitle=sub, team=team,
+                             goalie_view=gv, goals_only=goals_only)
+        if fig is not None:
+            st.pyplot(fig, clear_figure=True)
+
+
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                            team=None, season_label=None) -> None:
     """Per-season trend table + auto-showing line charts for one player.
@@ -3236,6 +3295,13 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.1f}%")
         _sd["iG"] = _sd["iG"].map(lambda x: "—" if pd.isna(x) else f"{x:.0f}")
         _show_df(_sd, width="stretch", hide_index=True, key=f"pl_sit_{int(pid)}")
+
+    # Shot map (dots + goals bordered; per-season parquet data, team-coloured).
+    _pteam = (str(_prow_any["team"].iloc[0])
+              if len(_prow_any) and "team" in _prow_any.columns
+              and pd.notna(_prow_any["team"].iloc[0]) else None)
+    _render_shot_chart("player", int(pid), _highlight_name or f"Player {pid}",
+                       _pteam, season_label, playoffs=False)
 
     # View-mode toggle — mutually exclusive, sits ABOVE the bar chart. "Show
     # current year data" (default) renders the bar charts for the selected row;
@@ -5068,6 +5134,13 @@ def render_teams() -> None:
            f"single-season team zone isn't published.")
     st.caption(cap)
 
+    # Team shot map — pick a team to see where it generates its shots.
+    _teams_avail = sorted(team["Team"].dropna().unique().tolist())
+    _tpick = st.selectbox("Team shot map", ["—"] + _teams_avail, index=0,
+                          key="teams_shotmap_pick")
+    if _tpick and _tpick != "—":
+        _render_shot_chart("team", _tpick, _tpick, _tpick, season_label, playoffs=False)
+
 
 # ---------------------------------------------------------------------------
 # Goalies tab — NFI-GSAx + QNFG% + QG (union of qualified cohorts)
@@ -5587,6 +5660,14 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
     st.caption("Each value shows its **(rank)** — league rank among all goalies "
                "that season (2yr row ranks within the 2-season pool).")
     _show_df(disp, width="stretch", hide_index=True)
+
+    # Shot map — shots faced (goalie's-eye view), in the goalie's team colours.
+    _g = load_goalie_nfi()
+    _grow = _g[_g["goalie_id"] == int(gid)] if not _g.empty else _g
+    _gname = str(_grow["goalie_name"].iloc[0]) if len(_grow) else f"Goalie {gid}"
+    _gteam = (str(_grow["team"].iloc[0]) if len(_grow) and "team" in _grow.columns
+              and pd.notna(_grow["team"].iloc[0]) else None)
+    _render_shot_chart("goalie", int(gid), _gname, _gteam, season_label, playoffs=False)
 
     # CHOICE: 3 small multiples. NFI-GSAx/60 is a per-60 rate (~±0.3); NFI SV%
     # is a raw save% (~85-95%) — a very different band from the "beat expected
