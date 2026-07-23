@@ -536,6 +536,27 @@ _ABBR_FULL = {
     "QG%b": "Quality Start % vs Backup-tier save% baseline",
     "MP-GSAx": "MoneyPuck Goals Saved Above Expected",
     "MP-GSAx/60": "MoneyPuck Goals Saved Above Expected per 60 minutes",
+    # Per-situation suite — all follow the Situation toggle (5v5/PP/PK/4v4/3v3/5v3/All)
+    "Sit TOI/GP": "Minutes per game in the selected situation",
+    "Sit CF/60": "On-ice Corsi (shot attempts) For per 60 — selected situation",
+    "Sit CA/60": "On-ice Corsi Against per 60 — selected situation",
+    "Sit CF%": "On-ice Corsi For % (CF/(CF+CA)) — selected situation",
+    "Sit FF/60": "On-ice Fenwick (unblocked attempts) For per 60 — selected situation",
+    "Sit FA/60": "On-ice Fenwick Against per 60 — selected situation",
+    "Sit FF%": "On-ice Fenwick For % — selected situation",
+    "Sit xGF/60": "On-ice Expected Goals For per 60 (own xG model) — selected situation",
+    "Sit xGA/60": "On-ice Expected Goals Against per 60 — selected situation",
+    "Sit xGF%": "On-ice Expected Goals For % (xGF/(xGF+xGA)) — selected situation",
+    "Sit GF/60": "On-ice Goals For per 60 — selected situation",
+    "Sit GA/60": "On-ice Goals Against per 60 — selected situation",
+    "Sit GF%": "On-ice Goals For % — selected situation",
+    "Sit iCF/60": "Individual shot attempts per 60 — selected situation",
+    "Sit ixG/60": "Individual Expected Goals per 60 — selected situation",
+    "Sit iG/60": "Individual Goals per 60 — selected situation",
+    "Sit ixG": "Individual Expected Goals (total) — selected situation",
+    "Sit iG": "Individual Goals (total) — selected situation",
+    "Sit PP xGF+CF/60": "Power-play value: on-ice xGF/60 + CF/60 (higher = better) — use with PP situation",
+    "Sit PK xGA+CA/60": "Penalty-kill value: on-ice xGA/60 + CA/60 (LOWER = better) — use with PK situation",
 }
 
 
@@ -765,6 +786,26 @@ def render_methodology() -> None:
             "Attack/Suppress to match the NFI family (<b>NFI-QG-A%</b> = attack/offense, "
             "<b>NFI-QG-S%</b> = suppress/defense). Higher is better on all four; available at team "
             "level too.",
+        )
+        + _meth_framework(
+            "Situations (all game states)",
+            "The <b>Situation</b> toggle (and the <b>Sit</b> columns / Situation-splits table) "
+            "recomputes the on-ice possession/xG/individual suite for a chosen game state: "
+            "<b>5v5</b>, <b>PP</b> (5v4+5v3+4v3), <b>PK</b> (4v5+3v5+3v4), <b>4v4</b>, <b>3v3</b> "
+            "(regular-season OT), <b>5v3</b>, or <b>All</b>. Built from a fresh per-situation on-ice "
+            "attribution over the raw shot + shift data: each strength state comes from the event "
+            "<i>situation_code</i>, on-ice players from the shift intervals, and time-on-ice per "
+            "situation is reconstructed the same way (so every rate is counts ÷ that situation's TOI, "
+            "by ratio-of-sums). Columns: <b>CF/CA, FF/FA, xGF/xGA, GF/GA</b> per-60 and their shares "
+            "(<b>CF%/FF%/xGF%/GF%</b>), individual <b>iCF/ixG/iG</b> per-60, plus dedicated "
+            "special-teams value scores — <b>PP xGF+CF/60</b> (higher = better) and "
+            "<b>PK xGA+CA/60</b> (lower = better), an NST-style single number for power-play offense "
+            "and penalty-kill defense. xG is the HockeyROI model (not MoneyPuck). "
+            "<b>Scope note:</b> the bespoke 5v5-native families — RelNFI, Quality Games, Zone Impact "
+            "— stay on their 5v5 basis and are <i>not</i> re-derived per situation (their "
+            "team-relative / per-game-median / faceoff-anchored constructions assume even strength). "
+            "Per-situation league totals also carry an on-ice roster-size multiplier, so compare "
+            "players on the per-60 rates and shares, not raw totals.",
         )
         + _meth_framework(
             "xG — Expected Goals",
@@ -1145,6 +1186,140 @@ def _as_rates(scope_key: str) -> pd.DataFrame:
     agg["NFI_A_rate"] = np.where(ok, agg["for_att"] / agg["es_toi_min"] * 60.0, np.nan)
     agg["NFI_S_rate"] = np.where(ok, agg["ag_att"] / agg["es_toi_min"] * 60.0, np.nan)
     return agg[["player_id", "NFI_A_rate", "NFI_S_rate"]]
+
+
+# ---------------------------------------------------------------------------
+# Per-situation engine (Data/player_situation_onice.csv + _toi.csv)
+#   Built by NFI/scripts/build_situation_onice.py — per (player, season,
+#   game_type, situation) on-ice + individual counts. The situation toggle rolls
+#   the granular skater-matchups into display buckets and derives the full
+#   possession/xG/individual suite by ratio-of-sums (sum counts / sum TOI).
+# ---------------------------------------------------------------------------
+SITUATION_BUCKETS: dict[str, list[str] | None] = {
+    "All situations": None,           # every matchup
+    "5v5": ["5v5"],
+    "PP": ["5v4", "5v3", "4v3"],      # man-advantage (player's own team up)
+    "PK": ["4v5", "3v5", "3v4"],      # shorthanded
+    "4v4": ["4v4"],
+    "3v3": ["3v3"],
+    "5v3": ["5v3"],
+}
+# Buckets where the bespoke 5v5-native families (RelNFI/QG/Zone) still apply
+# as-is. Outside this, those columns are shown labeled "5v5" or as N/A.
+_SIT_IS_5V5 = "5v5"
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_situation_onice() -> pd.DataFrame:
+    fp = REPO_ROOT / "Data" / "player_situation_onice.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    return pd.read_csv(fp, dtype={"season": str})
+
+
+def _situation_toggle_state() -> str:
+    """Shared situation-scope toggle (set by the widget in render_players, read
+    wherever the per-situation suite is built this run — same shared-session
+    pattern as _pdo_toggle_state). Defaults to 5v5 (the app's native basis)."""
+    s = st.session_state.get("players_situation", "5v5")
+    return s if s in SITUATION_BUCKETS else "5v5"
+
+
+def _situation_seasons(scope_key: str, playoffs: bool) -> list[str] | None:
+    """Seasons included for a scope_key; None means 'all seasons in file'
+    (used for the pooled playoff view)."""
+    if playoffs:
+        return None
+    if scope_key == "pooled":
+        return list(POOLED_SEASONS)
+    if scope_key == "pooled_2yr":
+        return list(POOLED_2YR_SEASONS)
+    return [scope_key]
+
+
+# internal count columns produced by the engine
+_SIT_COUNTS = ["CF", "FF", "xGF", "GF", "CA", "FA", "xGA", "GA",
+               "iCF", "iFF", "ixG", "iG", "toi_min"]
+
+
+def _situation_metrics(scope_key: str, bucket_label: str,
+                       playoffs: bool = False) -> pd.DataFrame:
+    """Per-player possession/xG/individual suite for one scope + situation
+    bucket, by ratio-of-sums over the scope's seasons and the bucket's
+    matchups. Returns display-named rate/share columns keyed on player_id."""
+    df = load_situation_onice()
+    if df.empty:
+        return pd.DataFrame()
+    df = df[df["game_type"] == ("playoff" if playoffs else "regular")]
+    seasons = _situation_seasons(scope_key, playoffs)
+    if seasons is not None:
+        df = df[df["season"].isin(seasons)]
+    mats = SITUATION_BUCKETS.get(bucket_label, ["5v5"])
+    if mats is not None:
+        df = df[df["situation"].isin(mats)]
+    if df.empty:
+        return pd.DataFrame()
+    g = df.groupby("player_id")[_SIT_COUNTS].sum().reset_index()
+    g = g.merge(df.groupby("player_id")["gp"].max().reset_index(), on="player_id")
+    toi = g["toi_min"]
+    ok = toi > 0
+
+    def per60(col):
+        return np.where(ok, g[col] / toi * 60.0, np.nan)
+
+    def share(f, a):
+        d = g[f] + g[a]
+        return np.where(d > 0, g[f] / d * 100.0, np.nan)
+
+    # Display names are prefixed "Sit " — ASCII-safe, collision-free with the
+    # 5v5 xG family's "xGF/60"/"xGA/60", and a clear signal these follow the
+    # situation toggle. sit_TOI/sit_GP kept unprefixed for internal ranking use.
+    out = pd.DataFrame({"player_id": g["player_id"]})
+    out["sit_TOI"] = toi
+    out["sit_GP"] = g["gp"]
+    out["Sit TOI/GP"] = np.where(g["gp"] > 0, toi / g["gp"], np.nan)
+    out["Sit CF/60"], out["Sit CA/60"] = per60("CF"), per60("CA")
+    out["Sit FF/60"], out["Sit FA/60"] = per60("FF"), per60("FA")
+    out["Sit xGF/60"], out["Sit xGA/60"] = per60("xGF"), per60("xGA")
+    out["Sit GF/60"], out["Sit GA/60"] = per60("GF"), per60("GA")
+    out["Sit CF%"], out["Sit FF%"] = share("CF", "CA"), share("FF", "FA")
+    out["Sit xGF%"], out["Sit GF%"] = share("xGF", "xGA"), share("GF", "GA")
+    out["Sit iCF/60"], out["Sit ixG/60"] = per60("iCF"), per60("ixG")
+    out["Sit iG/60"] = per60("iG")
+    out["Sit ixG"], out["Sit iG"] = g["ixG"].round(2), g["iG"].astype(int)
+    # Dedicated special-teams player value (NST-style): PP offence = xGF/60 +
+    # CF/60; PK defence = xGA/60 + CA/60 (lower is better on PK).
+    out["Sit PP xGF+CF/60"] = out["Sit xGF/60"] + out["Sit CF/60"]
+    out["Sit PK xGA+CA/60"] = out["Sit xGA/60"] + out["Sit CA/60"]
+    return out
+
+
+_SIT_SPLIT_BUCKETS = ["5v5", "PP", "PK", "4v4", "3v3", "5v3"]
+
+
+def _player_situation_table(pid: int, season_label: str | None = None,
+                            playoffs: bool = False) -> pd.DataFrame:
+    """One drilled player's key on-ice/individual metrics across every situation
+    bucket at once (rows = 5v5/PP/PK/4v4/3v3/5v3), for the current scope."""
+    key = SEASON_KEY.get(season_label, "pooled") if season_label else "pooled"
+    rows = []
+    for bucket in _SIT_SPLIT_BUCKETS:
+        m = _situation_metrics(key, bucket, playoffs=playoffs)
+        if m.empty:
+            continue
+        r = m[m["player_id"] == int(pid)]
+        if not len(r):
+            continue
+        r = r.iloc[0]
+        if not (r["sit_TOI"] > 0):
+            continue
+        rows.append({
+            "Situation": bucket, "TOI": r["sit_TOI"], "TOI/GP": r["Sit TOI/GP"],
+            "CF%": r["Sit CF%"], "xGF%": r["Sit xGF%"],
+            "xGF/60": r["Sit xGF/60"], "xGA/60": r["Sit xGA/60"],
+            "GF/60": r["Sit GF/60"], "iG": r["Sit iG"], "ixG": r["Sit ixG"],
+        })
+    return pd.DataFrame(rows)
 
 
 # PDO shot scope — same 5v5-vs-all-situations pattern as the Goalies sQS%
@@ -2856,6 +3031,24 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                    if any(pd.notna(v) for v in _player_qg_vals(pid, trend, s).values())]
             if _wd:
                 _yr = _wd[-1]
+    # Per-situation splits — the player's on-ice/individual metrics in every
+    # game state at once (independent of the leaderboard Situation toggle).
+    _sit_tbl = _player_situation_table(int(pid), season_label=season_label)
+    if not _sit_tbl.empty:
+        st.markdown(f"<div style='color:{PALETTE['text']}; font-size:1.1rem; "
+                    "font-weight:700; margin:0.5rem 0 0.2rem;'>Situation splits</div>",
+                    unsafe_allow_html=True)
+        st.caption("On-ice & individual by game state (current scope). PP=5v4+5v3+4v3, "
+                   "PK=4v5+3v5+3v4. xG uses the HockeyROI model.")
+        _sd = _sit_tbl.copy()
+        _sd["TOI"] = _sd["TOI"].map(lambda x: "—" if pd.isna(x) else f"{x:,.0f}")
+        for _c in ("TOI/GP", "xGF/60", "xGA/60", "GF/60", "ixG"):
+            _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}")
+        for _c in ("CF%", "xGF%"):
+            _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.1f}%")
+        _sd["iG"] = _sd["iG"].map(lambda x: "—" if pd.isna(x) else f"{x:.0f}")
+        _show_df(_sd, width="stretch", hide_index=True, key=f"pl_sit_{int(pid)}")
+
     # View-mode toggle — mutually exclusive, sits ABOVE the bar chart. "Show
     # current year data" (default) renders the bar charts for the selected row;
     # "Year over year" replaces them with the season-by-season line charts.
@@ -3236,6 +3429,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
                 base["EDGE Distance/60"] = np.where(
                     _ok_toi, base["_dist_sum"] / base["toi_min"] * 60.0, np.nan)
             base = base.drop(columns=[c for c in ("_dist_sum",) if c in base.columns])
+        # Per-situation suite (situation toggle-driven). Playoffs pool all games.
+        sit = _situation_metrics("pooled", _situation_toggle_state(), playoffs=True)
+        if not sit.empty and not base.empty:
+            base = base.merge(sit, on="player_id", how="left")
         return base, True
 
     nfi = load_nfi_player()
@@ -3315,6 +3512,11 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     qgfa = _qg_fa_rates(key)
     if not qgfa.empty and not base.empty:
         base = base.merge(qgfa, on="player_id", how="left")
+    # Per-situation possession/xG/individual suite — reflects the situation
+    # toggle (5v5 / PP / PK / 4v4 / 3v3 / 5v3 / All). Additive "Sit " columns.
+    sit = _situation_metrics(key, _situation_toggle_state(), playoffs=False)
+    if not sit.empty and not base.empty:
+        base = base.merge(sit, on="player_id", how="left")
     return base, is_pooled
 
 
@@ -3341,7 +3543,17 @@ PLAYER_FAMILY_COLS = {
     # methodology tab spells out the different source/definition so it's not
     # mistaken for an EDGE-API stat.
     "EDGE": _EDGE_VALUE_DISP + ["DZ Start%", "NZ Start%", "OZ Start%"],
+    # Per-situation possession/xG/individual suite — every column follows the
+    # situation toggle (5v5 / PP / PK / 4v4 / 3v3 / 5v3 / All). "Sit " prefix
+    # marks them as situation-scoped and avoids clashing with the 5v5 xG family.
+    "Situations": ["Sit TOI/GP", "Sit CF/60", "Sit CA/60", "Sit CF%",
+                   "Sit FF/60", "Sit FA/60", "Sit FF%",
+                   "Sit xGF/60", "Sit xGA/60", "Sit xGF%",
+                   "Sit GF/60", "Sit GA/60", "Sit GF%",
+                   "Sit iCF/60", "Sit ixG/60", "Sit iG/60", "Sit ixG", "Sit iG",
+                   "Sit PP xGF+CF/60", "Sit PK xGA+CA/60"],
 }
+SITUATION_FAMILY_COLS = PLAYER_FAMILY_COLS["Situations"]
 
 
 def _team_scatter_frame(season_label: str, team: str = None) -> pd.DataFrame:
@@ -3824,6 +4036,16 @@ def render_players() -> None:
                       "as-is regardless.")
         st.caption("The shot-scope toggle applies only to **PDO** — other xG columns "
                    "are unaffected.")
+    if "Situations" in display_fams:
+        st.session_state.setdefault("players_situation", "5v5")
+        st.radio("Situation", list(SITUATION_BUCKETS), horizontal=True,
+                 key="players_situation",
+                 help="Reframes every 'Sit ' column to this game state. PP = "
+                      "5v4+5v3+4v3, PK = 4v5+3v5+3v4. The other families "
+                      "(RelNFI/QG/Zone) stay 5v5-native.")
+        st.caption("**Situation** drives the **Sit** columns only (possession/xG/"
+                   "individual for the chosen state). PP=5v4+5v3+4v3, PK=4v5+3v5+3v4. "
+                   "RelNFI/QG/Zone Impact remain 5v5.")
     with tcol:
         if playoffs:
             min_toi = st.slider("Min ES TOI (min)", 0, 1500, rank_floor, 25,
@@ -3943,7 +4165,7 @@ def render_players() -> None:
             "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO", "PDOxG",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI",
-            *_EDGE_VALUE_DISP]
+            *_EDGE_VALUE_DISP, *SITUATION_FAMILY_COLS]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
@@ -4003,6 +4225,22 @@ def render_players() -> None:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     if "TOI/GP" in disp.columns:
         fmt["TOI/GP"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    # Per-situation "Sit " suite formatters.
+    for c in ("Sit CF/60", "Sit CA/60", "Sit FF/60", "Sit FA/60", "Sit GF/60",
+              "Sit GA/60", "Sit iCF/60", "Sit iG/60",
+              "Sit PP xGF+CF/60", "Sit PK xGA+CA/60"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    for c in ("Sit xGF/60", "Sit xGA/60", "Sit ixG/60", "Sit ixG"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    for c in ("Sit CF%", "Sit FF%", "Sit xGF%", "Sit GF%"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
+    if "Sit TOI/GP" in disp.columns:
+        fmt["Sit TOI/GP"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    if "Sit iG" in disp.columns:
+        fmt["Sit iG"] = lambda x: "—" if pd.isna(x) else f"{x:.0f}"
     for c in ("GP",):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
@@ -4200,6 +4438,19 @@ def _render_player_playoff_summary(frame: pd.DataFrame, pid: int) -> None:
     # of the app), rather than a tall two-column Metric/Value table.
     hdf = pd.DataFrame([{m: v for m, v in items}])[[m for m, _ in items]]
     _show_df(hdf, width="stretch", hide_index=True)
+
+    # Per-situation splits (pooled playoffs) — same table as the regular drill-in.
+    _st = _player_situation_table(int(pid), playoffs=True)
+    if not _st.empty:
+        st.caption("Situation splits (pooled playoffs) — PP=5v4+5v3+4v3, PK=4v5+3v5+3v4.")
+        _sd = _st.copy()
+        _sd["TOI"] = _sd["TOI"].map(lambda x: "—" if pd.isna(x) else f"{x:,.0f}")
+        for _c in ("TOI/GP", "xGF/60", "xGA/60", "GF/60", "ixG"):
+            _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}")
+        for _c in ("CF%", "xGF%"):
+            _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.1f}%")
+        _sd["iG"] = _sd["iG"].map(lambda x: "—" if pd.isna(x) else f"{x:.0f}")
+        _show_df(_sd, width="stretch", hide_index=True, key=f"po_sit_{int(pid)}")
 
     # Combined NFI+xG Quality-Games bar (Raw+Rel paired) and the Zone Impact bar
     # — same charts as the regular-season drill-in, built from this player's
@@ -5847,6 +6098,19 @@ def render_trade_analyzer() -> None:
             st.info("No per-season data available for this player.")
         else:
             _show_df(disp, width="stretch", hide_index=True)
+        # Situation splits (same table as the single-player drill-in).
+        _st = _player_situation_table(int(pid), season_label=season_label)
+        if not _st.empty:
+            st.caption("Situation splits — on-ice & individual by game state "
+                       "(PP=5v4+5v3+4v3, PK=4v5+3v5+3v4).")
+            _sd = _st.copy()
+            _sd["TOI"] = _sd["TOI"].map(lambda x: "—" if pd.isna(x) else f"{x:,.0f}")
+            for _c in ("TOI/GP", "xGF/60", "xGA/60", "GF/60", "ixG"):
+                _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.2f}")
+            for _c in ("CF%", "xGF%"):
+                _sd[_c] = _sd[_c].map(lambda x: "—" if pd.isna(x) else f"{x:.1f}%")
+            _sd["iG"] = _sd["iG"].map(lambda x: "—" if pd.isna(x) else f"{x:.0f}")
+            _show_df(_sd, width="stretch", hide_index=True, key=f"trade_sit_{int(pid)}")
 
     # Then the side-by-side comparison charts — one panel per player. Bars = the
     # filter's year; the secondary line image = QG % over time. NFI and xG are

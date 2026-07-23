@@ -309,6 +309,46 @@ Both scripts default to regular-season scope when `QG_SCOPE` is unset; playoff s
 
 ---
 
+## Situations (all game states)
+
+The **Situation** toggle recomputes the on-ice possession/xG/individual suite for a chosen strength state, exposed on the Player leaderboard (the `Sit …` metric family) and as a **Situation splits** table in every player drill-in and the Trade Analyzer.
+
+### Buckets
+
+Granular skater matchups are rolled into display buckets from each player's own-team perspective:
+
+| Bucket | Matchups |
+|---|---|
+| 5v5 | 5v5 |
+| PP (power play) | 5v4, 5v3, 4v3 |
+| PK (penalty kill) | 4v5, 3v5, 3v4 |
+| 4v4 | 4v4 |
+| 3v3 | 3v3 (regular-season OT) |
+| 5v3 | 5v3 |
+| All situations | every matchup |
+
+### Construction
+
+Built by `NFI/scripts/build_situation_onice.py` (on-ice counts → `Data/player_situation_onice.csv`) and `NFI/scripts/build_situation_toi.py` (per-situation TOI → `Data/player_situation_toi.csv`) from the raw shot events + shift data:
+
+- **Strength state** for each event/segment comes from the event `situation_code` (skater counts per team), labeled from the player's own-team perspective (a 5v4 for the power-play team is a 4v5 for the killers).
+- **On-ice attribution**: every Corsi event is credited to the players whose shift intervals overlap the event time — for-side to the shooting team's skaters, against-side to the defending team's.
+- **TOI per situation** is reconstructed from the same piecewise-constant strength segments intersected with shifts (including overtime, so 3v3 is captured), and reconciles exactly with the standalone TOI file.
+- **Rates** are ratio-of-sums over the scope's seasons and the bucket's matchups: `sum(counts) / sum(TOI) × 60`; shares are `CF% = CF/(CF+CA)`, `xGF%`, etc. xG is the **HockeyROI model** (`build_xg.py`), not MoneyPuck.
+
+### Columns
+
+Per-60: `CF/CA, FF/FA, xGF/xGA, GF/GA`; shares `CF%/FF%/xGF%/GF%`; individual `iCF/ixG/iG` per-60 (+ `ixG`/`iG` totals). Two dedicated special-teams value scores (NST-style): **PP xGF+CF/60** (higher = better power-play offense) and **PK xGA+CA/60** (lower = better penalty-kill defense).
+
+### Scope and caveats
+
+- The bespoke 5v5-native families — **RelNFI, Quality Games, Zone Impact** — are **not** re-derived per situation. Their team-relative (on/off), per-game-median, and faceoff-anchored constructions assume even strength, so they stay on the 5v5 basis and are labeled accordingly outside 5v5.
+- Per-situation **league totals** carry an on-ice roster-size multiplier (5 for-skaters vs 4 against-skaters on a power play) plus shift-reconstruction noise, so player comparison should use the per-60 **rates** and **shares**, not raw summed totals. 5v5 for/against totals are league-symmetric to <0.2% as a correctness check.
+
+Validation (2026-07-22): 5v5 league ΣxGF≈ΣxGA and ΣGF≈ΣGA to <0.2%; McDavid 2025-26 5v5 xGF% 55.9 with individual ixG 23.9 ≈ 24 actual goals; PP xGF/60 leaders and PK lowest-xGA/60 lists match expectation.
+
+---
+
 ## Zone Impact
 
 ### What Zone Impact measures
