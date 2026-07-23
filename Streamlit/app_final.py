@@ -813,10 +813,12 @@ def render_methodology() -> None:
             "The xG behind <b>PDOxG</b> and the on-ice <b>xGF/xGA</b> (incl. the per-situation "
             "engine) is HockeyROI's own — a Fenwick-based gradient-boosted model "
             "(<code>xG/build_xg.py</code>) trained on shot geometry (distance / angle), shot type, "
-            "and pre-shot context (rebound, time since last attempt, prior-shot distance, running "
-            "score & strength state, home/away). Held-out <b>AUC 0.755</b>, tightly calibrated, and "
-            "its player-season xG totals correlate <b>0.99 with MoneyPuck's</b> published xGoal — a "
-            "fully in-house model that tracks the public benchmark closely. "
+            "and pre-shot context read from the <b>full play-by-play</b>: rebound, <b>rush</b>, time "
+            "&amp; distance since the last event of any kind (faceoff / hit / turnover / shot), the "
+            "last event's type and zone, plus running score &amp; strength state and home/away. "
+            "Held-out <b>AUC 0.764</b>, tightly calibrated, and its player-season xG totals correlate "
+            "<b>0.99 with MoneyPuck's</b> published xGoal — a fully in-house model that tracks the "
+            "public benchmark closely. "
             "<i>(The Quality-Games xG is a separate, deliberately MoneyPuck-sourced input, labeled "
             "as such — not this model.)</i>",
         )

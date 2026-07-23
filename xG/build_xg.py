@@ -33,6 +33,7 @@ ROOT = Path(os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI
 SHOT_CSV = ROOT / "Data" / "nhl_shot_events.csv"
 MP_DIR = ROOT / "Quality_Games" / "Data" / "Money_puck"
 OUT_CSV = Path(os.environ.get("XG_OUT", ROOT / "xG" / "output" / "shot_xg_per_event.csv"))
+PBP_FEAT_CSV = ROOT / "xG" / "output" / "shot_pbp_features.csv"  # xG/build_pbp_features.py
 
 NET_X = 89.0
 FENWICK = ["shot-on-goal", "missed-shot", "goal"]
@@ -64,33 +65,59 @@ def main() -> int:
     angle = np.abs(np.arctan2(y, (NET_X - x).clip(lower=0.1)))
     s["dist"], s["angle"] = dist, angle
 
-    # --- pre-shot sequence features (per game) ---
-    g = s.groupby("game_id", sort=False)
-    s["time_since_last"] = g["abs_time"].diff().fillna(999.0).clip(lower=0, upper=999)
-    s["prior_dist"] = g["dist"].shift(1).fillna(dist.median())
-    s["rebound"] = (s["time_since_last"] <= REBOUND_SEC).astype(int)
+    # --- pre-shot context from FULL PBP (last EVENT, not just last shot) ---
+    if PBP_FEAT_CSV.exists():
+        pbp = pd.read_csv(PBP_FEAT_CSV).drop_duplicates(["game_id", "event_id"])
+        s = s.merge(pbp, on=["game_id", "event_id"], how="left")  # keeps left order
+        matched = s["time_since_last"].notna().mean()
+        print(f"  PBP last-event context matched: {matched:.1%} of shots "
+              f"(uncached 2020-22 fall back to defaults)")
+    else:
+        print("  WARNING: no PBP features file — run xG/build_pbp_features.py")
+        for c in ("time_since_last", "dist_last", "last_type", "last_zone", "rush"):
+            s[c] = np.nan
+    s["time_since_last"] = s["time_since_last"].fillna(999.0).clip(0, 999)
+    s["dist_last"] = s["dist_last"].fillna(float(np.nanmedian(dist)))
+    s["last_type"] = s["last_type"].fillna("none")
+    s["last_zone"] = s["last_zone"].fillna("U")
+    s["rush"] = s["rush"].fillna(0).astype(int)
+    # rebound = the previous EVENT was itself a shot, within 3s
+    _shot_last = s["last_type"].isin(["shot-on-goal", "missed-shot", "blocked-shot", "goal"])
+    s["rebound"] = ((s["time_since_last"] <= REBOUND_SEC) & _shot_last).astype(int)
     # running pre-shot score, shooter perspective (clip ±3)
+    g = s.groupby("game_id", sort=False)
     s["goal_home"] = (s["is_goal_i"] == 1) & s["shoot_home"]
     s["goal_away"] = (s["is_goal_i"] == 1) & (~s["shoot_home"])
     h_pre = g["goal_home"].cumsum() - s["goal_home"].astype(int)
     a_pre = g["goal_away"].cumsum() - s["goal_away"].astype(int)
     s["score_diff"] = np.where(s["shoot_home"], h_pre - a_pre, a_pre - h_pre).clip(-3, 3)
-    # strength = shooter skater advantage (clip ±2)
-    sh_sk = np.where(s["shoot_home"], hsk.values, ask.values)
-    op_sk = np.where(s["shoot_home"], ask.values, hsk.values)
+    # strength = shooter skater advantage (clip ±2); recompute from situation_code
+    # on the (possibly merge-reindexed) frame to stay row-aligned
+    sc2 = s["situation_code"].astype(str).str.zfill(4)
+    ask2, hsk2 = sc2.str[1].astype(int), sc2.str[2].astype(int)
+    sh_sk = np.where(s["shoot_home"], hsk2, ask2)
+    op_sk = np.where(s["shoot_home"], ask2, hsk2)
     s["strength_diff"] = np.clip(sh_sk - op_sk, -2, 2)
     s["is_home"] = s["shoot_home"].astype(int)
+    # geometry recomputed as row-aligned Series on the merged frame
+    xx = s["x_coord_norm"].astype(float); yy = s["y_coord_norm"].astype(float)
+    dd = np.sqrt((xx - NET_X) ** 2 + yy ** 2)
+    aa = np.abs(np.arctan2(yy, (NET_X - xx).clip(lower=0.1)))
 
     st_d = pd.get_dummies(s["shot_type"].fillna("unk"), prefix="st")
+    lt_d = pd.get_dummies(s["last_type"], prefix="lt")
+    lz_d = pd.get_dummies(s["last_zone"], prefix="lz")
     num = pd.DataFrame({
-        "dist": dist, "angle": angle, "dist2": dist ** 2, "angle2": angle ** 2,
-        "dist_angle": dist * angle, "time_since_last": s["time_since_last"],
-        "log_tsl": np.log1p(s["time_since_last"]), "prior_dist": s["prior_dist"],
-        "rebound": s["rebound"], "score_diff": s["score_diff"],
+        "dist": dd, "angle": aa, "dist2": dd ** 2, "angle2": aa ** 2,
+        "dist_angle": dd * aa, "time_since_last": s["time_since_last"],
+        "log_tsl": np.log1p(s["time_since_last"]), "dist_last": s["dist_last"],
+        "rebound": s["rebound"], "rush": s["rush"], "score_diff": s["score_diff"],
         "strength_diff": s["strength_diff"], "is_home": s["is_home"],
     }, index=s.index)
-    feat = pd.concat([num, st_d.set_index(s.index)], axis=1)
-    valid = feat.notna().all(axis=1) & dist.notna()
+    feat = pd.concat([num, st_d.set_index(s.index), lt_d.set_index(s.index),
+                      lz_d.set_index(s.index)], axis=1)
+    dist = dd  # downstream references
+    valid = feat.notna().all(axis=1) & dd.notna()
     X = feat[valid].astype(float).values
     yv = s.loc[valid, "is_goal_i"].values
     print(f"  usable rows: {valid.sum():,}  |  overall goal rate {yv.mean():.4f}")

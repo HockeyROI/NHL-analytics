@@ -426,14 +426,14 @@ HockeyROI's expected-goals model is **homegrown** (`xG/build_xg.py` → `xG/outp
 
 - **Geometry**: distance and angle to net (net at normalized x=+89), their squares and interaction.
 - **Shot type** (wrist/slap/snap/backhand/tip/deflection/wrap, one-hot).
-- **Pre-shot sequence**: rebound flag (attempt within 3s of the previous attempt), time since last attempt (and its log), the previous shot's distance.
+- **Pre-shot sequence (from the full play-by-play)**: computed from the cached raw PBP (`Zones/raw/pbp/`, all event types), via `xG/build_pbp_features.py` → `xG/output/shot_pbp_features.csv`. For each shot, relative to the immediately preceding event *of any kind* (faceoff / hit / giveaway / takeaway / shot): **time since last event**, **distance from last event**, the last event's **type** and **zone**, a **rebound** flag (previous event was a shot within 3s), and a **rush** flag (quick chance ≤5s after a non-offensive-zone event or a possession-change/hit). This is MoneyPuck's main edge, now built in-house; ~70% of shots have PBP context (2022-23→2025-26 cached; 2020-22 fall back to geometry-only defaults).
 - **Game state**: running score differential (shooter perspective, ±3) and strength differential (shooter skaters − opponent skaters, ±2), home/away.
 
-No "rush" flag — that requires full non-shot play-by-play (zone entries) the pipeline doesn't store; it's the one MoneyPuck feature omitted.
+The one MoneyPuck feature still omitted is a screening/traffic term — that needs every skater's on-ice x/y at the shot instant (player-tracking positional data), which the public NHL API does not provide (it gives one coordinate per *event*, not per player), so no public xG model has it.
 
 ### Model and validation
 
-`HistGradientBoostingClassifier` (400 trees, lr 0.05, 31 leaves, L2=1, min-leaf=200). On a held-out 20% split: **AUC 0.755**, **log-loss 0.217** (vs 0.244 baseline), and calibration is tight across all ten deciles (predicted ≈ actual at every level, e.g. 0.005→0.006 and 0.198→0.196). Against MoneyPuck's published `xGoal`, player-season xG totals correlate **Pearson r 0.989 / Spearman 0.991** (2,557 player-seasons; mean 11.5 vs MoneyPuck 12.5). The model is retrained and every Fenwick event re-scored on each build.
+`HistGradientBoostingClassifier` (400 trees, lr 0.05, 31 leaves, L2=1, min-leaf=200). On a held-out 20% split: **AUC 0.764**, **log-loss 0.214** (vs 0.244 baseline), and calibration is tight across all ten deciles (predicted ≈ actual at every level). Against MoneyPuck's published `xGoal`, player-season xG totals correlate **Pearson r ≈ 0.99 / Spearman ≈ 0.99** (~2,550 player-seasons; mean 11.5 vs MoneyPuck 12.6). Adding the full-PBP rush / last-event features lifted held-out AUC from 0.755 (geometry + shot-only sequence) to 0.764. The model is retrained and every Fenwick event re-scored on each build.
 
 This v2 supersedes the earlier geometry-only logistic model (`NFI/scripts/build_xg.py`, now deprecated).
 
