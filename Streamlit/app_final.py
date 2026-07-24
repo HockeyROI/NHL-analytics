@@ -3248,8 +3248,12 @@ def _shot_chart_seasons(season_label: str | None, playoffs: bool):
     return [key]
 
 
+# NOTE: st.cache_data hashes THIS function's code, not shot_charts.load_shots'.
+# When load_shots gains columns (empty_net, situation, ...) this body is
+# unchanged, so the old frame would keep being served. Bump _schema to force
+# a fresh load whenever load_shots' output schema changes.
 @st.cache_data(show_spinner=False, ttl=3600)
-def _load_shots_cached(seasons_tuple, game_type: str) -> pd.DataFrame:
+def _load_shots_cached(seasons_tuple, game_type: str, _schema: int = 3) -> pd.DataFrame:
     import shot_charts as _sc
     return _sc.load_shots(list(seasons_tuple) if seasons_tuple else None, game_type)
 
@@ -3267,6 +3271,14 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
                                "playoff" if playoffs else "regular")
     if shots.empty:
         return
+    # Safety net: if a stale cache ever hands back a frame without the newer
+    # columns, rebuild it directly rather than silently losing the empty-net
+    # exclusion / situation filter.
+    if "empty_net" not in shots.columns or "situation" not in shots.columns:
+        shots = _sc.load_shots(list(seasons) if seasons else None,
+                               "playoff" if playoffs else "regular")
+        if shots.empty:
+            return
     if kind == "player":
         shots, gv = shots[shots["shooter_player_id"] == ident], False
     elif kind == "goalie":
@@ -3291,8 +3303,9 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
     stat = (f"{len(shots):,} {'shots faced' if faced else 'shots'} · "
             f"{ng} {'goals allowed' if faced else 'goals'}"
             + ("  ·  goalie's-eye view" if faced else ""))
-    _goals_only = st.checkbox("Goals only", value=True,
-                              key=f"shotgoals_{kind}_{ident}")
+    _mode = st.radio("Show", ["Goals only", "All shots"], horizontal=True,
+                     key=f"shotgoals_{kind}_{ident}", label_visibility="collapsed")
+    _goals_only = _mode == "Goals only"
     fig = _sc.shot_chart(shots, nm, season=str(lbl), stat=stat, team=team,
                          goalie_view=gv, goals_only=_goals_only)
     if fig is not None:
