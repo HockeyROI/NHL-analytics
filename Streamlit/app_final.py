@@ -3250,6 +3250,8 @@ def _shot_chart_seasons(season_label: str | None, playoffs: bool):
         return list(POOLED_SEASONS)
     if key == "pooled_2yr":
         return list(POOLED_2YR_SEASONS)
+    if key == "ref_pooled":               # 3yr referee pool -> its real seasons
+        return ["20232024", "20242025", "20252026"]   # no "ref_pooled.parquet"
     return [key]
 
 
