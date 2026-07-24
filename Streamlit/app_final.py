@@ -3301,17 +3301,12 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
     if shots.empty:
         st.caption(f"No {_sit} shots in this scope.")
         return
-    ng = int(shots["is_goal"].sum())
     lbl = season_label or ("Playoffs" if playoffs else "")
-    faced = kind == "goalie"
-    nm = name + (" (shots faced)" if faced else "")
-    stat = (f"{len(shots):,} {'shots faced' if faced else 'shots'} · "
-            f"{ng} {'goals allowed' if faced else 'goals'}"
-            + ("  ·  goalie's-eye view" if faced else ""))
+    nm = name + (" (shots faced)" if kind == "goalie" else "")
     _mode = st.radio("Show", ["Goals only", "All shots"], horizontal=True,
                      key=f"shotgoals_{kind}_{ident}", label_visibility="collapsed")
     _goals_only = _mode == "Goals only"
-    fig = _sc.shot_chart(shots, nm, season=str(lbl), stat=stat, team=team,
+    fig = _sc.shot_chart(shots, nm, season=str(lbl), team=team,
                          goalie_view=gv, goals_only=_goals_only)
     if fig is not None:
         import io

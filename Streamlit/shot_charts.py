@@ -131,12 +131,12 @@ def _draw_rink(ax) -> None:
         ax.add_patch(plt.Circle((69, cy), 0.7, color=ICE_LINE, alpha=0.7))
 
 
-def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
+def shot_chart(shots: pd.DataFrame, name: str, season: str = "",
                team: str | None = None, goalie_view: bool = False,
                show_bubbles: bool = True, goals_only: bool = False,
                url: str = "hockeyROI.substack.com"):
     """Render a shot chart figure. Returns the matplotlib Figure (or None).
-    Header stacks: NAME (big) / season / stat line. goals_only: just goals."""
+    Header stacks: NAME (big) / season. goals_only: just goals."""
     if shots is None or shots.empty:
         return None
     d = shots.dropna(subset=["x_coord_norm", "y_coord_norm"]).copy()
@@ -192,21 +192,15 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
                edgecolors=GOAL_EDGE, linewidths=0.35, zorder=4)
 
     # Header stack, top-LEFT, aligned with the ice and the legend below it:
-    #   NAME (+ position)  /  season  /  shot + goal totals
-    # The season and totals lines had been dropped during the sizing work, which
-    # made the map look identical when the Season filter changed even though the
-    # underlying shots did change -- nothing on the image named the year.
-    # `stat` is computed from the season-filtered frame BEFORE the goals-only
-    # split, so it's byte-identical in both modes and the tight crop stays the
-    # same size across them.
-    ax.text(0.0, 1.088, name, transform=ax.transAxes, fontsize=5.5,
+    #   NAME (+ position)  /  season
+    # The season line matters beyond decoration: without it the map looked
+    # identical when the Season filter changed, even though the shots underneath
+    # had in fact reloaded -- nothing on the image named the year.
+    ax.text(0.0, 1.049, name, transform=ax.transAxes, fontsize=5.5,
             weight="bold", color=NAVY, ha="left", va="bottom", family="sans-serif")
     if season:
-        ax.text(0.0, 1.049, str(season), transform=ax.transAxes, fontsize=4.6,
+        ax.text(0.0, 1.012, str(season), transform=ax.transAxes, fontsize=4.6,
                 color=NAVY, ha="left", va="bottom", family="sans-serif")
-    if stat:
-        ax.text(0.0, 1.012, str(stat), transform=ax.transAxes, fontsize=4.6,
-                color=GREY, ha="left", va="bottom", family="sans-serif")
     # Legend = shot types only. In goals-only view every dot IS a goal, so the
     # "Goal" swatch is redundant; in all-shots view the ring is explained by a
     # note instead of a swatch.
@@ -236,7 +230,7 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     # under-estimated the real row height, so a 4-row legend (11+ shot types,
     # typical for a goalie) ran straight into the note text underneath it.
     _rows = max(1, int(np.ceil(len(handles) / _NCOL)))
-    fig.subplots_adjust(left=0.02, right=0.98, top=0.88,
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.905,
                         bottom=0.16 + 0.045 * (_rows - 1))
     fig.canvas.draw()
     try:
