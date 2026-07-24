@@ -163,7 +163,10 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     prim, accent = team_color(team) if team else _DEFAULT_COLOR
     st = d["shot_type"].fillna("unknown").str.lower()
     cols = st.map(SHOT_TYPE_COLORS).fillna("#9AA5AD").to_numpy()
-    fig, ax = plt.subplots(figsize=(4.4, 3.1), dpi=220)
+    # Portrait canvas: the drawn zone is 76 wide x 86 tall, so a landscape
+    # figure would leave big side margins once the aspect is equalised. Fixed
+    # size (no tight crop) so Goals-only and All-shots render identically.
+    fig, ax = plt.subplots(figsize=(4.3, 4.35), dpi=220)
     fig.patch.set_facecolor("white")
     _draw_rink(ax)
 
@@ -228,7 +231,8 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
         ax.text(1.0, _yb - 0.055, url, transform=ax.transAxes, ha="right",
                 va="top", color=GREY, fontsize=3.8, style="italic",
                 family="sans-serif")
-    # extra bottom room per wrapped legend row
-    fig.subplots_adjust(left=0.02, right=0.98, top=0.93,
-                        bottom=0.16 + 0.045 * (_rows - 1))
+    # Axes narrowed so the equal-aspect ice actually fills it (no side gaps),
+    # with fixed room underneath for legend rows + notes + brand.
+    fig.subplots_adjust(left=0.13, right=0.87, top=0.95,
+                        bottom=0.24 + 0.035 * (_rows - 1))
     return fig

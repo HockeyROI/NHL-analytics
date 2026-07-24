@@ -3317,14 +3317,14 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
         import io
         import matplotlib.pyplot as _plt
         _buf = io.BytesIO()
-        fig.savefig(_buf, format="png", dpi=240, bbox_inches="tight",
-                    facecolor="white")
+        # NO bbox_inches="tight": that crops to content, so a short legend
+        # (Goals only) produced a smaller canvas than All shots and the map
+        # appeared to change size. Fixed canvas => identical size in both modes.
+        fig.savefig(_buf, format="png", dpi=240, facecolor="white")
         _plt.close(fig)
-        # Rendered via st.image (not st.pyplot) so it carries Streamlit's own
-        # hover toolbar — save/expand live on the image itself rather than a
-        # separate button. width pins it near the other charts' footprint.
-        # On-screen width, in px. This is the single dial for how big the shot
-        # map renders — ~560 matches the Quality-Games charts' footprint.
+        # No download button by design — unlike the Altair charts (which get
+        # Save-as-PNG free from Vega's "..." menu), a matplotlib image would
+        # need its own button, and we'd rather not have one.
         st.image(_buf.getvalue(), width=SHOT_MAP_WIDTH_PX)
 
 
