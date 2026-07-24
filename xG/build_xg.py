@@ -12,7 +12,8 @@ Improves on the v1 geometry-only logistic model (NFI/scripts/build_xg.py):
     play-by-play we don't store; it's the one MoneyPuck feature omitted.)
   - Gradient boosting (HistGradientBoostingClassifier) instead of logistic.
 
-Empty-net shots excluded from train+score (distort finishing). Periods 1-3.
+Empty-net shots are INCLUDED, with an empty_net feature, so they carry real
+xG (they are real chances, and MoneyPuck counts them too). Periods 1-3.
 
 Output: xG/output/shot_xg_per_event.csv  (game_id, event_id, xg)
 Keyed (game_id, event_id) so every consumer merges xG onto shot events.
@@ -52,13 +53,19 @@ def main() -> int:
     s = _ds.load_shot_events(usecols=cols,
                              dtype={"season": str, "situation_code": str})
     s = s[s["event_type"].isin(FENWICK) & s["period"].between(1, 3)].copy()
-    sc = s["situation_code"].astype(str).str.zfill(4)
-    ag, ask, hsk, hg = (sc.str[i].astype(int) for i in range(4))
-    s = s[(ag != 0) & (hg != 0)].copy()          # drop empty-net
-    ag, ask, hsk, hg = (sc.loc[s.index].str[i].astype(int) for i in range(4))
     s["is_goal_i"] = s["is_goal"].astype(int)
     s["abs_time"] = s["time_secs"].astype(int) + (s["period"].astype(int) - 1) * 1200
     s["shoot_home"] = s["shooting_team_id"] == s["home_team_id"]
+    # Empty net = the DEFENDING team's goalie digit is 0.
+    # These are KEPT and carry a model feature rather than being dropped. They
+    # were previously excluded from train+score, which left them with no xG at
+    # all — so on-ice xGF/xGA, PDOxG and GSAx silently ignored real chances, and
+    # our GSAx could never line up with MoneyPuck's (which includes them).
+    # Only the shot CHART hides EN shots, and it does that at draw time.
+    _sc0 = s["situation_code"].astype(str).str.zfill(4)
+    s["empty_net"] = np.where(s["shoot_home"],
+                              _sc0.str[0].astype(int) == 0,
+                              _sc0.str[3].astype(int) == 0).astype(int)
     s = s.sort_values(["game_id", "abs_time", "event_id"]).reset_index(drop=True)
     print(f"  Fenwick shots (train/score set): {len(s):,}")
 
@@ -117,6 +124,7 @@ def main() -> int:
         "log_tsl": np.log1p(s["time_since_last"]), "dist_last": s["dist_last"],
         "rebound": s["rebound"], "rush": s["rush"], "score_diff": s["score_diff"],
         "strength_diff": s["strength_diff"], "is_home": s["is_home"],
+        "empty_net": s["empty_net"],
     }, index=s.index)
     feat = pd.concat([num, st_d.set_index(s.index), lt_d.set_index(s.index),
                       lz_d.set_index(s.index)], axis=1)
@@ -167,9 +175,8 @@ def main() -> int:
             fp = MP_DIR / f"shots_{yr}.csv"
             if not fp.exists():
                 continue
-            m = pd.read_csv(fp, usecols=["shooterPlayerId", "season", "xGoal",
-                                         "shotOnEmptyNet"])
-            m = m[m["shotOnEmptyNet"] != 1]
+            # EN kept on BOTH sides so the comparison is like-for-like.
+            m = pd.read_csv(fp, usecols=["shooterPlayerId", "season", "xGoal"])
             mp_parts.append(m.groupby(["shooterPlayerId", "season"])["xGoal"]
                             .sum().rename("mp_xg").reset_index())
         if mp_parts:
