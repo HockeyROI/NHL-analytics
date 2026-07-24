@@ -110,7 +110,10 @@ def load_shots(seasons: list[str] | None = None, game_type: str = "regular") -> 
 def _draw_rink(ax) -> None:
     """Offensive half, net at the right. No border — the ice is just the light
     axes background (data coords x ~25-99, y -42..42)."""
-    ax.set_xlim(24, 100)
+    # Show back to centre ice: 100 units wide vs 86 tall keeps the chart
+    # LANDSCAPE with the aspect still equal, so the whole image fits on screen
+    # (a 24-100 window is taller than it is wide once the aspect is equalised).
+    ax.set_xlim(0, 100)
     ax.set_ylim(-43, 43)
     ax.set_aspect("equal")
     ax.set_facecolor(ICE)                 # ice = light background, no perimeter
@@ -157,8 +160,8 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     # ~3% of shots (and goals — e.g. empty-netters from a player's own end) are
     # taken outside the offensive zone we draw. Pin them to the left edge rather
     # than silently clipping them off-chart, so the dot count matches reality.
-    n_far = int((x[shown] < 25).sum())
-    x = np.clip(x, 25.5, 99.0)
+    n_far = int((x[shown] < 1).sum())
+    x = np.clip(x, 1.0, 99.0)
     y = np.clip(y, -41.0, 41.0)
     prim, accent = team_color(team) if team else _DEFAULT_COLOR
     st = d["shot_type"].fillna("unknown").str.lower()
