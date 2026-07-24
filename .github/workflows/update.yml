@@ -1,13 +1,17 @@
-name: Daily Data Update
+name: Weekly Data Update
 
+# Mondays 10:00 UTC (after the weekend's games). workflow_dispatch lets you
+# trigger it by hand from the Actions tab at any time.
 on:
   schedule:
-    - cron: '0 10 * * *'
+    - cron: '0 10 * * 1'
   workflow_dispatch:
 
+# Give the whole job room: the situation engines walk every game.
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: write
     steps:
@@ -17,18 +21,45 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
-        run: pip install -r Streamlit/requirements.txt
+        run: |
+          pip install -r Streamlit/requirements.txt
+          pip install scikit-learn        # xG model (not needed by the app itself)
 
-      - name: Run TNZI daily update
+      # ---- 1. Pull new games from the NHL API -------------------------------
+      # These two are incremental: they fetch fresh play-by-play/shifts and
+      # backfill any games missing since the last run.
+      - name: Zones daily update (backfills missing games)
         run: python Zones/scripts/update_daily.py
         continue-on-error: true
 
-      - name: Run NFI current season update
+      - name: NFI current-season update (backfills missing games)
         run: python NFI/scripts/update_current_season.py
         continue-on-error: true
 
+      # ---- 2. Box score — straight from the NHL Stats API --------------------
+      - name: Box score (NHL Stats API)
+        run: python NFI/scripts/build_box_score.py
+        continue-on-error: true
+
+      # ---- 3. Rebuild the per-situation engines ------------------------------
+      # The raw CSVs (nhl_shot_events ~128MB, shift_data ~426MB) are gitignored
+      # and NOT on the runner. These builders fall back to the committed
+      # per-season parquets (Data/shot_events_by_season, Data/shift_data_by_season)
+      # via NFI/scripts/_data_sources.py, which is what makes this step possible.
+      - name: Per-situation TOI
+        run: python NFI/scripts/build_situation_toi.py
+
+      - name: Per-situation on-ice (players)
+        run: python NFI/scripts/build_situation_onice.py
+
+      - name: Per-situation on-ice (teams)
+        run: python NFI/scripts/build_situation_onice_team.py
+
+      # ---- 4. Commit whatever changed ---------------------------------------
+      # Only the generated data files are staged, explicitly — never `git add .`.
       - name: Commit and push updated data
         run: |
           git config user.email "hockeyroi-bot@noreply.github.com"
@@ -38,8 +69,13 @@ jobs:
           git add -A NFI/output/fully_adjusted/current_season_player_fully_adjusted.csv 2>/dev/null || true
           git add -A NFI/processed_game_ids.json 2>/dev/null || true
           git add -A NFI/last_updated_current.txt 2>/dev/null || true
+          git add -A Data/player_situation_toi.csv 2>/dev/null || true
+          git add -A Data/player_situation_onice.csv 2>/dev/null || true
+          git add -A Data/team_situation_onice.csv 2>/dev/null || true
+          git add -A Data/box_score_skaters.csv 2>/dev/null || true
           find Zones -name "last_updated_*.txt" -exec git add {} \; 2>/dev/null || true
-          git diff --staged --quiet || git commit -m "Daily data update $(date +'%Y-%m-%d')"
+          git diff --staged --quiet || git commit -m "Weekly data update $(date +'%Y-%m-%d')"
+          git pull --rebase origin main || true
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
