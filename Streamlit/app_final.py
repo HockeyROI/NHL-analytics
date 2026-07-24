@@ -3317,9 +3317,10 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
         import io
         import matplotlib.pyplot as _plt
         _buf = io.BytesIO()
-        # tight crop keeps it sharp with no dead margin; both modes render the
-        # same size because the legend covers all shot types either way.
-        fig.savefig(_buf, format="png", dpi=240, bbox_inches="tight",
+        # dpi 480 => the PNG is ~2.5x the on-screen width, so it stays crisp on
+        # HiDPI/Retina (which renders a 560px-wide image at ~1120 real pixels).
+        # dpi scales every element uniformly, so the layout is unchanged.
+        fig.savefig(_buf, format="png", dpi=480, bbox_inches="tight",
                     facecolor="white")
         _plt.close(fig)
         # No download button by design — unlike the Altair charts (which get
