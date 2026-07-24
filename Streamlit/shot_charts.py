@@ -58,7 +58,9 @@ GOAL_EDGE = "#111111"   # goal dots: black perimeter
 SHOT_TYPE_COLORS = {
     "wrist": "#4C9BE8", "snap": "#FF6B35", "slap": "#F2C744", "backhand": "#8E5BD6",
     "tip-in": "#3FB37F", "deflected": "#2E8B57", "wrap-around": "#D65FA6",
-    "bat": "#E86AA6", "between-legs": "#9C6B4A", "poke": "#8FA0A8",
+    # bat sat one shade off wrap-around's pink and the two were unreadable
+    # together in the legend — pushed to a much lighter tint to separate them.
+    "bat": "#F9C2DC", "between-legs": "#9C6B4A", "poke": "#8FA0A8",
     "cradle": "#8FA0A8", "unknown": "#9AA5AD",
 }
 ICE = "#F4F8FC"         # super-light blue — no border needed
@@ -170,10 +172,17 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     fig.patch.set_facecolor("white")
     _draw_rink(ax)
 
-    # dot size/alpha shrink with volume so high-count goalies/teams read as a
-    # heat cloud rather than a blob.
+    # Dot SIZE shrinks with volume so high-count goalies/teams read as a heat
+    # cloud rather than a blob.
     n = len(x)
-    ds, da = (22, 0.75) if n < 400 else (12, 0.5) if n < 1200 else (7, 0.4)
+    ds = 22 if n < 400 else 12 if n < 1200 else 7
+    # Non-goal alpha is tied to dot size, not volume. The goalie look the fade
+    # is calibrated against is s=7 @ 0.40; a skater's s=22 dot covers ~3x the
+    # area, so the same alpha lays down ~3x the ink and the "faded backdrop"
+    # came out nearly as solid as the goals. Scaling alpha by sqrt(7/ds) keeps
+    # perceived ink density — and therefore the goals-pop contrast — constant
+    # across player / goalie / team charts.
+    da = round(0.40 * (7.0 / ds) ** 0.5, 3)
     if not goals_only:
         # non-goal shots: colored by type, no border
         ax.scatter(x[~goal], y[~goal], s=ds, c=cols[~goal], alpha=da,
@@ -182,9 +191,22 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     ax.scatter(x[goal], y[goal], s=ds, c=cols[goal], alpha=0.95,
                edgecolors=GOAL_EDGE, linewidths=0.35, zorder=4)
 
-    # header: name (+ position), top-LEFT, sized to match the app's other charts
-    ax.text(0.0, 1.015, name, transform=ax.transAxes, fontsize=5.5,
+    # Header stack, top-LEFT, aligned with the ice and the legend below it:
+    #   NAME (+ position)  /  season  /  shot + goal totals
+    # The season and totals lines had been dropped during the sizing work, which
+    # made the map look identical when the Season filter changed even though the
+    # underlying shots did change -- nothing on the image named the year.
+    # `stat` is computed from the season-filtered frame BEFORE the goals-only
+    # split, so it's byte-identical in both modes and the tight crop stays the
+    # same size across them.
+    ax.text(0.0, 1.088, name, transform=ax.transAxes, fontsize=5.5,
             weight="bold", color=NAVY, ha="left", va="bottom", family="sans-serif")
+    if season:
+        ax.text(0.0, 1.049, str(season), transform=ax.transAxes, fontsize=4.6,
+                color=NAVY, ha="left", va="bottom", family="sans-serif")
+    if stat:
+        ax.text(0.0, 1.012, str(stat), transform=ax.transAxes, fontsize=4.6,
+                color=GREY, ha="left", va="bottom", family="sans-serif")
     # Legend = shot types only. In goals-only view every dot IS a goal, so the
     # "Goal" swatch is redundant; in all-shots view the ring is explained by a
     # note instead of a swatch.
@@ -209,9 +231,19 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
         txt.set_color(NAVY)
 
     # Everything below the legend, so nothing can overlap it however many rows
-    # the legend wraps onto.
+    # the legend wraps onto. Reserve the bottom margin from the row count first,
+    # then MEASURE where the legend actually ends -- a fixed per-row constant
+    # under-estimated the real row height, so a 4-row legend (11+ shot types,
+    # typical for a goalie) ran straight into the note text underneath it.
     _rows = max(1, int(np.ceil(len(handles) / _NCOL)))
-    _y = -0.045 - 0.046 * _rows
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.88,
+                        bottom=0.16 + 0.045 * (_rows - 1))
+    fig.canvas.draw()
+    try:
+        _lb = leg.get_window_extent().transformed(ax.transAxes.inverted())
+        _y = _lb.y0 - 0.028
+    except Exception:                     # never let layout maths kill the chart
+        _y = -0.045 - 0.046 * _rows
 
     # Constant note text: a mode-dependent string changes the tight-crop width,
     # which made Goals-only and All-shots render at different sizes.
@@ -231,7 +263,4 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
         ax.text(1.0, _yb - 0.055, url, transform=ax.transAxes, ha="right",
                 va="top", color=GREY, fontsize=3.8, style="italic",
                 family="sans-serif")
-    # extra bottom room per wrapped legend row
-    fig.subplots_adjust(left=0.02, right=0.98, top=0.93,
-                        bottom=0.16 + 0.045 * (_rows - 1))
     return fig

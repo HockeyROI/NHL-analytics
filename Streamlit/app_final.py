@@ -856,7 +856,7 @@ def render_methodology() -> None:
             "as a game rate; formerly GQG). <b>NFI SV%</b> is the one raw-save% exception in that "
             "family — an unadjusted save% on NFI-GSAx's own net-front shot set, a sanity check, "
             "not a replacement. Save%-based: <b>sQS%</b> — the little <b>s</b> is <b>Starter</b>. "
-            "sQS% = share of games where per-game save% (5v5 shots on goal) cleared that season's "
+            "sQS% = share of games where per-game save% (all-situations shots on goal) cleared that season's "
             "starter-tier baseline — the volume-weighted save% of that season's top-32-GP "
             "(starter) or next-32-GP (backup) goalies. A traditional Quality Start, but against a "
             "population-specific bar recomputed every season instead of one fixed league-average "
@@ -963,8 +963,8 @@ def render_methodology() -> None:
             league-average line, it uses a baseline recomputed every season: the volume-weighted
             save% of that season's top-32-GP &ldquo;starter&rdquo; tier. So <b>sQS%</b> asks
             &ldquo;does this goalie perform like a starter?&rdquo; rather than merely beating a
-            league-average line that a backup would clear too. Toggle the shot scope
-            (5v5 / all situations) for sQS% — QG and QNFG% stay 5v5-only regardless.
+            league-average line that a backup would clear too. sQS% is measured over
+            <b>all situations</b> — QG and QNFG% stay 5v5-only regardless.
           </div>
         </div>
         """,
@@ -1536,7 +1536,7 @@ def _player_situation_table(pid: int, season_label: str | None = None,
 
 
 # PDO shot scope — same 5v5-vs-all-situations pattern as the Goalies sQS%
-# toggle (QG_SCOPE_SUFFIX). Built together in one pass by build_pdo_sog.py.
+# toggle. Built together in one pass by build_pdo_sog.py.
 PDO_SCOPE_FILE = {"5v5": "player_pdo_5v5_per_season.csv",
                    "All situations": "player_pdo_allsit_per_season.csv"}
 
@@ -5394,23 +5394,20 @@ def load_qs_by_season() -> pd.DataFrame:
     return df
 
 
-# sQS% — tiered save%-based Quality Games. Built in two shot scopes;
-# suffix "" = 5v5 ES regulation, "_allsit" = all situations. Playoffs not yet
-# built for this metric (see compute_qg_tiered.py).
-QG_SCOPE_SUFFIX = {"5v5": "", "All situations": "_allsit"}
+# sQS% — tiered save%-based Quality Games. Always ALL SITUATIONS: save% is
+# quoted all-situations everywhere else in hockey, and a goalie's job on the PK
+# is part of the job. The 5v5-only build ("" suffix) still exists on disk but
+# the app no longer surfaces it, so there's no shot-scope toggle to set — one
+# less control on the Goalies tab. (Files: compute_qg_tiered.py.)
+QG_SCOPE = "_allsit"
+QG_SCOPE_LABEL = "all situations"
 
 
 def _qg_toggle_state() -> tuple[bool, str, str]:
-    """Shared sQS% baseline + shot-scope toggle state (set by the widgets
-    in render_goalies, read here so the drill-in / Trade Analyzer respect
-    whatever the user picked on the Goalies tab in this same run — same
-    shared-session-state pattern as the global Season/Game-type filters).
-    Returns (qg_starter, qg_scope_suffix, qg_label)."""
-    scope_label = st.session_state.get("goalies_qg_scope", "5v5")
-    qg_starter = True
-    qg_scope_suffix = QG_SCOPE_SUFFIX.get(scope_label, "")
-    qg_label = "sQS%"
-    return qg_starter, qg_scope_suffix, qg_label
+    """sQS% scope/tier, kept as a function so the drill-in and Trade Analyzer
+    keep one shared source of truth. Returns (qg_starter, qg_scope_suffix,
+    qg_label)."""
+    return True, QG_SCOPE, "sQS%"
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -5851,10 +5848,9 @@ def _goalie_gsax_bar(row, qg_scope_suffix: str = "") -> None:
             unsafe_allow_html=True)
         _sqs_bl = load_qg_starter_baseline(qg_scope_suffix).get(_ssn)
         if _sqs_bl is not None:
-            _scope_label = "all situations" if qg_scope_suffix else "5v5"
             st.markdown(
                 f"<div style='color:{_CHART_THIRD}; font-size:0.85rem; margin:0.1rem 0 0.4rem;'>"
-                f"<b>sQS% starter baseline save% ({_scope_label})</b> — a game clears sQS% "
+                f"<b>sQS% starter baseline save% ({QG_SCOPE_LABEL})</b> — a game clears sQS% "
                 f"when its save% beats this line: {row['Season']} {_sqs_bl:.1f}%.</div>",
                 unsafe_allow_html=True)
     # Two separate charts (total, then per-60) — each its own downloadable image.
@@ -6062,28 +6058,19 @@ def render_goalies() -> None:
                    "Small playoff samples: all goalies are ranked (no qualifying floor).")
 
     # sQS% (Starter Quality Start) — save%-based, judged against that season's
-    # starter-tier baseline. Only the shot-scope toggle (5v5 vs. all situations)
-    # remains; QNFG% and QG% stay 5v5-only regardless. sQS% isn't built for playoffs,
-    # so each playoff game is judged against that season's REGULAR-SEASON starter
-    # baseline (see compute_qg_tiered_playoffs.py).
-    st.session_state.setdefault("goalies_qg_scope", "5v5")
-    qgc1, _ = st.columns([1.4, 1.4])
-    with qgc1:
-        qg_scope_label = st.radio(
-            "sQS% shot scope", list(QG_SCOPE_SUFFIX.keys()),
-            horizontal=True, key="goalies_qg_scope",
-            help="Shot scope for sQS% only — QNFG% and QG% are always 5v5.")
+    # starter-tier baseline, over ALL SITUATIONS. QNFG% and QG% stay 5v5-only.
+    # sQS% isn't built for playoffs, so each playoff game is judged against that
+    # season's REGULAR-SEASON starter baseline (compute_qg_tiered_playoffs.py).
+    qg_starter, qg_scope_suffix = True, QG_SCOPE
     if playoffs:
-        st.caption("The shot-scope toggle applies only to **sQS%** — **QNFG% and QG% "
-                   "stay 5v5-only** regardless. Each playoff game is graded against "
-                   "**that season's regular-season starter baseline**.")
+        st.caption("**sQS%** covers **all situations**; **QNFG% and QG% are 5v5-only**. "
+                   "Each playoff game is graded against **that season's regular-season "
+                   "starter baseline**.")
     else:
-        st.caption("The shot-scope toggle applies only to **sQS%** — "
-                   "**QNFG% and QG% stay 5v5-only** regardless.")
-    qg_starter = True
-    qg_scope_suffix = QG_SCOPE_SUFFIX[qg_scope_label]
+        st.caption("**sQS%** covers **all situations**; "
+                   "**QNFG% and QG% are 5v5-only**.")
 
-    # State the sQS% starter baseline save% for the open season(s) + shot scope.
+    # State the sQS% starter baseline save% for the open season(s).
     _bl = load_qg_starter_baseline(qg_scope_suffix)
     if _bl:
         _sk = SEASON_KEY.get(season_label, "pooled")
@@ -6094,7 +6081,7 @@ def render_goalies() -> None:
         if _bl_parts:
             st.markdown(
                 f"<div style='color:{_CHART_THIRD}; font-size:0.85rem; margin:0.1rem 0 0.4rem;'>"
-                f"<b>sQS% starter baseline save% ({qg_scope_label})</b> — a game clears "
+                f"<b>sQS% starter baseline save% ({QG_SCOPE_LABEL})</b> — a game clears "
                 "sQS% when its save% beats this line: " + " · ".join(_bl_parts) + "</div>",
                 unsafe_allow_html=True)
 
@@ -6355,7 +6342,7 @@ def render_goalies() -> None:
         _bar_txt = ("that season's" if not (is_pooled or is_2yr)
                     else f"each season's ({'2-season pool' if is_2yr else '4-season pool'})")
         st.caption(
-            f"**{_qg_label}** = share of games where per-game save% ({qg_scope_label} shots "
+            f"**{_qg_label}** = share of games where per-game save% ({QG_SCOPE_LABEL} shots "
             f"on goal) cleared {_bar_txt} **{'starter' if qg_starter else 'backup'}-tier** "
             f"baseline — the volume-weighted save% of that season's top-32-GP (starter) or "
             f"next-32-GP (backup) goalies. A traditional Quality Start, but against a "
