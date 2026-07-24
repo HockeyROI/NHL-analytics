@@ -30,6 +30,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import _data_sources as _ds
+
 ROOT = Path(os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI"))
 SHOT_CSV = ROOT / "Data" / "nhl_shot_events.csv"
 XG_CSV = ROOT / "xG" / "output" / "shot_xg_per_event.csv"
@@ -47,7 +49,7 @@ def situation_label(own: int, opp: int) -> str:
 
 
 def main() -> int:
-    for p in (SHOT_CSV, XG_CSV, GAMES):
+    for p in (XG_CSV, GAMES):
         if not p.exists():
             print(f"[team_situation] missing {p}", file=sys.stderr)
             return 2
@@ -60,7 +62,7 @@ def main() -> int:
     use = ["game_id", "period", "time_secs", "event_id", "event_type", "is_goal",
            "situation_code", "shooting_team_id", "home_team_id",
            "home_team_abbrev", "away_team_abbrev"]
-    ev = pd.read_csv(SHOT_CSV, usecols=use, dtype={"situation_code": str})
+    ev = _ds.load_shot_events(usecols=use, dtype={"situation_code": str})
     ev = ev[ev["event_type"].isin(CORSI)].dropna(subset=["situation_code", "period", "time_secs"])
     xg = pd.read_csv(XG_CSV)
     ev = ev.merge(xg, on=["game_id", "event_id"], how="left")

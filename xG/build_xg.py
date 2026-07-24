@@ -21,10 +21,14 @@ Validation: reports test-split AUC / log-loss / calibration, and correlates
 player-season ixG totals against MoneyPuck's published xGoal.
 """
 import os
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "NFI" / "scripts"))
+import _data_sources as _ds
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.metrics import roc_auc_score, log_loss
 from sklearn.model_selection import train_test_split
@@ -45,8 +49,8 @@ def main() -> int:
     cols = ["game_id", "event_id", "season", "period", "time_secs", "event_type",
             "situation_code", "shooting_team_id", "home_team_id", "is_goal",
             "x_coord_norm", "y_coord_norm", "shot_type", "shooter_player_id"]
-    s = pd.read_csv(SHOT_CSV, usecols=cols,
-                    dtype={"season": str, "situation_code": str})
+    s = _ds.load_shot_events(usecols=cols,
+                             dtype={"season": str, "situation_code": str})
     s = s[s["event_type"].isin(FENWICK) & s["period"].between(1, 3)].copy()
     sc = s["situation_code"].astype(str).str.zfill(4)
     ag, ask, hsk, hg = (sc.str[i].astype(int) for i in range(4))

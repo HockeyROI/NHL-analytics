@@ -35,6 +35,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import _data_sources as _ds
+
 ROOT = Path(os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI"))
 SHOT_CSV = ROOT / "Data" / "nhl_shot_events.csv"
 SHIFT_CSV = ROOT / "NFI" / "Geometry_post" / "Data" / "shift_data.csv"
@@ -63,7 +65,7 @@ def stop(msg: str, code: int = 2) -> int:
 
 
 def main() -> int:
-    for p in (SHOT_CSV, SHIFT_CSV, GAMES, POSITIONS):
+    for p in (GAMES, POSITIONS):
         if not p.exists():
             return stop(f"input not found: {p}")
 
@@ -86,8 +88,8 @@ def main() -> int:
     print(f"[situation_toi] reading events {SHOT_CSV} ...")
     use_shots = ["game_id", "period", "time_secs", "event_id", "is_goal",
                  "situation_code", "home_team_abbrev", "away_team_abbrev"]
-    shots = pd.read_csv(SHOT_CSV, usecols=use_shots,
-                        dtype={"situation_code": str})
+    shots = _ds.load_shot_events(usecols=use_shots,
+                                 dtype={"situation_code": str})
     shots = shots.dropna(subset=["situation_code", "period", "time_secs"])
     shots["abs_time"] = (shots["time_secs"].astype(int)
                          + (shots["period"].astype(int) - 1) * 1200)
@@ -105,18 +107,11 @@ def main() -> int:
 
     # ---------- shifts: stream, keep skaters only ----------
     print(f"[situation_toi] streaming shifts {SHIFT_CSV} ...")
-    parts = []
-    for ch in pd.read_csv(SHIFT_CSV, usecols=REQUIRED_SHIFT_COLS, chunksize=500_000):
-        ch = ch.dropna(subset=REQUIRED_SHIFT_COLS)
-        ch["game_id"] = ch["game_id"].astype(int)
-        ch["player_id"] = ch["player_id"].astype(int)
-        ch["abs_start_secs"] = ch["abs_start_secs"].astype(int)
-        ch["abs_end_secs"] = ch["abs_end_secs"].astype(int)
-        ch = ch[~ch["player_id"].isin(goalie_ids)]
-        if len(ch):
-            parts.append(ch)
-    shifts = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=REQUIRED_SHIFT_COLS)
-    del parts
+    shifts = _ds.load_shift_data(usecols=REQUIRED_SHIFT_COLS)
+    shifts = shifts.dropna(subset=REQUIRED_SHIFT_COLS)
+    for _c in ("game_id", "player_id", "abs_start_secs", "abs_end_secs"):
+        shifts[_c] = shifts[_c].astype(int)
+    shifts = shifts[~shifts["player_id"].isin(goalie_ids)]
     print(f"[situation_toi]   skater shifts: {len(shifts):,}")
     shifts_by_game = dict(tuple(shifts.groupby("game_id")))
 
