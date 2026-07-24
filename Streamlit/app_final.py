@@ -3235,6 +3235,11 @@ def _trade_line_compare(players: dict, cols: list[str], caption: str,
     _show_chart(chart, dl_name=dl_name, brand_width=_w * _n + 24 * (_n - 1) + 55)
 
 
+# How wide the shot map renders on screen, in px — one dial for its size.
+# ~560 puts it on roughly the same footprint as the Quality-Games charts.
+SHOT_MAP_WIDTH_PX = 560
+
+
 def _shot_chart_seasons(season_label: str | None, playoffs: bool):
     """Map the app scope to a list of season strings for the shot parquets
     (None = all seasons, used for the pooled playoff view)."""
@@ -3318,7 +3323,9 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
         # Rendered via st.image (not st.pyplot) so it carries Streamlit's own
         # hover toolbar — save/expand live on the image itself rather than a
         # separate button. width pins it near the other charts' footprint.
-        st.image(_buf.getvalue(), width=1100)
+        # On-screen width, in px. This is the single dial for how big the shot
+        # map renders — ~560 matches the Quality-Games charts' footprint.
+        st.image(_buf.getvalue(), width=SHOT_MAP_WIDTH_PX)
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,

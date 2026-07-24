@@ -163,7 +163,7 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     prim, accent = team_color(team) if team else _DEFAULT_COLOR
     st = d["shot_type"].fillna("unknown").str.lower()
     cols = st.map(SHOT_TYPE_COLORS).fillna("#9AA5AD").to_numpy()
-    fig, ax = plt.subplots(figsize=(6.5, 4.6), dpi=200)
+    fig, ax = plt.subplots(figsize=(4.4, 3.1), dpi=220)
     fig.patch.set_facecolor("white")
     _draw_rink(ax)
 
