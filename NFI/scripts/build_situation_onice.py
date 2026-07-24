@@ -30,7 +30,7 @@ Inputs:
   NFI/output/shot_xg_per_event.csv
   NFI/Geometry_post/Data/shift_data.csv
   Data/game_ids.csv
-  NFI/Output/player_positions.csv
+  NFI/output/player_positions.csv
 """
 import os
 import sys
@@ -47,7 +47,7 @@ SHOT_CSV = ROOT / "Data" / "nhl_shot_events.csv"
 XG_CSV = ROOT / "xG" / "output" / "shot_xg_per_event.csv"  # v2 model (xG/build_xg.py)
 SHIFT_CSV = ROOT / "NFI" / "Geometry_post" / "Data" / "shift_data.csv"
 GAMES = ROOT / "Data" / "game_ids.csv"
-POSITIONS = ROOT / "NFI" / "Output" / "player_positions.csv"
+POSITIONS = ROOT / "NFI" / "output" / "player_positions.csv"
 
 OUT_CSV = Path(os.environ.get("SITUATION_ONICE_OUT", ROOT / "Data" / "player_situation_onice.csv"))
 

@@ -25,7 +25,7 @@ Inputs:
   Data/nhl_shot_events.csv                    (events + situation_code)
   NFI/Geometry_post/Data/shift_data.csv       (shift intervals, abs seconds)
   Data/game_ids.csv                           (game_id -> season, game_type)
-  NFI/Output/player_positions.csv             (player_id -> name, position)
+  NFI/output/player_positions.csv             (player_id -> name, position)
 """
 import os
 import sys
@@ -41,7 +41,7 @@ ROOT = Path(os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI
 SHOT_CSV = ROOT / "Data" / "nhl_shot_events.csv"
 SHIFT_CSV = ROOT / "NFI" / "Geometry_post" / "Data" / "shift_data.csv"
 GAMES = ROOT / "Data" / "game_ids.csv"
-POSITIONS = ROOT / "NFI" / "Output" / "player_positions.csv"
+POSITIONS = ROOT / "NFI" / "output" / "player_positions.csv"
 
 OUT_CSV = Path(os.environ.get("SITUATION_TOI_OUT", ROOT / "Data" / "player_situation_toi.csv"))
 
