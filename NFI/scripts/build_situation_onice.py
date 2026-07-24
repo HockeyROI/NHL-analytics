@@ -225,10 +225,14 @@ def main() -> int:
 
     # ---------- individual counts (shooter) — separate vectorized pass ----------
     print("[situation_onice] individual (shooter) counts ...")
-    iev = pd.read_csv(SHOT_CSV, usecols=["game_id", "event_id", "event_type", "is_goal",
-                                         "situation_code", "shooting_team_id", "home_team_id",
-                                         "shooter_player_id"],
-                      dtype={"situation_code": str})
+    # via the CSV-or-parquet fallback, same as the on-ice pass above — a stray
+    # direct read_csv(SHOT_CSV) here is what broke the weekly CI run (the raw CSV
+    # is gitignored and absent on the runner).
+    iev = _ds.load_shot_events(
+        usecols=["game_id", "event_id", "event_type", "is_goal",
+                 "situation_code", "shooting_team_id", "home_team_id",
+                 "shooter_player_id"],
+        dtype={"situation_code": str})
     iev = iev[iev["event_type"].isin(CORSI)].dropna(subset=["shooter_player_id", "situation_code"])
     iev = iev.merge(xg, on=["game_id", "event_id"], how="left")
     iev["xg"] = iev["xg"].fillna(0.0)
