@@ -81,14 +81,30 @@ def load_shots(seasons: list[str] | None = None, game_type: str = "regular") -> 
     if not files:
         return pd.DataFrame()
     cols = ["season", "game_type", "event_type", "shooter_player_id", "goalie_id",
-            "shooting_team_abbrev", "x_coord_norm", "y_coord_norm", "is_goal", "shot_type"]
+            "shooting_team_abbrev", "x_coord_norm", "y_coord_norm", "is_goal",
+            "shot_type", "situation_code", "shooting_team_id", "home_team_id"]
     parts = []
     for f in files:
         d = pd.read_parquet(f, columns=cols)
         d = d[(d["game_type"] == game_type)
               & d["event_type"].isin(["shot-on-goal", "missed-shot", "goal"])]
         parts.append(d)
-    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+    if not parts:
+        return pd.DataFrame()
+    out = pd.concat(parts, ignore_index=True)
+    # situation_code = [away_goalie, away_skaters, home_skaters, home_goalie]
+    sc = out["situation_code"].astype(str).str.zfill(4)
+    shoot_home = out["shooting_team_id"] == out["home_team_id"]
+    # Empty net = the DEFENDING team's goalie digit is 0.
+    def_goalie = np.where(shoot_home, sc.str[0].astype(int), sc.str[3].astype(int))
+    out["empty_net"] = def_goalie == 0
+    # Shooter-perspective strength state, e.g. "5v5" / "5v4" / "4v5" — lets the
+    # chart honour the app's Situation filter.
+    ask, hsk = sc.str[1].astype(int), sc.str[2].astype(int)
+    own = np.where(shoot_home, hsk, ask)
+    opp = np.where(shoot_home, ask, hsk)
+    out["situation"] = [f"{a}v{b}" for a, b in zip(own, opp)]
+    return out
 
 
 def _draw_rink(ax) -> None:
@@ -121,11 +137,29 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     d = shots.dropna(subset=["x_coord_norm", "y_coord_norm"]).copy()
     if d.empty:
         return None
+    # Empty-net shots are excluded entirely (no goalie to beat, and they're
+    # usually taken from the shooter's own end) — noted on the chart instead.
+    if "empty_net" in d.columns:
+        _en_mask = d["empty_net"].astype(bool)
+        n_en_goals = int((_en_mask & (d["is_goal"].astype(int) == 1)).sum())
+        d = d[~_en_mask]
+        if d.empty:
+            return None
+    else:
+        n_en_goals = 0
     x = d["x_coord_norm"].astype(float).to_numpy()
     y = d["y_coord_norm"].astype(float).to_numpy()
     if goalie_view:                     # goalie faces the shooter -> mirror sides
         y = -y
     goal = d["is_goal"].astype(int).to_numpy() == 1
+    # Only the points actually drawn count toward the legend / long-range note.
+    shown = goal if goals_only else np.ones(len(x), dtype=bool)
+    # ~3% of shots (and goals — e.g. empty-netters from a player's own end) are
+    # taken outside the offensive zone we draw. Pin them to the left edge rather
+    # than silently clipping them off-chart, so the dot count matches reality.
+    n_far = int((x[shown] < 25).sum())
+    x = np.clip(x, 25.5, 99.0)
+    y = np.clip(y, -41.0, 41.0)
     prim, accent = team_color(team) if team else _DEFAULT_COLOR
     st = d["shot_type"].fillna("unknown").str.lower()
     cols = st.map(SHOT_TYPE_COLORS).fillna("#9AA5AD").to_numpy()
@@ -141,7 +175,7 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
         # non-goal shots: colored by type, no border
         ax.scatter(x[~goal], y[~goal], s=ds, c=cols[~goal], alpha=da,
                    edgecolors="none", zorder=3)
-    # goals: SAME size as shots, with a very thin dark ring to mark them
+    # goals: SAME size as shots, with a very thin dark ring
     ax.scatter(x[goal], y[goal], s=ds, c=cols[goal], alpha=0.95,
                edgecolors=GOAL_EDGE, linewidths=0.35, zorder=4)
 
@@ -149,17 +183,30 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     ax.text(0.0, 1.02, name, transform=ax.transAxes, fontsize=7,
             weight="bold", color=NAVY, ha="left", va="bottom", family="sans-serif")
     # legend: shot types present + a white/black "Goal" marker
-    present = [t for t in SHOT_TYPE_COLORS if t in set(st) and t != "unknown"]
+    _st_shown = set(st[shown])
+    present = [t for t in SHOT_TYPE_COLORS if t in _st_shown and t != "unknown"]
     handles = [plt.Line2D([0], [0], marker="o", ls="", mfc=SHOT_TYPE_COLORS[t],
                           mec="none", ms=4.5, label=t.replace("-", " ").title())
                for t in present[:8]]
     handles.append(plt.Line2D([0], [0], marker="o", ls="", mfc="white",
                               mec=GOAL_EDGE, mew=0.5, ms=4.5, label="Goal"))
-    leg = ax.legend(handles=handles, loc="upper center", ncol=5, fontsize=5.5,
-                    frameon=False, bbox_to_anchor=(0.5, -0.01),
-                    handletextpad=0.25, columnspacing=0.8)
+    # left-aligned with the ice + the name above it
+    leg = ax.legend(handles=handles, loc="upper left", ncol=5, fontsize=5.5,
+                    frameon=False, bbox_to_anchor=(0.0, -0.01),
+                    handletextpad=0.25, columnspacing=0.8, borderaxespad=0.0)
     for txt in leg.get_texts():
         txt.set_color(NAVY)
+    _notes = []
+    if n_en_goals:
+        _notes.append(f"{n_en_goals} empty-net goal"
+                      f"{'s' if n_en_goals > 1 else ''} not shown")
+    if n_far:
+        _notes.append(f"{n_far} long-range shot{'s' if n_far > 1 else ''} "
+                      "pinned at the left edge")
+    if _notes:
+        ax.text(0.0, -0.155, " · ".join(_notes), transform=ax.transAxes,
+                fontsize=4.5, color=GREY, ha="left", va="top", style="italic",
+                family="sans-serif")
     # two-colour HOCKEY·ROI wordmark + url, bottom-RIGHT corner (matches the
     # brand placement on the app's other charts)
     # "HOCKEY" ends at the junction x, "ROI" starts there -> the pair reads as

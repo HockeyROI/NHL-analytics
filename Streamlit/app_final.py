@@ -3268,7 +3268,16 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
         shots, gv = shots[shots["goalie_id"] == ident], True
     else:
         shots, gv = shots[shots["shooting_team_abbrev"] == str(ident)], False
+    # Honour the global Situation filter (5v5 shows only 5v5 shots, etc.).
+    _sit = _situation_toggle_state()
+    _mats = SITUATION_BUCKETS.get(_sit)
+    if _mats is not None and "situation" in shots.columns:
+        # goalie view: the filter is from the SHOOTER's perspective, so mirror it
+        if kind == "goalie":
+            _mats = [f"{b}v{a}" for a, b in (m.split("v") for m in _mats)]
+        shots = shots[shots["situation"].isin(_mats)]
     if shots.empty:
+        st.caption(f"No {_sit} shots in this scope.")
         return
     ng = int(shots["is_goal"].sum())
     lbl = season_label or ("Playoffs" if playoffs else "")
@@ -3277,7 +3286,7 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
     stat = (f"{len(shots):,} {'shots faced' if faced else 'shots'} · "
             f"{ng} {'goals allowed' if faced else 'goals'}"
             + ("  ·  goalie's-eye view" if faced else ""))
-    _goals_only = st.checkbox("Goals only", value=False,
+    _goals_only = st.checkbox("Goals only", value=True,
                               key=f"shotgoals_{kind}_{ident}")
     fig = _sc.shot_chart(shots, nm, season=str(lbl), stat=stat, team=team,
                          goalie_view=gv, goals_only=_goals_only)
