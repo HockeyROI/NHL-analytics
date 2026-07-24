@@ -3318,7 +3318,7 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
         # Rendered via st.image (not st.pyplot) so it carries Streamlit's own
         # hover toolbar — save/expand live on the image itself rather than a
         # separate button. width pins it near the other charts' footprint.
-        st.image(_buf.getvalue(), width=560)
+        st.image(_buf.getvalue(), width=1100)
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,

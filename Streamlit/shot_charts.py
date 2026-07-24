@@ -163,7 +163,7 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     prim, accent = team_color(team) if team else _DEFAULT_COLOR
     st = d["shot_type"].fillna("unknown").str.lower()
     cols = st.map(SHOT_TYPE_COLORS).fillna("#9AA5AD").to_numpy()
-    fig, ax = plt.subplots(figsize=(4.4, 3.1), dpi=160)
+    fig, ax = plt.subplots(figsize=(6.5, 4.6), dpi=200)
     fig.patch.set_facecolor("white")
     _draw_rink(ax)
 
@@ -187,15 +187,14 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     # note instead of a swatch.
     _st_shown = set(st[shown])
     present = [t for t in SHOT_TYPE_COLORS if t in _st_shown and t != "unknown"]
-    _NCOL = 5
-    # short labels keep the legend inside the ice width — otherwise the tight
-    # bbox widens the whole canvas and the brand no longer sits at the right.
-    _SHORT = {"wrap-around": "Wrap", "between-legs": "Btwn Legs",
-              "deflected": "Deflect", "tip-in": "Tip"}
+    # 3 columns -> the legend wraps to 3-4 rows but stays NARROWER than the ice,
+    # so the axes is the widest artist and the brand really does land in the
+    # bottom-right corner (with 5 cols it overflowed and pulled the brand in).
+    _NCOL = 3
     handles = [plt.Line2D([0], [0], marker="o", ls="", mfc=SHOT_TYPE_COLORS[t],
                           mec="none", ms=4.5,
-                          label=_SHORT.get(t, t.replace("-", " ").title()))
-               for t in present[:10]]
+                          label=t.replace("-", " ").title())
+               for t in present[:12]]
     # left-aligned with the ice + the name above it
     leg = ax.legend(handles=handles, loc="upper left", ncol=_NCOL, fontsize=5.5,
                     frameon=False, bbox_to_anchor=(0.0, -0.01),
@@ -206,7 +205,7 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     # Everything below the legend, so nothing can overlap it however many rows
     # the legend wraps onto.
     _rows = max(1, int(np.ceil(len(handles) / _NCOL)))
-    _y = -0.06 - 0.075 * _rows
+    _y = -0.045 - 0.046 * _rows
 
     _notes = ["empty-net goals excluded"]
     if not goals_only:
@@ -229,7 +228,7 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
         ax.text(1.0, _yb - 0.055, url, transform=ax.transAxes, ha="right",
                 va="top", color=GREY, fontsize=3.8, style="italic",
                 family="sans-serif")
-    # extra bottom room when the legend wraps onto a second row
+    # extra bottom room per wrapped legend row
     fig.subplots_adjust(left=0.02, right=0.98, top=0.93,
-                        bottom=0.22 + 0.06 * (_rows - 1))
+                        bottom=0.16 + 0.045 * (_rows - 1))
     return fig
