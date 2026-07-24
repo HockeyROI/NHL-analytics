@@ -180,7 +180,7 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
                edgecolors=GOAL_EDGE, linewidths=0.35, zorder=4)
 
     # header: name (+ position), top-LEFT, sized to match the app's other charts
-    ax.text(0.0, 1.02, name, transform=ax.transAxes, fontsize=7,
+    ax.text(0.0, 1.015, name, transform=ax.transAxes, fontsize=5.5,
             weight="bold", color=NAVY, ha="left", va="bottom", family="sans-serif")
     # legend: shot types present + a white/black "Goal" marker
     _st_shown = set(st[shown])
@@ -209,15 +209,19 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
                 family="sans-serif")
     # two-colour HOCKEY·ROI wordmark + url, bottom-RIGHT corner (matches the
     # brand placement on the app's other charts)
-    # "HOCKEY" ends at the junction x, "ROI" starts there -> the pair reads as
-    # one wordmark tucked into the bottom-right corner.
-    _jx = 0.952
-    fig.text(_jx, 0.035, "HOCKEY", ha="right", va="bottom", color=NAVY,
-             weight="bold", fontsize=6.5, family="sans-serif")
-    fig.text(_jx, 0.035, "ROI", ha="left", va="bottom", color=ORANGE,
-             weight="bold", fontsize=6.5, family="sans-serif")
+    # Wordmark in AXES coords so it sits just under the ice's bottom-right
+    # corner (not floating far below it). "HOCKEY" ends at the junction x,
+    # "ROI" starts there, so the pair reads as one wordmark.
+    _jx = 0.93
+    ax.text(_jx, -0.075, "HOCKEY", transform=ax.transAxes, ha="right",
+            va="top", color=NAVY, weight="bold", fontsize=5,
+            family="sans-serif")
+    ax.text(_jx, -0.075, "ROI", transform=ax.transAxes, ha="left",
+            va="top", color=ORANGE, weight="bold", fontsize=5,
+            family="sans-serif")
     if url:
-        fig.text(0.985, 0.008, url, ha="right", va="bottom", color=GREY,
-                 fontsize=4.5, style="italic", family="sans-serif")
+        ax.text(1.0, -0.145, url, transform=ax.transAxes, ha="right",
+                va="top", color=GREY, fontsize=3.8, style="italic",
+                family="sans-serif")
     fig.subplots_adjust(left=0.02, right=0.98, top=0.93, bottom=0.19)
     return fig
