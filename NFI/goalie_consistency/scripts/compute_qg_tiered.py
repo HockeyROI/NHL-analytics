@@ -69,12 +69,15 @@ OUTPUT FILES (in NFI/goalie_consistency/output/):
   where suffix is "" for the 5v5 scope and "_allsit" for all-situations.
 """
 
+import sys
 import pandas as pd
 import numpy as np
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+import _data_sources as _ds
+
 # ---- CONFIG ----
-DATA_DIR = Path("/Users/ashgarg/Documents/HockeyROI/Quality_Games/Data/Money_puck")
 NAMES_FILE = Path("/Users/ashgarg/Documents/HockeyROI/NFI/output/player_positions.csv")
 OUT_DIR = Path("/Users/ashgarg/Documents/HockeyROI/NFI/goalie_consistency/output")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -116,77 +119,41 @@ def wilson_lower(k, n, z=1.96):
 def run_scope(scope, suffix):
     print(f"\n{'='*70}\nSCOPE = {scope!r}\n{'='*70}")
 
-    print("=== DIAGNOSTIC ===")
-    for fname in SEASONS:
-        fp = DATA_DIR / fname
-        if not fp.exists():
-            raise FileNotFoundError(f"Missing: {fp}")
-        sample = pd.read_csv(fp, nrows=5)
-        needed = {"game_id", "goalieIdForShot", "goalieNameForShot", "goal", "event",
-                  "season", "isPlayoffGame", "homeSkatersOnIce", "awaySkatersOnIce"}
-        missing = needed - set(sample.columns)
-        if missing:
-            raise ValueError(f"{fname} missing required columns: {missing}")
-        print(f"  {fname}: header OK, required columns present")
-    print()
+    # ---- BUILD PER-GAME SAVE% (all 4 seasons, via the MP-schema shim) ----
+    # Filter: regular season, valid goalie, shots-on-goal only (event != MISS),
+    # + 5v5-only if scope == "5v5". Save% is saves / shots ON GOAL — a missed
+    # shot never reaches the goalie, so it's excluded from the faced denominator
+    # (unlike the GSAx/xG metrics, which use the full Fenwick set).
+    allshots = _ds.load_shots_mp_schema()
+    mask = (
+        allshots["season"].isin(SEASONS.values())
+        & (allshots["isPlayoffGame"] == 0)
+        & (allshots["goalieIdForShot"].notna())
+        & (allshots["event"] != "MISS")
+        & (allshots["period"] <= 3)
+    )
+    if scope == "5v5":
+        mask &= (allshots["homeSkatersOnIce"] == 5) & (allshots["awaySkatersOnIce"] == 5)
+    df = allshots[mask]
+    print(f"    {len(df):,} SOG after reg/SOG{'/5v5' if scope == '5v5' else ''} filters")
 
-    # ---- BUILD PER-GAME SAVE% ACROSS ALL 4 SEASONS ----
-    per_game_all = []
-    for fname, season_int in SEASONS.items():
-        fp = DATA_DIR / fname
-        print(f"Loading {fname} (season {season_int})...")
-        df = pd.read_csv(fp)
-        n_total = len(df)
-
-        # Filter: regular season, valid goalie, shots-on-goal only, +
-        # 5v5-only if scope == "5v5". Save% is saves / shots ON GOAL — a
-        # missed shot (event == "MISS") never reaches the goalie, so it must
-        # be excluded from the faced denominator (unlike the GSAx/xG-based
-        # metrics elsewhere in this pipeline, which correctly use the full
-        # Fenwick set since the xG model prices misses in).
-        mask = (
-            (df["isPlayoffGame"] == 0)
-            & (df["goalieIdForShot"].notna())
-            & (df["event"] != "MISS")
-        )
-        if scope == "5v5":
-            mask &= (df["homeSkatersOnIce"] == 5) & (df["awaySkatersOnIce"] == 5)
-        df = df[mask].copy()
-
-        if "period" in df.columns:
-            df = df[df["period"] <= 3]
-        else:
-            print(f"    NOTE: no 'period' column in {fname} — relying on filters to exclude most OT")
-
-        n_after = len(df)
-        print(f"    rows: {n_total:,} -> {n_after:,} after reg/season/SOG{'/5v5' if scope == '5v5' else ''} filters")
-
-        pg = (
-            df.groupby(["game_id", "goalieIdForShot", "goalieNameForShot"])
-            .agg(shots_faced=("goal", "size"), goals=("goal", "sum"))
-            .reset_index()
-        )
-        pg["saves"] = pg["shots_faced"] - pg["goals"]
-        pg["season"] = season_int
-        pg = pg.rename(columns={"goalieIdForShot": "goalie_id", "goalieNameForShot": "goalie_name"})
-
-        n_games_pre = len(pg)
-        pg = pg[pg["shots_faced"] >= MIN_SHOTS_PER_GAME]
-        n_games_post = len(pg)
-        print(f"    per-game rows: {n_games_pre:,} -> {n_games_post:,} after min-{MIN_SHOTS_PER_GAME}-shots filter")
-
-        per_game_all.append(pg)
-
-    per_game = pd.concat(per_game_all, ignore_index=True)
+    pg = (
+        df.groupby(["game_id", "goalieIdForShot", "season"])
+        .agg(shots_faced=("goal", "size"), goals=("goal", "sum"))
+        .reset_index()
+        .rename(columns={"goalieIdForShot": "goalie_id"})
+    )
+    pg["saves"] = pg["shots_faced"] - pg["goals"]
+    per_game = pg[pg["shots_faced"] >= MIN_SHOTS_PER_GAME].copy()
     per_game["goalie_id"] = per_game["goalie_id"].astype(int)
     per_game["game_save_pct"] = per_game["saves"] / per_game["shots_faced"]
-    print(f"\nTotal per-game rows across 4 seasons: {len(per_game):,}")
-    print(f"Unique goalies: {per_game['goalie_id'].nunique()}")
+    print(f"per-game rows (>= {MIN_SHOTS_PER_GAME} shots): {len(per_game):,}  "
+          f"goalies: {per_game['goalie_id'].nunique()}")
 
     # ---- CANONICAL NAME MAP (same pattern as compute_qs_gsax.py) ----
     _names = pd.read_csv(NAMES_FILE)
     _canon = dict(zip(_names["player_id"].astype(int), _names["player_name"].astype(str)))
-    _mp_name = per_game.drop_duplicates("goalie_id").set_index("goalie_id")["goalie_name"].to_dict()
+    _mp_name = {}
     canon_name = {gid: _canon.get(gid, _mp_name.get(gid)) for gid in per_game["goalie_id"].unique()}
     per_game["goalie_name_canon"] = per_game["goalie_id"].map(canon_name)
 

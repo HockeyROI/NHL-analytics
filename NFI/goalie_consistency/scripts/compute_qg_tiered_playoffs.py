@@ -20,16 +20,18 @@ game judged by its own season's baseline, then summed).
 Output per scope (suffix "" = 5v5, "_allsit" = all situations):
   NFI/goalie_consistency/output/qg_savepct_playoffs{suffix}.csv
 """
+import sys
 import pandas as pd
 import numpy as np
 from pathlib import Path
 
-DATA_DIR = Path("/Users/ashgarg/Documents/HockeyROI/Quality_Games/Data/Money_puck")
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+import _data_sources as _ds
+
 NAMES_FILE = Path("/Users/ashgarg/Documents/HockeyROI/NFI/output/player_positions.csv")
 OUT_DIR = Path("/Users/ashgarg/Documents/HockeyROI/NFI/goalie_consistency/output")
 
-SEASONS = {"shots_2022.csv": 20222023, "shots_2023.csv": 20232024,
-           "shots_2024.csv": 20242025, "shots_2025.csv": 20252026}
+SEASONS = {20222023, 20232024, 20242025, 20252026}
 MIN_SHOTS_PER_GAME = 10   # metric definition (NOT a goalie qualifying floor)
 SCOPES = {"5v5": "", "all": "_allsit"}
 
@@ -55,33 +57,22 @@ def run_scope(scope, suffix):
     b_starter = baselines[baselines["tier"] == "starter"].set_index("season")["baseline_save_pct"] / 100
     b_backup = baselines[baselines["tier"] == "backup"].set_index("season")["baseline_save_pct"] / 100
 
-    per_game_all = []
-    for fname, season_int in SEASONS.items():
-        fp = DATA_DIR / fname
-        if not fp.exists():
-            print(f"  MISSING {fp}, skip"); continue
-        df = pd.read_csv(fp)
-        mask = ((df["isPlayoffGame"] == 1) & (df["goalieIdForShot"].notna())
-                 & (df["event"] != "MISS"))
-        if scope == "5v5":
-            mask &= (df["homeSkatersOnIce"] == 5) & (df["awaySkatersOnIce"] == 5)
-        df = df[mask].copy()
-        if "period" in df.columns:
-            df = df[df["period"] <= 3]
-        if df.empty:
-            print(f"  {fname} (season {season_int}): no playoff shots"); continue
-        pg = (df.groupby(["game_id", "goalieIdForShot", "goalieNameForShot"])
-              .agg(shots_faced=("goal", "size"), goals=("goal", "sum")).reset_index())
-        pg["saves"] = pg["shots_faced"] - pg["goals"]
-        pg["season"] = season_int
-        pg = pg.rename(columns={"goalieIdForShot": "goalie_id", "goalieNameForShot": "goalie_name"})
-        pg = pg[pg["shots_faced"] >= MIN_SHOTS_PER_GAME]
-        per_game_all.append(pg)
-        print(f"  {fname} (season {season_int}): {len(pg)} qualifying game-goalie rows")
-
-    per_game = pd.concat(per_game_all, ignore_index=True)
+    allshots = _ds.load_shots_mp_schema()
+    mask = (allshots["season"].isin(SEASONS) & (allshots["isPlayoffGame"] == 1)
+            & (allshots["goalieIdForShot"].notna()) & (allshots["event"] != "MISS")
+            & (allshots["period"] <= 3))
+    if scope == "5v5":
+        mask &= (allshots["homeSkatersOnIce"] == 5) & (allshots["awaySkatersOnIce"] == 5)
+    df = allshots[mask]
+    pg = (df.groupby(["game_id", "goalieIdForShot", "season"])
+          .agg(shots_faced=("goal", "size"), goals=("goal", "sum")).reset_index()
+          .rename(columns={"goalieIdForShot": "goalie_id"}))
+    pg["saves"] = pg["shots_faced"] - pg["goals"]
+    per_game = pg[pg["shots_faced"] >= MIN_SHOTS_PER_GAME].copy()
     per_game["goalie_id"] = per_game["goalie_id"].astype(int)
     per_game["game_save_pct"] = per_game["saves"] / per_game["shots_faced"]
+    for s in sorted(per_game["season"].unique()):
+        print(f"  season {s}: {int((per_game['season']==s).sum())} qualifying game-goalie rows")
     per_game["baseline_starter"] = per_game["season"].map(b_starter)
     per_game["baseline_backup"] = per_game["season"].map(b_backup)
     if per_game["baseline_starter"].isna().any() or per_game["baseline_backup"].isna().any():
@@ -93,8 +84,7 @@ def run_scope(scope, suffix):
 
     _names = pd.read_csv(NAMES_FILE)
     _canon = dict(zip(_names["player_id"].astype(int), _names["player_name"].astype(str)))
-    _mp = per_game.drop_duplicates("goalie_id").set_index("goalie_id")["goalie_name"].to_dict()
-    canon = {g: _canon.get(g, _mp.get(g)) for g in per_game["goalie_id"].unique()}
+    canon = {g: _canon.get(g, str(g)) for g in per_game["goalie_id"].unique()}
 
     def agg(group_cols, label=None):
         a = (per_game.groupby(group_cols)
