@@ -14,6 +14,11 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: write
+    env:
+      # Every builder defaults HOCKEYROI_ROOT to a hardcoded local Mac path
+      # (~58 scripts do this). Without this the runner looks for
+      # /Users/ashgarg/... and dies. Point it at the checkout instead.
+      HOCKEYROI_ROOT: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
 
@@ -29,20 +34,16 @@ jobs:
           pip install scikit-learn        # xG model (not needed by the app itself)
 
       # ---- 1. Pull new games from the NHL API -------------------------------
-      # These two are incremental: they fetch fresh play-by-play/shifts and
-      # backfill any games missing since the last run.
-      - name: Zones daily update (backfills missing games)
-        run: python Zones/scripts/update_daily.py
-        continue-on-error: true
-
+      # NOTE: Zones/scripts/update_daily.py is deliberately NOT run here. It
+      # needs the raw play-by-play cache (Zones/scripts/raw/, ~5.5k games) and
+      # the 128MB nhl_shot_events.csv, both gitignored and absent on a runner.
+      # Run it locally, then push. Everything below is CI-portable.
       - name: NFI current-season update (backfills missing games)
         run: python NFI/scripts/update_current_season.py
-        continue-on-error: true
 
       # ---- 2. Box score — straight from the NHL Stats API --------------------
       - name: Box score (NHL Stats API)
         run: python NFI/scripts/build_box_score.py
-        continue-on-error: true
 
       # ---- 3. Rebuild the per-situation engines ------------------------------
       # The raw CSVs (nhl_shot_events ~128MB, shift_data ~426MB) are gitignored

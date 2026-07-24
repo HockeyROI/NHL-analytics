@@ -7327,6 +7327,65 @@ def render_scoped_filters(scope: str, show_situation: bool = False) -> tuple[str
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+# ---- URL-persisted UI state -------------------------------------------------
+# session_state is per-session, so a Cloud redeploy (i.e. every push) or a plain
+# browser refresh wipes it and silently snaps the user's picks back to defaults:
+# the metric-family pills revert to "Quality Games" and the Box Score columns
+# vanish with no explanation. Mirroring the few selections that matter into the
+# query string fixes that — the browser tab keeps its URL across a redeploy, so
+# the picks come back with it. It also makes a filtered view shareable by link.
+_QP_KEYS = {                      # session_state key -> short query-param name
+    "players_display_seg": "fam",
+    "g_season_pick": "ssn",
+    "g_game_type": "gt",
+    "g_situation": "sit",
+}
+
+
+def _qp_restore() -> None:
+    """Seed session_state from the URL, once per session and before any widget
+    using these keys is instantiated. Values are validated, so a hand-edited or
+    stale URL can never crash the app — bad values are simply ignored."""
+    if st.session_state.get("_qp_loaded"):
+        return
+    st.session_state["_qp_loaded"] = True
+    qp = st.query_params
+    valid = {
+        "players_display_seg": set(PLAYER_FAMILY_COLS),
+        "g_season_pick": set(SEASON_KEY),
+        "g_game_type": {"Regular Season", "Playoffs"},
+        "g_situation": set(SITUATION_BUCKETS),
+    }
+    for sk, pk in _QP_KEYS.items():
+        if pk not in qp:
+            continue
+        if sk == "players_display_seg":
+            picked = [v for v in qp.get_all(pk) if v in valid[sk]]
+            if picked:
+                st.session_state[sk] = picked
+        elif qp[pk] in valid[sk]:
+            st.session_state[sk] = qp[pk]
+
+
+def _qp_save() -> None:
+    """Write the current picks back to the URL. Only writes on an actual change
+    — reassigning identical values would churn the URL every rerun."""
+    qp = st.query_params
+    for sk, pk in _QP_KEYS.items():
+        if sk not in st.session_state:
+            continue
+        val = st.session_state[sk]
+        if sk == "players_display_seg":
+            new = list(val or [])
+            if list(qp.get_all(pk)) != new:
+                if new:
+                    qp[pk] = new
+                elif pk in qp:
+                    del qp[pk]
+        elif qp.get(pk) != str(val):
+            qp[pk] = str(val)
+
+
 def main() -> None:
     st.set_page_config(
         page_title="HockeyROI — NHL Impact Analytics",
@@ -7335,6 +7394,7 @@ def main() -> None:
         initial_sidebar_state="collapsed",
     )
     inject_css()
+    _qp_restore()      # restore picks from the URL before any widget is built
     # The Vega "···" actions menu is KEPT — its "Save as PNG"/"Save as SVG" is now
     # how a chart is downloaded (rendered client-side in the browser, so it costs
     # the server nothing; the brand is baked into every chart's spec so the saved
@@ -7371,6 +7431,7 @@ def main() -> None:
         render_methodology()
 
     render_footer()
+    _qp_save()         # mirror the picks back into the URL
 
 
 if __name__ == "__main__":

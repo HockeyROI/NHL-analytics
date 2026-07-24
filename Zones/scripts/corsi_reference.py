@@ -35,8 +35,12 @@ ROOT    = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(ROOT)
 SHIFTS_DIR = os.path.join(ROOT, "raw", "shifts")
 PBP_DIR    = os.path.join(ROOT, "raw", "pbp")
-GAME_IDS   = os.path.join(PROJECT, "Data", "game_ids.csv")
-SHOTS_CSV  = os.path.join(PROJECT, "Data", "nhl_shot_events.csv")
+# game_ids.csv / nhl_shot_events.csv live at the REPO root under Data/, not
+# under Zones/Data/ (which does not exist) — this pointed one level too deep and
+# only surfaced on CI, where the weekly job died before reaching the engines.
+REPO_ROOT  = os.path.dirname(PROJECT)
+GAME_IDS   = os.path.join(REPO_ROOT, "Data", "game_ids.csv")
+SHOTS_CSV  = os.path.join(REPO_ROOT, "Data", "nhl_shot_events.csv")
 OUT_DIR    = ROOT
 OUT_CSV    = os.path.join(OUT_DIR, "corsi_reference.csv")
 
