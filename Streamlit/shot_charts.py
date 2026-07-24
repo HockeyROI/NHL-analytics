@@ -101,17 +101,13 @@ def _draw_rink(ax) -> None:
     for s in ax.spines.values():
         s.set_visible(False)
     ax.set_xticks([]); ax.set_yticks([])
-    ax.axvline(25, color="#8FB2D4", lw=2.5, alpha=0.7, zorder=1)   # blue line
-    ax.text(25, 41, "BLUE LINE", color="#6F93B5", fontsize=7.5, ha="left",
-            va="top", weight="bold", family="sans-serif")
-    ax.axvline(89, color=GOAL_RED, lw=1.8, alpha=0.8, zorder=1)    # goal line
-    ax.text(88, 41, "GOAL LINE", color=GOAL_RED, fontsize=7.5, ha="right",
-            va="top", weight="bold", family="sans-serif")
+    ax.axvline(25, color="#8FB2D4", lw=1.8, alpha=0.7, zorder=1)   # blue line
+    ax.axvline(89, color=GOAL_RED, lw=1.4, alpha=0.8, zorder=1)    # goal line
     ax.add_patch(Rectangle((89, -3), 3.5, 6, facecolor=GOAL_RED, alpha=0.8, zorder=2))
-    ax.add_patch(Arc((89, 0), 14, 11, theta1=90, theta2=270, color=ICE_LINE, lw=1, alpha=0.7))
+    ax.add_patch(Arc((89, 0), 14, 11, theta1=90, theta2=270, color=ICE_LINE, lw=0.8, alpha=0.7))
     for cy in (-22, 22):                                           # faceoff circles
-        ax.add_patch(plt.Circle((69, cy), 15, fill=False, edgecolor=ICE_LINE, lw=0.9, alpha=0.6))
-        ax.add_patch(plt.Circle((69, cy), 0.8, color=ICE_LINE, alpha=0.7))
+        ax.add_patch(plt.Circle((69, cy), 15, fill=False, edgecolor=ICE_LINE, lw=0.7, alpha=0.6))
+        ax.add_patch(plt.Circle((69, cy), 0.7, color=ICE_LINE, alpha=0.7))
 
 
 def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
@@ -133,50 +129,44 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     prim, accent = team_color(team) if team else _DEFAULT_COLOR
     st = d["shot_type"].fillna("unknown").str.lower()
     cols = st.map(SHOT_TYPE_COLORS).fillna("#9AA5AD").to_numpy()
-    fig, ax = plt.subplots(figsize=(6.4, 4.5), dpi=150)
+    fig, ax = plt.subplots(figsize=(4.4, 3.1), dpi=160)
     fig.patch.set_facecolor("white")
     _draw_rink(ax)
 
     # dot size/alpha shrink with volume so high-count goalies/teams read as a
     # heat cloud rather than a blob.
     n = len(x)
-    ds, da = (40, 0.75) if n < 400 else (22, 0.5) if n < 1200 else (12, 0.4)
+    ds, da = (22, 0.75) if n < 400 else (12, 0.5) if n < 1200 else (7, 0.4)
     if not goals_only:
         # non-goal shots: colored by type, no border
         ax.scatter(x[~goal], y[~goal], s=ds, c=cols[~goal], alpha=da,
                    edgecolors="none", zorder=3)
-    # goals: SAME size as shots, with a thin dark ring to mark them
+    # goals: SAME size as shots, with a very thin dark ring to mark them
     ax.scatter(x[goal], y[goal], s=ds, c=cols[goal], alpha=0.95,
-               edgecolors=GOAL_EDGE, linewidths=0.7, zorder=4)
+               edgecolors=GOAL_EDGE, linewidths=0.35, zorder=4)
 
-    # stacked header: NAME (big) / season / stat line
-    ax.text(0.0, 1.15, name.upper(), transform=ax.transAxes, fontsize=17,
+    # header: just the name (season / stat lines removed per design)
+    ax.text(0.0, 1.02, name.upper(), transform=ax.transAxes, fontsize=9.5,
             weight="bold", color=NAVY, ha="left", va="bottom", family="sans-serif")
-    if season:
-        ax.text(0.0, 1.085, season, transform=ax.transAxes, fontsize=11.5,
-                color=NAVY, ha="left", va="bottom", family="sans-serif")
-    if stat:
-        ax.text(0.0, 1.02, stat, transform=ax.transAxes, fontsize=9.5,
-                color=GREY, ha="left", va="bottom", family="sans-serif")
     # legend: shot types present + a white/black "Goal" marker
     present = [t for t in SHOT_TYPE_COLORS if t in set(st) and t != "unknown"]
     handles = [plt.Line2D([0], [0], marker="o", ls="", mfc=SHOT_TYPE_COLORS[t],
-                          mec="none", ms=8, label=t.replace("-", " ").title())
+                          mec="none", ms=4.5, label=t.replace("-", " ").title())
                for t in present[:8]]
     handles.append(plt.Line2D([0], [0], marker="o", ls="", mfc="white",
-                              mec=GOAL_EDGE, mew=0.9, ms=8, label="Goal"))
-    leg = ax.legend(handles=handles, loc="upper center", ncol=5, fontsize=8,
-                    frameon=False, bbox_to_anchor=(0.5, -0.02),
-                    handletextpad=0.3, columnspacing=1.1)
+                              mec=GOAL_EDGE, mew=0.5, ms=4.5, label="Goal"))
+    leg = ax.legend(handles=handles, loc="upper center", ncol=5, fontsize=5.5,
+                    frameon=False, bbox_to_anchor=(0.5, -0.01),
+                    handletextpad=0.25, columnspacing=0.8)
     for txt in leg.get_texts():
         txt.set_color(NAVY)
     # two-colour HOCKEY·ROI wordmark + url, centred at the bottom (app charts)
-    fig.text(0.5, 0.045, "HOCKEY", ha="right", va="bottom", color=NAVY,
-             weight="bold", fontsize=12, family="sans-serif")
-    fig.text(0.5, 0.045, "ROI", ha="left", va="bottom", color=ORANGE,
-             weight="bold", fontsize=12, family="sans-serif")
+    fig.text(0.5, 0.035, "HOCKEY", ha="right", va="bottom", color=NAVY,
+             weight="bold", fontsize=7, family="sans-serif")
+    fig.text(0.5, 0.035, "ROI", ha="left", va="bottom", color=ORANGE,
+             weight="bold", fontsize=7, family="sans-serif")
     if url:
-        fig.text(0.5, 0.02, url, ha="center", va="bottom", color=GREY,
-                 fontsize=7.5, style="italic", family="sans-serif")
-    fig.subplots_adjust(left=0.02, right=0.98, top=0.84, bottom=0.17)
+        fig.text(0.5, 0.008, url, ha="center", va="bottom", color=GREY,
+                 fontsize=5, style="italic", family="sans-serif")
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.93, bottom=0.19)
     return fig

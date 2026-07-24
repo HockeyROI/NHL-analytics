@@ -737,7 +737,7 @@ def _aggregate_nfi_pooled(df: pd.DataFrame) -> pd.DataFrame:
 GITHUB_METHODOLOGY_URL = (
     "https://github.com/HockeyROI/NHL-analytics/blob/main/docs/METHODOLOGY.md"
 )
-TAB_LABELS = ["Player List", "Goalie List", "Box Score",
+TAB_LABELS = ["Player List", "Goalie List",
               "Trade Analyzer", "Teams", "Referees", "Methodology"]
 
 
@@ -3280,7 +3280,9 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
     fig = _sc.shot_chart(shots, nm, season=str(lbl), stat=stat, team=team,
                          goalie_view=gv, goals_only=False)
     if fig is not None:
-        st.pyplot(fig, clear_figure=True)
+        # use_container_width=False keeps it at its natural (small) size —
+        # otherwise Streamlit stretches the figure to the full column width.
+        st.pyplot(fig, clear_figure=True, use_container_width=False)
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
@@ -3325,16 +3327,10 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                    if any(pd.notna(v) for v in _player_qg_vals(pid, trend, s).values())]
             if _wd:
                 _yr = _wd[-1]
-    # Shot map (dots + goals bordered; per-season parquet data, team-coloured).
-    _pteam = (str(_prow_any["team"].iloc[0])
-              if len(_prow_any) and "team" in _prow_any.columns
-              and pd.notna(_prow_any["team"].iloc[0]) else None)
-    _render_shot_chart("player", int(pid), _highlight_name or f"Player {pid}",
-                       _pteam, season_label, playoffs=False)
-
     # View-mode toggle — mutually exclusive, sits ABOVE the bar chart. "Show
     # current year data" (default) renders the bar charts for the selected row;
-    # "Year over year" replaces them with the season-by-season line charts.
+    # "Year over year" replaces them with the season-by-season line charts;
+    # "Shot map" replaces them with the rink shot chart.
     with st.container(key="players_view_mode_box"):
         st.markdown(
             f"<div style='color:{PALETTE['text']}; font-size:1.15rem; "
@@ -3346,8 +3342,15 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             "font-weight:600;}</style>",
             unsafe_allow_html=True)
         view_mode = st.radio(
-            "View", ["Show current year data", "Year over year"],
+            "View", ["Show current year data", "Year over year", "Shot map"],
             horizontal=True, key="players_view_mode", label_visibility="collapsed")
+
+    if view_mode == "Shot map":
+        _pteam = (str(_prow_any["team"].iloc[0])
+                  if len(_prow_any) and "team" in _prow_any.columns
+                  and pd.notna(_prow_any["team"].iloc[0]) else None)
+        _render_shot_chart("player", int(pid), _highlight_name or f"Player {pid}",
+                           _pteam, season_label, playoffs=False)
 
     def _chart(title: str, cols: list[str], ydomain=None) -> None:
         import altair as alt
@@ -3406,7 +3409,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         ]
         for _fam, _fn in sorted(_yoy_charts, key=lambda item: item[0] not in _show_fams):
             _fn()
-    else:
+    elif view_mode == "Show current year data":
         # Current-year bars: the combined NFI+xG Quality-Games panel (one
         # download covers both) and the hard-locked Zone Impact bar — both on
         # the same fixed 30–75 y-axis. 50 = baseline; above = better/more
@@ -3721,6 +3724,9 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
                                   if c.startswith("_sr_") or c.startswith("_tr_")],
                          errors="ignore")
         base = _unify_situation_xg(base)
+        _box = _box_score_scope("pooled", playoffs=True)
+        if not _box.empty and not base.empty:
+            base = base.merge(_box, on="player_id", how="left")
         return base, True
 
     nfi = load_nfi_player()
@@ -3815,8 +3821,18 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
                               if c.startswith("_sr_") or c.startswith("_tr_")],
                      errors="ignore")
     base = _unify_situation_xg(base)
+    # Box-score counting stats (Box Score metric family).
+    _box = _box_score_scope(key, playoffs=False)
+    if not _box.empty and not base.empty:
+        base = base.merge(_box, on="player_id", how="left")
     return base, is_pooled
 
+
+# Box-score display columns (a metric family on the Player List, not a tab).
+# Defined here so PLAYER_FAMILY_COLS below can reference it.
+BOX_FAMILY_COLS = ["G", "A1", "A2", "A", "Pts", "PPP", "SHP", "Sh", "Sh%", "GWG",
+                   "Reb Created", "TK", "GV", "Hits", "Hits Taken", "Blocks",
+                   "Min Pen", "Maj Pen", "PIM", "Pen Drawn", "FO W", "FO L", "FO%"]
 
 # Player List metric families — the collapse filter toggles each group's columns
 # (display names, post-rename). Identity columns (Player/Pos/Team/GP/TOI) always
@@ -3842,6 +3858,8 @@ PLAYER_FAMILY_COLS = {
     # methodology tab spells out the different source/definition so it's not
     # mistaken for an EDGE-API stat.
     "EDGE": _EDGE_VALUE_DISP + ["DZ Start%", "NZ Start%", "OZ Start%"],
+    # Box score — NHL counting stats (all situations; not situation-filtered).
+    "Box Score": BOX_FAMILY_COLS,
 }
 
 
@@ -4237,8 +4255,43 @@ _BOX_SUMS = ["GP", "goals", "assists", "A1", "A2", "points", "shots", "ppGoals",
              "penaltyMinutes", "penaltiesDrawn", "rebounds_created",
              "faceoffs_won", "faceoffs_lost", "gameWinningGoals"]
 
+# Box-score display columns (a metric family on the Player List, not a tab).
+_BOX_REN = {"goals": "G", "assists": "A", "points": "Pts", "shots": "Sh",
+            "ppPoints": "PPP", "shPoints": "SHP", "hits": "Hits",
+            "hits_taken": "Hits Taken", "blockedShots": "Blocks",
+            "takeaways": "TK", "giveaways": "GV", "minorPenalties": "Min Pen",
+            "majorPenalties": "Maj Pen", "penaltyMinutes": "PIM",
+            "penaltiesDrawn": "Pen Drawn", "rebounds_created": "Reb Created",
+            "faceoffs_won": "FO W", "faceoffs_lost": "FO L",
+            "gameWinningGoals": "GWG"}
 
-def render_box_score() -> None:
+
+def _box_score_scope(scope_key: str, playoffs: bool = False) -> pd.DataFrame:
+    """Per-player box-score counting stats for one scope (counts summed across
+    the scope's seasons; Sh%/FO% recomputed from the sums). Keyed player_id."""
+    d = load_box_score()
+    if d.empty:
+        return pd.DataFrame()
+    d = d[d["game_type"] == ("playoff" if playoffs else "regular")]
+    seasons = _situation_seasons(scope_key, playoffs)
+    if seasons is not None:
+        d = d[d["season"].isin(seasons)]
+    if d.empty:
+        return pd.DataFrame()
+    # GP is excluded — the player frame already has its own GP column.
+    sums = {c: (c, "sum") for c in _BOX_SUMS if c in d.columns and c != "GP"}
+    agg = d.groupby("player_id").agg(**sums).reset_index()
+    agg = agg.rename(columns=_BOX_REN)
+    if {"G", "Sh"}.issubset(agg.columns):
+        agg["Sh%"] = np.where(agg["Sh"] > 0, agg["G"] / agg["Sh"] * 100, np.nan)
+    if {"FO W", "FO L"}.issubset(agg.columns):
+        _d = agg["FO W"] + agg["FO L"]
+        agg["FO%"] = np.where(_d > 0, agg["FO W"] / _d * 100, np.nan)
+    keep = ["player_id"] + [c for c in BOX_FAMILY_COLS if c in agg.columns]
+    return agg[keep]
+
+
+def _unused_render_box_score() -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Box Score</h2>",
         unsafe_allow_html=True)
@@ -4557,7 +4610,7 @@ def render_players() -> None:
             "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO", "PDOxG",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI",
-            *_EDGE_VALUE_DISP, *_SIT_PLAIN]
+            *_EDGE_VALUE_DISP, *_SIT_PLAIN, *BOX_FAMILY_COLS]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
@@ -4635,6 +4688,12 @@ def render_players() -> None:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
     if "iG" in disp.columns:
         fmt["iG"] = lambda x: "—" if pd.isna(x) else f"{x:.0f}"
+    # Box-score counting stats: integers, except the two percentages.
+    for c in BOX_FAMILY_COLS:
+        if c in disp.columns:
+            fmt[c] = ((lambda x: "—" if pd.isna(x) else f"{x:.1f}%")
+                      if c in ("Sh%", "FO%")
+                      else (lambda x: "—" if pd.isna(x) else f"{x:,.0f}"))
     for c in ("GP",):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
@@ -7242,14 +7301,12 @@ def main() -> None:
     # The Season + Game-type filter now lives at the top of each tab (rendered by
     # render_scoped_filters), grouped with that tab's own filters but kept in sync
     # across tabs — rather than a standalone row above the tabs.
-    (player_list_tab, goalie_list_tab, box_tab,
+    (player_list_tab, goalie_list_tab,
      trade_tab, teams_tab, refs_tab, meth_tab) = st.tabs(TAB_LABELS)
     with player_list_tab:
         render_players()
     with goalie_list_tab:
         render_goalies()
-    with box_tab:
-        render_box_score()
     with trade_tab:
         render_trade_analyzer()
     with teams_tab:
