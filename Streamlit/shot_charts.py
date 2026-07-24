@@ -182,45 +182,54 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     # header: name (+ position), top-LEFT, sized to match the app's other charts
     ax.text(0.0, 1.015, name, transform=ax.transAxes, fontsize=5.5,
             weight="bold", color=NAVY, ha="left", va="bottom", family="sans-serif")
-    # legend: shot types present + a white/black "Goal" marker
+    # Legend = shot types only. In goals-only view every dot IS a goal, so the
+    # "Goal" swatch is redundant; in all-shots view the ring is explained by a
+    # note instead of a swatch.
     _st_shown = set(st[shown])
     present = [t for t in SHOT_TYPE_COLORS if t in _st_shown and t != "unknown"]
+    _NCOL = 5
+    # short labels keep the legend inside the ice width — otherwise the tight
+    # bbox widens the whole canvas and the brand no longer sits at the right.
+    _SHORT = {"wrap-around": "Wrap", "between-legs": "Btwn Legs",
+              "deflected": "Deflect", "tip-in": "Tip"}
     handles = [plt.Line2D([0], [0], marker="o", ls="", mfc=SHOT_TYPE_COLORS[t],
-                          mec="none", ms=4.5, label=t.replace("-", " ").title())
-               for t in present[:8]]
-    handles.append(plt.Line2D([0], [0], marker="o", ls="", mfc="white",
-                              mec=GOAL_EDGE, mew=0.5, ms=4.5, label="Goal"))
+                          mec="none", ms=4.5,
+                          label=_SHORT.get(t, t.replace("-", " ").title()))
+               for t in present[:10]]
     # left-aligned with the ice + the name above it
-    leg = ax.legend(handles=handles, loc="upper left", ncol=5, fontsize=5.5,
+    leg = ax.legend(handles=handles, loc="upper left", ncol=_NCOL, fontsize=5.5,
                     frameon=False, bbox_to_anchor=(0.0, -0.01),
                     handletextpad=0.25, columnspacing=0.8, borderaxespad=0.0)
     for txt in leg.get_texts():
         txt.set_color(NAVY)
-    # Standing note: empty-net shots are ALWAYS excluded from these maps, so it
-    # reads as a permanent convention rather than appearing only sometimes.
-    _notes = ["Empty-net goals excluded"
-              + (f" ({n_en_goals} here)" if n_en_goals else "")]
+
+    # Everything below the legend, so nothing can overlap it however many rows
+    # the legend wraps onto.
+    _rows = max(1, int(np.ceil(len(handles) / _NCOL)))
+    _y = -0.06 - 0.075 * _rows
+
+    _notes = ["empty-net goals excluded"]
+    if not goals_only:
+        _notes.insert(0, "circled dot = goal")
     if n_far:
-        _notes.append(f"{n_far} long-range shot{'s' if n_far > 1 else ''} "
-                      "pinned at the left edge")
-    ax.text(0.0, -0.155, " · ".join(_notes), transform=ax.transAxes,
+        _notes.append(f"{n_far} long-range pinned left")
+    ax.text(0.0, _y, " · ".join(_notes), transform=ax.transAxes,
             fontsize=4.5, color=GREY, ha="left", va="top", style="italic",
             family="sans-serif")
-    # two-colour HOCKEY·ROI wordmark + url, bottom-RIGHT corner (matches the
-    # brand placement on the app's other charts)
-    # Wordmark in AXES coords so it sits just under the ice's bottom-right
-    # corner (not floating far below it). "HOCKEY" ends at the junction x,
-    # "ROI" starts there, so the pair reads as one wordmark.
+    # HOCKEY-ROI wordmark + url on their OWN line below the notes (right side)
+    # so a long note can never run into them. "HOCKEY" ends at the junction x
+    # and "ROI" starts there, so the pair reads as one wordmark.
+    _yb = _y - 0.075
     _jx = 0.93
-    ax.text(_jx, -0.075, "HOCKEY", transform=ax.transAxes, ha="right",
-            va="top", color=NAVY, weight="bold", fontsize=5,
-            family="sans-serif")
-    ax.text(_jx, -0.075, "ROI", transform=ax.transAxes, ha="left",
-            va="top", color=ORANGE, weight="bold", fontsize=5,
-            family="sans-serif")
+    ax.text(_jx, _yb, "HOCKEY", transform=ax.transAxes, ha="right",
+            va="top", color=NAVY, weight="bold", fontsize=5, family="sans-serif")
+    ax.text(_jx, _yb, "ROI", transform=ax.transAxes, ha="left",
+            va="top", color=ORANGE, weight="bold", fontsize=5, family="sans-serif")
     if url:
-        ax.text(1.0, -0.113, url, transform=ax.transAxes, ha="right",
+        ax.text(1.0, _yb - 0.055, url, transform=ax.transAxes, ha="right",
                 va="top", color=GREY, fontsize=3.8, style="italic",
                 family="sans-serif")
-    fig.subplots_adjust(left=0.02, right=0.98, top=0.93, bottom=0.19)
+    # extra bottom room when the legend wraps onto a second row
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.93,
+                        bottom=0.22 + 0.06 * (_rows - 1))
     return fig
