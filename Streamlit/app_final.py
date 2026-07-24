@@ -2482,7 +2482,12 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     edge_cols = _EDGE_VALUE_DISP
     metric_cols = [c for c in qg_cols + xg_cols + share_cols + rate_cols + zone_cols + edge_cols
                    if c in trend.columns]
-    if families:   # narrow to the selected metric families (a column may belong
+    # families is None  -> show every metric (callers that don't filter, e.g.
+    #                      the Trade Analyzer).
+    # families is []    -> show NO metric columns (nothing selected on the
+    #                      Player List: the drill-in stays identity-only).
+    if families is not None:
+                   # narrow to the selected metric families (a column may belong
                    # to more than one family, e.g. D/N/O Start% under both Zone
                    # Impact and EDGE — show it if ANY selected family claims it)
         _fam_of = {}
