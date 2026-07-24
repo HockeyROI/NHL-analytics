@@ -3317,10 +3317,10 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
         import io
         import matplotlib.pyplot as _plt
         _buf = io.BytesIO()
-        # dpi 480 => the PNG is ~2.5x the on-screen width, so it stays crisp on
+        # dpi 640 => the PNG is ~3x the on-screen width, so it stays crisp on
         # HiDPI/Retina (which renders a 560px-wide image at ~1120 real pixels).
         # dpi scales every element uniformly, so the layout is unchanged.
-        fig.savefig(_buf, format="png", dpi=480, bbox_inches="tight",
+        fig.savefig(_buf, format="png", dpi=640, bbox_inches="tight",
                     facecolor="white")
         _plt.close(fig)
         # No download button by design — unlike the Altair charts (which get
