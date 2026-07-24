@@ -3310,17 +3310,15 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
                          goalie_view=gv, goals_only=_goals_only)
     if fig is not None:
         import io
+        import matplotlib.pyplot as _plt
         _buf = io.BytesIO()
-        fig.savefig(_buf, format="png", dpi=220, bbox_inches="tight",
+        fig.savefig(_buf, format="png", dpi=240, bbox_inches="tight",
                     facecolor="white")
-        # use_container_width=False keeps it at its natural (small) size —
-        # otherwise Streamlit stretches the figure to the full column width.
-        st.pyplot(fig, clear_figure=True, use_container_width=False)
-        st.download_button(
-            "⬇", _buf.getvalue(),
-            file_name=f"{str(name).replace(' ', '-')}-shot-map.png",
-            mime="image/png", key=f"shotdl_{kind}_{ident}",
-            help="Save this shot map as a PNG")
+        _plt.close(fig)
+        # Rendered via st.image (not st.pyplot) so it carries Streamlit's own
+        # hover toolbar — save/expand live on the image itself rather than a
+        # separate button. width pins it near the other charts' footprint.
+        st.image(_buf.getvalue(), width=560)
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,

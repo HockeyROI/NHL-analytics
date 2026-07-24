@@ -196,17 +196,16 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
                     handletextpad=0.25, columnspacing=0.8, borderaxespad=0.0)
     for txt in leg.get_texts():
         txt.set_color(NAVY)
-    _notes = []
-    if n_en_goals:
-        _notes.append(f"{n_en_goals} empty-net goal"
-                      f"{'s' if n_en_goals > 1 else ''} not shown")
+    # Standing note: empty-net shots are ALWAYS excluded from these maps, so it
+    # reads as a permanent convention rather than appearing only sometimes.
+    _notes = ["Empty-net goals excluded"
+              + (f" ({n_en_goals} here)" if n_en_goals else "")]
     if n_far:
         _notes.append(f"{n_far} long-range shot{'s' if n_far > 1 else ''} "
                       "pinned at the left edge")
-    if _notes:
-        ax.text(0.0, -0.155, " · ".join(_notes), transform=ax.transAxes,
-                fontsize=4.5, color=GREY, ha="left", va="top", style="italic",
-                family="sans-serif")
+    ax.text(0.0, -0.155, " · ".join(_notes), transform=ax.transAxes,
+            fontsize=4.5, color=GREY, ha="left", va="top", style="italic",
+            family="sans-serif")
     # two-colour HOCKEY·ROI wordmark + url, bottom-RIGHT corner (matches the
     # brand placement on the app's other charts)
     # Wordmark in AXES coords so it sits just under the ice's bottom-right
@@ -220,7 +219,7 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
             va="top", color=ORANGE, weight="bold", fontsize=5,
             family="sans-serif")
     if url:
-        ax.text(1.0, -0.145, url, transform=ax.transAxes, ha="right",
+        ax.text(1.0, -0.113, url, transform=ax.transAxes, ha="right",
                 va="top", color=GREY, fontsize=3.8, style="italic",
                 family="sans-serif")
     fig.subplots_adjust(left=0.02, right=0.98, top=0.93, bottom=0.19)
