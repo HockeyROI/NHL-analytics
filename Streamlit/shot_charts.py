@@ -145,8 +145,8 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     ax.scatter(x[goal], y[goal], s=ds, c=cols[goal], alpha=0.95,
                edgecolors=GOAL_EDGE, linewidths=0.35, zorder=4)
 
-    # header: just the name (season / stat lines removed per design)
-    ax.text(0.0, 1.02, name.upper(), transform=ax.transAxes, fontsize=9.5,
+    # header: name (+ position), top-LEFT, sized to match the app's other charts
+    ax.text(0.0, 1.02, name, transform=ax.transAxes, fontsize=7,
             weight="bold", color=NAVY, ha="left", va="bottom", family="sans-serif")
     # legend: shot types present + a white/black "Goal" marker
     present = [t for t in SHOT_TYPE_COLORS if t in set(st) and t != "unknown"]
@@ -160,13 +160,17 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
                     handletextpad=0.25, columnspacing=0.8)
     for txt in leg.get_texts():
         txt.set_color(NAVY)
-    # two-colour HOCKEY·ROI wordmark + url, centred at the bottom (app charts)
-    fig.text(0.5, 0.035, "HOCKEY", ha="right", va="bottom", color=NAVY,
-             weight="bold", fontsize=7, family="sans-serif")
-    fig.text(0.5, 0.035, "ROI", ha="left", va="bottom", color=ORANGE,
-             weight="bold", fontsize=7, family="sans-serif")
+    # two-colour HOCKEY·ROI wordmark + url, bottom-RIGHT corner (matches the
+    # brand placement on the app's other charts)
+    # "HOCKEY" ends at the junction x, "ROI" starts there -> the pair reads as
+    # one wordmark tucked into the bottom-right corner.
+    _jx = 0.952
+    fig.text(_jx, 0.035, "HOCKEY", ha="right", va="bottom", color=NAVY,
+             weight="bold", fontsize=6.5, family="sans-serif")
+    fig.text(_jx, 0.035, "ROI", ha="left", va="bottom", color=ORANGE,
+             weight="bold", fontsize=6.5, family="sans-serif")
     if url:
-        fig.text(0.5, 0.008, url, ha="center", va="bottom", color=GREY,
-                 fontsize=5, style="italic", family="sans-serif")
+        fig.text(0.985, 0.008, url, ha="right", va="bottom", color=GREY,
+                 fontsize=4.5, style="italic", family="sans-serif")
     fig.subplots_adjust(left=0.02, right=0.98, top=0.93, bottom=0.19)
     return fig

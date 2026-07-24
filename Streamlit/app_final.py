@@ -3277,12 +3277,23 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
     stat = (f"{len(shots):,} {'shots faced' if faced else 'shots'} · "
             f"{ng} {'goals allowed' if faced else 'goals'}"
             + ("  ·  goalie's-eye view" if faced else ""))
+    _goals_only = st.checkbox("Goals only", value=False,
+                              key=f"shotgoals_{kind}_{ident}")
     fig = _sc.shot_chart(shots, nm, season=str(lbl), stat=stat, team=team,
-                         goalie_view=gv, goals_only=False)
+                         goalie_view=gv, goals_only=_goals_only)
     if fig is not None:
+        import io
+        _buf = io.BytesIO()
+        fig.savefig(_buf, format="png", dpi=220, bbox_inches="tight",
+                    facecolor="white")
         # use_container_width=False keeps it at its natural (small) size —
         # otherwise Streamlit stretches the figure to the full column width.
         st.pyplot(fig, clear_figure=True, use_container_width=False)
+        st.download_button(
+            "⬇", _buf.getvalue(),
+            file_name=f"{str(name).replace(' ', '-')}-shot-map.png",
+            mime="image/png", key=f"shotdl_{kind}_{ident}",
+            help="Save this shot map as a PNG")
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
@@ -3349,8 +3360,14 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         _pteam = (str(_prow_any["team"].iloc[0])
                   if len(_prow_any) and "team" in _prow_any.columns
                   and pd.notna(_prow_any["team"].iloc[0]) else None)
-        _render_shot_chart("player", int(pid), _highlight_name or f"Player {pid}",
-                           _pteam, season_label, playoffs=False)
+        _ppos = (str(_prow_any["position"].iloc[0])
+                 if len(_prow_any) and "position" in _prow_any.columns
+                 and pd.notna(_prow_any["position"].iloc[0]) else None)
+        _nm = _highlight_name or f"Player {pid}"
+        if _ppos:
+            _nm = f"{_nm} ({_ppos})"
+        _render_shot_chart("player", int(pid), _nm, _pteam, season_label,
+                           playoffs=False)
 
     def _chart(title: str, cols: list[str], ydomain=None) -> None:
         import altair as alt
@@ -3426,11 +3443,12 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                      title="Zone Impact Index")
         st.caption("↕ Click a different year (or the 2yr row) above to change the bars.")
 
-    # Team scatters — ALWAYS shown here regardless of which family pills are
-    # selected above, auto-scoped to this player's own team, so a drill-in
-    # gives an immediate team-context view without needing the main
-    # leaderboard's own Team filter set.
-    _render_team_scatters(trend, season_label, same_pos, cohort, _highlight_name)
+    # Team scatters — shown regardless of which family pills are selected,
+    # auto-scoped to this player's own team, so a drill-in gives an immediate
+    # team-context view. Suppressed in "Shot map" view, which is meant to be
+    # the shot chart on its own.
+    if view_mode != "Shot map":
+        _render_team_scatters(trend, season_label, same_pos, cohort, _highlight_name)
 
 
 def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool,
