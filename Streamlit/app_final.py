@@ -538,30 +538,31 @@ _ABBR_FULL = {
     "MP-GSAx": "MoneyPuck Goals Saved Above Expected",
     "MP-GSAx/60": "MoneyPuck Goals Saved Above Expected per 60 minutes",
     # Per-situation suite — all follow the Situation toggle (5v5/PP/PK/4v4/3v3/5v3/All)
-    "Sit TOI/GP": "Minutes per game in the selected situation",
-    "Sit CF/60": "On-ice Corsi (shot attempts) For per 60 — selected situation",
-    "Sit CA/60": "On-ice Corsi Against per 60 — selected situation",
-    "Sit CF%": "On-ice Corsi For % (CF/(CF+CA)) — selected situation",
-    "Sit FF/60": "On-ice Fenwick (unblocked attempts) For per 60 — selected situation",
-    "Sit FA/60": "On-ice Fenwick Against per 60 — selected situation",
-    "Sit FF%": "On-ice Fenwick For % — selected situation",
-    "Sit xGF/60": "On-ice Expected Goals For per 60 (own xG model) — selected situation",
-    "Sit xGA/60": "On-ice Expected Goals Against per 60 — selected situation",
-    "Sit xGF%": "On-ice Expected Goals For % (xGF/(xGF+xGA)) — selected situation",
-    "Sit GF/60": "On-ice Goals For per 60 — selected situation",
-    "Sit GA/60": "On-ice Goals Against per 60 — selected situation",
-    "Sit GF%": "On-ice Goals For % — selected situation",
-    "Sit iCF/60": "Individual shot attempts per 60 — selected situation",
-    "Sit ixG/60": "Individual Expected Goals per 60 — selected situation",
-    "Sit iG/60": "Individual Goals per 60 — selected situation",
-    "Sit ixG": "Individual Expected Goals (total) — selected situation",
-    "Sit iG": "Individual Goals (total) — selected situation",
-    "Sit PP xGF+CF/60": "Power-play value: on-ice xGF/60 + CF/60 (higher = better) — use with PP situation",
-    "Sit PK xGA+CA/60": "Penalty-kill value: on-ice xGA/60 + CA/60 (LOWER = better) — use with PK situation",
-    "Sit RelCF%": "Relative Corsi For % — on-ice CF% minus the team's CF% with the player OFF (selected situation; season-aggregate on/off, exact for one-team players, approximate across mid-scope trades, blank for heavy multi-team cases)",
-    "Sit RelxGF%": "Relative xGF % — on-ice xGF% minus the team's xGF% with the player OFF (selected situation; season-aggregate on/off, exact for one-team players, approximate across trades)",
-    "Sit PDO": "PDO (luck) — on-ice SH% + SV% (SOG-based) for the selected situation; ~100 = neutral, higher = running hot. Raw, NOT xG-adjusted (that's PDOxG).",
-    "Sit PDOxG": "PDOxG — PDO net of expected: (SH% − xSH%) + (SV% − xSV%) from the xG model, SOG-based. 0-centered; + = finishing/goaltending above xG. Selected situation.",
+    # Situation-driven columns (these follow the Situation filter). Listed after
+    # the originals above so they override those entries with the fuller text.
+    "CF/60": "On-ice Corsi (shot attempts) For per 60 — follows the Situation filter",
+    "CA/60": "On-ice Corsi Against per 60 — follows the Situation filter",
+    "CF%": "On-ice Corsi For % (CF/(CF+CA)) — follows the Situation filter",
+    "FF/60": "On-ice Fenwick (unblocked attempts) For per 60 — Situation filter",
+    "FA/60": "On-ice Fenwick Against per 60 — Situation filter",
+    "FF%": "On-ice Fenwick For % — Situation filter",
+    "xGF/60": "On-ice Expected Goals For per 60 (HockeyROI xG model) — Situation filter",
+    "xGA/60": "On-ice Expected Goals Against per 60 — Situation filter",
+    "xG%": "On-ice Expected Goals For % (xGF/(xGF+xGA)) — Situation filter",
+    "GF/60": "On-ice Goals For per 60 — Situation filter",
+    "GA/60": "On-ice Goals Against per 60 — Situation filter",
+    "GF%": "On-ice Goals For % — Situation filter",
+    "iCF/60": "Individual shot attempts per 60 — Situation filter",
+    "ixG/60": "Individual Expected Goals per 60 — Situation filter",
+    "iG/60": "Individual Goals per 60 — Situation filter",
+    "ixG": "Individual Expected Goals (total) — Situation filter",
+    "iG": "Individual Goals (total) — Situation filter",
+    "PP Value": "Power-play value: on-ice xGF/60 + CF/60 (higher = better) — set Situation to PP",
+    "PK Value": "Penalty-kill value: on-ice xGA/60 + CA/60 (LOWER = better) — set Situation to PK",
+    "RelCF%": "Relative Corsi For % — on-ice CF% minus the team's CF% with the player OFF (Situation filter; season-aggregate on/off, exact for one-team players, approximate across trades)",
+    "RelxGF%": "Relative xGF % — on-ice xGF% minus the team's xGF% with the player OFF (Situation filter; season-aggregate on/off)",
+    "PDO": "PDO (luck) — on-ice SH% + SV% (SOG-based), Situation filter; ~100 = neutral, higher = running hot. Raw, NOT xG-adjusted (that's PDOxG).",
+    "PDOxG": "PDOxG — PDO net of expected: (SH% − xSH%) + (SV% − xSV%) from the xG model, SOG-based. 0-centered; + = finishing/goaltending above xG.",
 }
 
 
@@ -1464,6 +1465,46 @@ def _team_situation_metrics(scope_key: str, bucket_label: str,
 # team table shows every column at once, no family pills).
 TEAM_SIT_COLS = ["Sit TOI", "Sit CF%", "Sit xGF%", "Sit GF%",
                  "Sit xGF/60", "Sit xGA/60", "Sit PP xGF+CF/60", "Sit PK xGA+CA/60"]
+
+
+# The situation-aware values REPLACE the older 5v5-only columns under the plain
+# names, so there is ONE xG/PDO column set and the Situation filter drives it.
+_SIT_UNIFY = {
+    # these REPLACE the older 5v5-only columns of the same concept
+    "Sit xGF/60": "xGF/60", "Sit xGA/60": "xGA/60", "Sit xGF%": "xG%",
+    "Sit PDO": "PDO", "Sit PDOxG": "PDOxG",
+    # these are new (no old equivalent) — just drop the "Sit " prefix
+    "Sit CF/60": "CF/60", "Sit CA/60": "CA/60", "Sit CF%": "CF%",
+    "Sit FF/60": "FF/60", "Sit FA/60": "FA/60", "Sit FF%": "FF%",
+    "Sit GF/60": "GF/60", "Sit GA/60": "GA/60", "Sit GF%": "GF%",
+    "Sit iCF/60": "iCF/60", "Sit ixG/60": "ixG/60", "Sit iG/60": "iG/60",
+    "Sit ixG": "ixG", "Sit iG": "iG",
+    "Sit RelCF%": "RelCF%", "Sit RelxGF%": "RelxGF%",
+    "Sit PP xGF+CF/60": "PP Value", "Sit PK xGA+CA/60": "PK Value",
+}
+# "Sit TOI/GP" is dropped — the frame already has a TOI/GP column.
+_SIT_DROP = ["Sit TOI/GP"]
+# The situation-driven columns, under their final plain names (shown in the xG
+# family — there is no separate "Situations" family any more).
+_SIT_PLAIN = ["CF/60", "CA/60", "CF%", "FF/60", "FA/60", "FF%",
+              "GF/60", "GA/60", "GF%", "iCF/60", "ixG/60", "iG/60", "ixG", "iG",
+              "RelCF%", "RelxGF%", "PP Value", "PK Value"]
+
+
+def _unify_situation_xg(base: pd.DataFrame) -> pd.DataFrame:
+    """Collapse the duplicate xG/PDO columns: drop the old 5v5-only versions and
+    promote the situation-aware ones to the plain names (xGF/60, xG%, PDO, ...).
+    Every downstream consumer keeps working — same names, now filter-driven."""
+    if base is None or base.empty:
+        return base
+    base = base.drop(columns=[c for c in _SIT_DROP if c in base.columns],
+                     errors="ignore")
+    have = {k: v for k, v in _SIT_UNIFY.items() if k in base.columns}
+    if not have:
+        return base
+    base = base.drop(columns=[v for v in have.values() if v in base.columns],
+                     errors="ignore")
+    return base.rename(columns=have)
 
 
 _SIT_SPLIT_BUCKETS = ["5v5", "PP", "PK", "4v4", "3v3", "5v3"]
@@ -3232,19 +3273,14 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
     ng = int(shots["is_goal"].sum())
     lbl = season_label or ("Playoffs" if playoffs else "")
     faced = kind == "goalie"
-    with st.expander("🏒 Shot map", expanded=False):
-        mode = st.radio("Show", ["Goals only", "All shots + goals"], horizontal=True,
-                        key=f"shotmode_{kind}_{ident}", label_visibility="collapsed")
-        goals_only = mode == "Goals only"
-        nm = name + (" (shots faced)" if faced else "")
-        shown = ng if goals_only else len(shots)
-        noun = ("goals allowed" if faced else "goals") if goals_only else (
-            "shots faced" if faced else "shots")
-        stat = f"{shown:,} {noun}" + ("  ·  goalie's-eye view" if faced else "")
-        fig = _sc.shot_chart(shots, nm, season=str(lbl), stat=stat, team=team,
-                             goalie_view=gv, goals_only=goals_only)
-        if fig is not None:
-            st.pyplot(fig, clear_figure=True)
+    nm = name + (" (shots faced)" if faced else "")
+    stat = (f"{len(shots):,} {'shots faced' if faced else 'shots'} · "
+            f"{ng} {'goals allowed' if faced else 'goals'}"
+            + ("  ·  goalie's-eye view" if faced else ""))
+    fig = _sc.shot_chart(shots, nm, season=str(lbl), stat=stat, team=team,
+                         goalie_view=gv, goals_only=False)
+    if fig is not None:
+        st.pyplot(fig, clear_figure=True)
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
@@ -3684,6 +3720,7 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         base = base.drop(columns=[c for c in base.columns
                                   if c.startswith("_sr_") or c.startswith("_tr_")],
                          errors="ignore")
+        base = _unify_situation_xg(base)
         return base, True
 
     nfi = load_nfi_player()
@@ -3777,6 +3814,7 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     base = base.drop(columns=[c for c in base.columns
                               if c.startswith("_sr_") or c.startswith("_tr_")],
                      errors="ignore")
+    base = _unify_situation_xg(base)
     return base, is_pooled
 
 
@@ -3789,8 +3827,9 @@ PLAYER_FAMILY_COLS = {
                       "RelxG-QG-F%", "RelxG-QG-A%",
                       "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
                       "RelNFI-QG-A%", "RelNFI-QG-S%"],
-    # xG = the raw + relative expected-goals rate metrics (split out of QG).
-    "xG": ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO", "PDOxG"],
+    # xG / possession — all situation-driven (they follow the Situation filter).
+    "xG": (["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%",
+            "PDO", "PDOxG"] + _SIT_PLAIN),
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
     "Zone Impact": ["DZ Start%", "NZ Start%", "OZ Start%",
@@ -3803,18 +3842,7 @@ PLAYER_FAMILY_COLS = {
     # methodology tab spells out the different source/definition so it's not
     # mistaken for an EDGE-API stat.
     "EDGE": _EDGE_VALUE_DISP + ["DZ Start%", "NZ Start%", "OZ Start%"],
-    # Per-situation possession/xG/individual suite — every column follows the
-    # situation toggle (5v5 / PP / PK / 4v4 / 3v3 / 5v3 / All). "Sit " prefix
-    # marks them as situation-scoped and avoids clashing with the 5v5 xG family.
-    "Situations": ["Sit TOI/GP", "Sit CF/60", "Sit CA/60", "Sit CF%",
-                   "Sit FF/60", "Sit FA/60", "Sit FF%",
-                   "Sit xGF/60", "Sit xGA/60", "Sit xGF%",
-                   "Sit GF/60", "Sit GA/60", "Sit GF%",
-                   "Sit iCF/60", "Sit ixG/60", "Sit iG/60", "Sit ixG", "Sit iG",
-                   "Sit RelCF%", "Sit RelxGF%",
-                   "Sit PP xGF+CF/60", "Sit PK xGA+CA/60", "Sit PDO", "Sit PDOxG"],
 }
-SITUATION_FAMILY_COLS = PLAYER_FAMILY_COLS["Situations"]
 
 
 def _team_scatter_frame(season_label: str, team: str = None) -> pd.DataFrame:
@@ -4407,9 +4435,9 @@ def render_players() -> None:
                       "as-is regardless.")
         st.caption("The shot-scope toggle applies only to **PDO** — other xG columns "
                    "are unaffected.")
-    if "Situations" in display_fams:
-        st.caption("**Sit** columns follow the **Situation** filter above (next to Game "
-                   "type). PP=5v4+5v3+4v3, PK=4v5+3v5+3v4. RelNFI/QG/Zone stay 5v5.")
+    if "xG" in display_fams:
+        st.caption("xG / possession columns follow the **Situation** filter above (next "
+                   "to Game type). PP=5v4+5v3+4v3, PK=4v5+3v5+3v4. NFI/QG/Zone stay 5v5.")
     with tcol:
         if playoffs:
             min_toi = st.slider("Min ES TOI (min)", 0, 1500, rank_floor, 25,
@@ -4529,7 +4557,7 @@ def render_players() -> None:
             "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO", "PDOxG",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI",
-            *_EDGE_VALUE_DISP, *SITUATION_FAMILY_COLS]
+            *_EDGE_VALUE_DISP, *_SIT_PLAIN]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
     cols = [c for c in cols if c in df.columns]
@@ -4591,29 +4619,22 @@ def render_players() -> None:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     if "TOI/GP" in disp.columns:
         fmt["TOI/GP"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
-    # Per-situation "Sit " suite formatters.
-    for c in ("Sit CF/60", "Sit CA/60", "Sit FF/60", "Sit FA/60", "Sit GF/60",
-              "Sit GA/60", "Sit iCF/60", "Sit iG/60",
-              "Sit PP xGF+CF/60", "Sit PK xGA+CA/60"):
+    # Situation-driven suite formatters (plain names after unification).
+    for c in ("CF/60", "CA/60", "FF/60", "FA/60", "GF/60", "GA/60",
+              "iCF/60", "iG/60", "PP Value", "PK Value"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
-    for c in ("Sit xGF/60", "Sit xGA/60", "Sit ixG/60", "Sit ixG"):
+    for c in ("ixG/60", "ixG"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
-    for c in ("Sit CF%", "Sit FF%", "Sit xGF%", "Sit GF%"):
+    for c in ("CF%", "FF%", "GF%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
-    for c in ("Sit RelCF%", "Sit RelxGF%"):
+    for c in ("RelCF%", "RelxGF%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
-    if "Sit PDO" in disp.columns:
-        fmt["Sit PDO"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
-    if "Sit PDOxG" in disp.columns:
-        fmt["Sit PDOxG"] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
-    if "Sit TOI/GP" in disp.columns:
-        fmt["Sit TOI/GP"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
-    if "Sit iG" in disp.columns:
-        fmt["Sit iG"] = lambda x: "—" if pd.isna(x) else f"{x:.0f}"
+    if "iG" in disp.columns:
+        fmt["iG"] = lambda x: "—" if pd.isna(x) else f"{x:.0f}"
     for c in ("GP",):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"

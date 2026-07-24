@@ -133,20 +133,21 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     prim, accent = team_color(team) if team else _DEFAULT_COLOR
     st = d["shot_type"].fillna("unknown").str.lower()
     cols = st.map(SHOT_TYPE_COLORS).fillna("#9AA5AD").to_numpy()
-    fig, ax = plt.subplots(figsize=(8.2, 5.8), dpi=150)
+    fig, ax = plt.subplots(figsize=(6.4, 4.5), dpi=150)
     fig.patch.set_facecolor("white")
     _draw_rink(ax)
 
+    # dot size/alpha shrink with volume so high-count goalies/teams read as a
+    # heat cloud rather than a blob.
+    n = len(x)
+    ds, da = (40, 0.75) if n < 400 else (22, 0.5) if n < 1200 else (12, 0.4)
     if not goals_only:
-        # non-goal shots: colored by type, no border. Size/alpha shrink with
-        # volume so high-count goalies/teams read as a heat cloud, not a blob.
-        n = len(x)
-        ds, da = (48, 0.75) if n < 400 else (26, 0.5) if n < 1200 else (14, 0.4)
+        # non-goal shots: colored by type, no border
         ax.scatter(x[~goal], y[~goal], s=ds, c=cols[~goal], alpha=da,
                    edgecolors="none", zorder=3)
-    # goals: shot-type fill + black outer border
-    ax.scatter(x[goal], y[goal], s=88, c=cols[goal], alpha=0.95,
-               edgecolors=GOAL_EDGE, linewidths=1.6, zorder=4)
+    # goals: SAME size as shots, with a thin dark ring to mark them
+    ax.scatter(x[goal], y[goal], s=ds, c=cols[goal], alpha=0.95,
+               edgecolors=GOAL_EDGE, linewidths=0.7, zorder=4)
 
     # stacked header: NAME (big) / season / stat line
     ax.text(0.0, 1.15, name.upper(), transform=ax.transAxes, fontsize=17,
@@ -163,7 +164,7 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
                           mec="none", ms=8, label=t.replace("-", " ").title())
                for t in present[:8]]
     handles.append(plt.Line2D([0], [0], marker="o", ls="", mfc="white",
-                              mec=GOAL_EDGE, mew=1.6, ms=9, label="Goal"))
+                              mec=GOAL_EDGE, mew=0.9, ms=8, label="Goal"))
     leg = ax.legend(handles=handles, loc="upper center", ncol=5, fontsize=8,
                     frameon=False, bbox_to_anchor=(0.5, -0.02),
                     handletextpad=0.3, columnspacing=1.1)
