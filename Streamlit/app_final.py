@@ -3242,9 +3242,15 @@ SHOT_MAP_WIDTH_PX = 560
 
 def _shot_chart_seasons(season_label: str | None, playoffs: bool):
     """Map the app scope to a list of season strings for the shot parquets
-    (None = all seasons, used for the pooled playoff view)."""
+    (None = all seasons, used for the pooled playoff view).
+
+    Accepts BOTH the global Season filter's labels and a drill-in trend-table
+    row label — the map follows the year you click inside a player's/goalie's
+    profile, which is the year the rest of that page is showing."""
     if playoffs:
         return None
+    if season_label == "2yr avg (24-26)":         # drill-in pooled row
+        return list(POOLED_2YR_SEASONS)
     key = SEASON_KEY.get(season_label, "pooled")
     if key == "pooled":
         return list(POOLED_SEASONS)
@@ -3396,7 +3402,10 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         _nm = _highlight_name or f"Player {pid}"
         if _ppos:
             _nm = f"{_nm} ({_ppos})"
-        _render_shot_chart("player", int(pid), _nm, _pteam, season_label,
+        # _yr = the trend-table row the user clicked (falling back to the global
+        # Season filter's year). The map follows that, so clicking a season in
+        # the profile moves the shot chart with the rest of the page.
+        _render_shot_chart("player", int(pid), _nm, _pteam, _yr or season_label,
                            playoffs=False)
 
     def _chart(title: str, cols: list[str], ydomain=None) -> None:
@@ -5866,8 +5875,16 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
         st.info("No per-season data available for this goalie.")
         return
     st.caption("Each value shows its **(rank)** — league rank among all goalies "
-               "that season (2yr row ranks within the 2-season pool).")
-    _show_df(disp, width="stretch", hide_index=True)
+               "that season (2yr row ranks within the 2-season pool). "
+               "**Click a season row** to move the shot map and bars to that year.")
+    # Click-to-pick-a-year, same as the skater drill-in: the selected row drives
+    # the shot map AND the consistency/GSAx bars below.
+    _gev = _show_df(disp, width="stretch", hide_index=True, on_select="rerun",
+                    selection_mode="single-row", key=f"gl_detail_{int(gid)}")
+    _gsel = getattr(getattr(_gev, "selection", None), "rows", None)
+    _gseasons = disp["Season"].astype(str).tolist()
+    _gyr = (_gseasons[_gsel[0]] if _gsel and 0 <= _gsel[0] < len(_gseasons)
+            else _default_qg_year(season_label, _gseasons))
 
     # Shot map — shots faced (goalie's-eye view), in the goalie's team colours.
     _g = load_goalie_nfi()
@@ -5875,7 +5892,8 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
     _gname = str(_grow["goalie_name"].iloc[0]) if len(_grow) else f"Goalie {gid}"
     _gteam = (str(_grow["team"].iloc[0]) if len(_grow) and "team" in _grow.columns
               and pd.notna(_grow["team"].iloc[0]) else None)
-    _render_shot_chart("goalie", int(gid), _gname, _gteam, season_label, playoffs=False)
+    _render_shot_chart("goalie", int(gid), _gname, _gteam, _gyr or season_label,
+                       playoffs=False)
 
     # CHOICE: 3 small multiples. NFI-GSAx/60 is a per-60 rate (~±0.3); NFI SV%
     # is a raw save% (~85-95%) — a very different band from the "beat expected
@@ -5910,12 +5928,13 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
     if _bar_cols:
         _bt = trend.dropna(subset=_bar_cols, how="all")
         if not _bt.empty:
-            # Default to the globally-selected Season filter (same pattern as the
-            # Player List bar chart's _default_qg_year) instead of always the
-            # latest row — previously hardcoded to iloc[-1], so the bars never
-            # changed when the Season filter changed.
+            # Follow the clicked table row; when nothing is selected fall back to
+            # the globally-selected Season filter (same pattern as the Player
+            # List bar chart's _default_qg_year) rather than always the latest
+            # row — previously hardcoded to iloc[-1], so the bars never moved.
             _bt_seasons = _bt["Season"].astype(str).tolist()
-            _yr = _default_qg_year(season_label, _bt_seasons)
+            _yr = (_gyr if _gyr in _bt_seasons
+                   else _default_qg_year(season_label, _bt_seasons))
             _match = _bt[_bt["Season"].astype(str) == str(_yr)]
             _row = _match.iloc[0] if len(_match) else _bt.iloc[-1]
             _ssn_str = str(int(_row["season"])) if pd.notna(_row.get("season")) else None
