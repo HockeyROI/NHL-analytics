@@ -3317,10 +3317,10 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
         import io
         import matplotlib.pyplot as _plt
         _buf = io.BytesIO()
-        # NO bbox_inches="tight": that crops to content, so a short legend
-        # (Goals only) produced a smaller canvas than All shots and the map
-        # appeared to change size. Fixed canvas => identical size in both modes.
-        fig.savefig(_buf, format="png", dpi=240, facecolor="white")
+        # tight crop keeps it sharp with no dead margin; both modes render the
+        # same size because the legend covers all shot types either way.
+        fig.savefig(_buf, format="png", dpi=240, bbox_inches="tight",
+                    facecolor="white")
         _plt.close(fig)
         # No download button by design — unlike the Altair charts (which get
         # Save-as-PNG free from Vega's "..." menu), a matplotlib image would

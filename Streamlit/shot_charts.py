@@ -163,10 +163,7 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     prim, accent = team_color(team) if team else _DEFAULT_COLOR
     st = d["shot_type"].fillna("unknown").str.lower()
     cols = st.map(SHOT_TYPE_COLORS).fillna("#9AA5AD").to_numpy()
-    # Portrait canvas: the drawn zone is 76 wide x 86 tall, so a landscape
-    # figure would leave big side margins once the aspect is equalised. Fixed
-    # size (no tight crop) so Goals-only and All-shots render identically.
-    fig, ax = plt.subplots(figsize=(4.3, 4.35), dpi=220)
+    fig, ax = plt.subplots(figsize=(4.4, 3.1), dpi=220)
     fig.patch.set_facecolor("white")
     _draw_rink(ax)
 
@@ -188,7 +185,10 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     # Legend = shot types only. In goals-only view every dot IS a goal, so the
     # "Goal" swatch is redundant; in all-shots view the ring is explained by a
     # note instead of a swatch.
-    _st_shown = set(st[shown])
+    # Legend covers EVERY shot type the player has, not just the drawn subset,
+    # so Goals-only and All-shots produce the same legend height and therefore
+    # the same cropped image size.
+    _st_shown = set(st)
     present = [t for t in SHOT_TYPE_COLORS if t in _st_shown and t != "unknown"]
     # 3 columns -> the legend wraps to 3-4 rows but stays NARROWER than the ice,
     # so the axes is the widest artist and the brand really does land in the
@@ -210,14 +210,11 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
     _rows = max(1, int(np.ceil(len(handles) / _NCOL)))
     _y = -0.045 - 0.046 * _rows
 
-    _notes = ["empty-net goals excluded"]
-    if not goals_only:
-        _notes.insert(0, "circled dot = goal")
-    if n_far:
-        _notes.append(f"{n_far} long-range pinned left")
-    ax.text(0.0, _y, " · ".join(_notes), transform=ax.transAxes,
-            fontsize=4.5, color=GREY, ha="left", va="top", style="italic",
-            family="sans-serif")
+    # Constant note text: a mode-dependent string changes the tight-crop width,
+    # which made Goals-only and All-shots render at different sizes.
+    ax.text(0.0, _y, "circled dot = goal · empty-net goals excluded",
+            transform=ax.transAxes, fontsize=4.5, color=GREY, ha="left",
+            va="top", style="italic", family="sans-serif")
     # HOCKEY-ROI wordmark + url on their OWN line below the notes (right side)
     # so a long note can never run into them. "HOCKEY" ends at the junction x
     # and "ROI" starts there, so the pair reads as one wordmark.
@@ -231,8 +228,7 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "", stat: str = "",
         ax.text(1.0, _yb - 0.055, url, transform=ax.transAxes, ha="right",
                 va="top", color=GREY, fontsize=3.8, style="italic",
                 family="sans-serif")
-    # Axes narrowed so the equal-aspect ice actually fills it (no side gaps),
-    # with fixed room underneath for legend rows + notes + brand.
-    fig.subplots_adjust(left=0.13, right=0.87, top=0.95,
-                        bottom=0.24 + 0.035 * (_rows - 1))
+    # extra bottom room per wrapped legend row
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.93,
+                        bottom=0.16 + 0.045 * (_rows - 1))
     return fig
