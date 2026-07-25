@@ -5349,7 +5349,7 @@ def render_teams() -> None:
     # per-season trend + year-over-year charts + shot map (mirrors the player /
     # goalie drill-in). Blank = the league leaderboard + scatter landscape.
     _all_teams = sorted(load_team_situation_onice().get("team", pd.Series(dtype=str)).unique())
-    _tpick = st.selectbox("Drill into a team", ["— League view —"] + _all_teams,
+    _tpick = st.selectbox("Team", ["— League view —"] + _all_teams,
                           index=0, key="teams_drill_pick")
     if _tpick and _tpick != "— League view —":
         _render_team_profile(_tpick, season_label, playoffs)
@@ -5561,37 +5561,72 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
         _render_shot_chart("team", team, team, team, season_label, playoffs=playoffs)
         return
 
+    _seasons_order = list(trend["Season"])
+
+    def _tchart(title, cols, ydomain=None):
+        """Year-over-year line chart, same style/legend as the player side
+        (stroke legend symbols, tightened y)."""
+        ys = [c for c in cols if c in trend.columns and trend[c].notna().any()]
+        if not ys:
+            return
+        st.caption(title)
+        long = (trend[["Season"] + ys].melt("Season", var_name="Metric",
+                value_name="value").dropna(subset=["value"]))
+        _ysc = alt.Scale(domain=ydomain or _tight_domain(long["value"]))
+        ch = alt.Chart(long).mark_line(point=True, strokeWidth=2.5).encode(
+            x=alt.X("Season:N", title=None, sort=_seasons_order),
+            y=alt.Y("value:Q", title=None, scale=_ysc),
+            color=alt.Color("Metric:N", sort=ys, legend=alt.Legend(
+                orient="bottom", title=None, symbolType="stroke", symbolStrokeWidth=2.5)),
+            tooltip=["Season:N", "Metric:N", alt.Tooltip("value:Q", format=".2f")]
+            ).properties(height=300)
+        _show_chart(ch, dl_name=f"team-{team}-{title.split(' (')[0]}".replace(" ", "-"))
+
     if view == "Year over year":
-        st.caption(f"Year over year{_sc_txt} — one line per metric.")
-        m = trend.melt(id_vars=["Season", "season"], value_vars=_TEAM_TREND_COLS,
-                       var_name="Metric", value_name="Value").dropna(subset=["Value"])
-        for grp, ttl in [(["xGF%", "CF%", "GF%"], "Shares (%)"),
-                         (["xGF/60", "xGA/60", "GF/60", "GA/60"], "Rates per 60"),
-                         (["PDO"], "PDO")]:
-            sub = m[m["Metric"].isin(grp)]
-            if sub.empty:
-                continue
-            ch = alt.Chart(sub).mark_line(point=True).encode(
-                x=alt.X("Season:N", sort=list(trend["Season"])),
-                y=alt.Y("Value:Q", scale=alt.Scale(zero=False), title=ttl),
-                color=alt.Color("Metric:N", legend=alt.Legend(orient="bottom")),
-                tooltip=["Season:N", "Metric:N", alt.Tooltip("Value:Q", format=".2f")])
-            _show_chart(ch, dl_name=f"team-{team}-{ttl}".replace(" ", "-"), keep_tooltip=True)
+        st.caption(f"Year over year{_sc_txt}")
+        _tchart("Shares — xGF%, CF%, GF%", ["xGF%", "CF%", "GF%"])
+        _tchart("On-ice rates per 60 (xGF/60, xGA/60, GF/60, GA/60)",
+                ["xGF/60", "xGA/60", "GF/60", "GA/60"])
+        _tchart("PDO — luck (100 = neutral)", ["PDO"])
         return
 
-    # current-year data: the row for the selected season (or the latest available)
+    # current-year data: bar charts for the selected season (matches the player
+    # side, which shows bars here rather than a table).
     _sk = SEASON_KEY.get(season_label)
     row = trend[trend["season"] == _sk] if _sk and str(_sk).isdigit() else trend.iloc[[-1]]
     if row.empty:
         row = trend.iloc[[-1]]
-    st.caption(f"{row['Season'].iloc[0]}{_sc_txt}")
-    disp = row[["Season"] + _TEAM_TREND_COLS].copy()
-    fmt = {c: (lambda x: "—" if pd.isna(x) else f"{x:.1f}%") for c in ("xGF%", "CF%", "GF%")}
+    r = row.iloc[0]
+    st.caption(f"{r['Season']}{_sc_txt}")
+
+    def _bars(title, cols, ref=None, pct=False):
+        vals = [(c, float(r[c])) for c in cols if c in row.columns and pd.notna(r[c])]
+        if not vals:
+            return
+        bar_df = pd.DataFrame(vals, columns=["Metric", "Value"])
+        st.caption(title)
+        fmt = ".1f" if pct else ".2f"
+        base = alt.Chart(bar_df).mark_bar().encode(
+            x=alt.X("Value:Q", title=None, scale=alt.Scale(zero=True)),
+            y=alt.Y("Metric:N", sort=cols, title=None),
+            color=alt.Color("Metric:N", legend=None),
+            tooltip=["Metric:N", alt.Tooltip("Value:Q", format=fmt)])
+        layers = base
+        if ref is not None:
+            rule = alt.Chart(pd.DataFrame({"r": [ref]})).mark_rule(
+                color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(x="r:Q")
+            layers = base + rule
+        _show_chart(layers.properties(height=28 * len(vals) + 40),
+                    dl_name=f"team-{team}-{title.split(' ')[0]}")
+
+    _bars("Shares (%) — 50 = even", ["xGF%", "CF%", "GF%"], ref=50, pct=True)
+    _bars("On-ice rates per 60", ["xGF/60", "xGA/60", "GF/60", "GA/60"])
+    _bars("PDO — 100 = neutral luck", ["PDO"], ref=100)
+    st.caption("Per-season history:")
+    _hfmt = {c: (lambda x: "—" if pd.isna(x) else f"{x:.1f}%") for c in ("xGF%", "CF%", "GF%")}
     for c in ("xGF/60", "xGA/60", "GF/60", "GA/60", "PDO"):
-        fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
-    _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
-    st.caption("Full per-season history:")
-    _show_df(trend[["Season"] + _TEAM_TREND_COLS].style.format(fmt, na_rep="—"),
+        _hfmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    _show_df(trend[["Season"] + _TEAM_TREND_COLS].style.format(_hfmt, na_rep="—"),
              width="stretch", hide_index=True)
 
 
