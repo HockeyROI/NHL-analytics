@@ -168,8 +168,8 @@ _CHART_COLORS = {
     "RelxG-F%": _CHART_SECOND, "RelxG-A%": _CHART_THIRD,
     # goalie extras (NFI SV% = purple; sQS% = blue/third)
     "NFI SV%": _CHART_FOURTH, "sQS%": _CHART_THIRD,
-    "NFI-GSAx": _CHART_PRIMARY, "MP-GSAx": _CHART_THIRD,
-    "MP-GSAx/60": _CHART_THIRD,
+    "NFI-GSAx": _CHART_PRIMARY, "GSAx": _CHART_THIRD,
+    "GSAx/60": _CHART_THIRD,
     # EDGE zone-time trio (same "3rd line = brand blue" convention as NZI/DZI/OZI);
     # the other EDGE charts are single-line, so they default to orange below.
     "EDGE OZ%": _CHART_PRIMARY, "EDGE NZ%": _CHART_SECOND, "EDGE DZ%": _CHART_THIRD,
@@ -535,8 +535,8 @@ _ABBR_FULL = {
     "sQS%": "Starter Quality Start % — share of games clearing that season's starter-tier save% baseline",
     "QG%s": "Quality Start % vs Starter-tier save% baseline",
     "QG%b": "Quality Start % vs Backup-tier save% baseline",
-    "MP-GSAx": "MoneyPuck Goals Saved Above Expected",
-    "MP-GSAx/60": "MoneyPuck Goals Saved Above Expected per 60 minutes",
+    "GSAx": "Goals Saved Above Expected (all shots, HockeyROI xG)",
+    "GSAx/60": "Goals Saved Above Expected per 60 (all shots, HockeyROI xG)",
     # Per-situation suite — all follow the Situation toggle (5v5/PP/PK/4v4/3v3/5v3/All)
     # Situation-driven columns (these follow the Situation filter). Listed after
     # the originals above so they override those entries with the fuller text.
@@ -780,7 +780,7 @@ def render_methodology() -> None:
         + _meth_framework(
             "Quality Games (QG)",
             "Per-game consistency — the share of a player's 5v5 regulation games where their "
-            "on-ice danger share beat the position median, on two bases: MoneyPuck xG "
+            "on-ice danger share beat the position median, on two bases: our xG "
             "(<b>xG-QG%</b>) and NFI (<b>NFI-QG%</b>), with a half-credit rule for exact-median "
             "ties. <b>Relative QG</b> (<b>RelNFI-QG%</b>, <b>RelxG-QG%</b>) runs the same per-game "
             "median test on the player's <i>team-relative</i> danger share (on-ice vs off-ice), so "
@@ -808,8 +808,8 @@ def render_methodology() -> None:
             "per situation; a season-aggregate on/off, exact for one-team players and approximate "
             "across mid-scope trades), plus dedicated special-teams value scores — "
             "<b>PP xGF+CF/60</b> (higher = better) and <b>PK xGA+CA/60</b> (lower = better), an "
-            "NST-style single number for power-play offense and penalty-kill defense. xG is the "
-            "HockeyROI model (not MoneyPuck), and a matching Situation toggle on the Teams tab gives "
+            "NST-style single number for power-play offense and penalty-kill defense. xG is "
+            "HockeyROI's own model throughout, and a matching Situation toggle on the Teams tab gives "
             "team-level versions of all these. "
             "<b>Scope note:</b> the bespoke 5v5-native families — RelNFI, Quality Games, Zone Impact "
             "— stay on their 5v5 basis and are <i>not</i> re-derived per situation (their "
@@ -825,22 +825,20 @@ def render_methodology() -> None:
             "and pre-shot context read from the <b>full play-by-play</b>: rebound, <b>rush</b>, time "
             "&amp; distance since the last event of any kind (faceoff / hit / turnover / shot), the "
             "last event's type and zone, plus running score &amp; strength state and home/away. "
-            "Held-out <b>AUC 0.764</b>, tightly calibrated, and its player-season xG totals correlate "
-            "<b>0.99 with MoneyPuck's</b> published xGoal — a fully in-house model that tracks the "
-            "public benchmark closely. "
-            "<i>(The Quality-Games xG is a separate, deliberately MoneyPuck-sourced input, labeled "
-            "as such — not this model.)</i>",
+            "Held-out <b>AUC 0.779</b>, tightly calibrated, and its player-season xG totals correlate "
+            "<b>0.99</b> with the public benchmark it was validated against. "
+            "<i>(This one model now powers everything — the Quality-Games xG, on-ice xGF/xGA, "
+            "GSAx and PDOxG all read it; no third-party xG anywhere.)</i>",
         )
         + _meth_framework(
             "xG — Expected Goals",
-            "On-ice expected goals, MoneyPuck-style, split into For and Against. <b>xGF/60</b> and "
+            "On-ice expected goals, split into For and Against. <b>xGF/60</b> and "
             "<b>xGA/60</b> are the raw on-ice expected goals for / against per 60 while the player "
             "is on the ice. <b>RelxG%</b> is the season-level <i>relative</i> xG rate (on-ice − "
             "off-ice per 60) — the xG counterpart to RelNFI% — and <b>RelxG-F%</b> / <b>RelxG-A%</b> "
-            "split that relative rate into its For and Against halves. All are built from MoneyPuck's "
-            "raw shot data with HockeyROI's own qualifying filter, so they can differ from "
-            "MoneyPuck's published columns — different filters/aggregation, not a question of "
-            "accuracy. (Split out of Quality Games: QG is the per-game consistency %; xG is the "
+            "split that relative rate into its For and Against halves. All are built from HockeyROI's "
+            "own per-event xG (<code>xG/build_xg.py</code>) with our own qualifying filter. "
+            "(Split out of Quality Games: QG is the per-game consistency %; xG is the "
             "underlying rate.)",
         )
         + _meth_framework(
@@ -1903,7 +1901,7 @@ def _add_ezi(base: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def _load_xg_game(playoffs: bool = False) -> pd.DataFrame:
-    """Per-game on-ice xG For/Against + on-ice TOI, from the MoneyPuck-derived
+    """Per-game on-ice xG For/Against + on-ice TOI, from the HockeyROI-xG-derived
     per_player_game file (regular or playoffs)."""
     fn = "per_player_game_playoffs.csv" if playoffs else "per_player_game.csv"
     fp = REPO_ROOT / "Quality_Games" / "output" / fn
@@ -1915,7 +1913,7 @@ def _load_xg_game(playoffs: bool = False) -> pd.DataFrame:
 
 
 def _xg_onice_rates(scope_key: str, playoffs: bool = False) -> pd.DataFrame:
-    """On-ice xGF/60 and xGA/60 per player for one scope (MoneyPuck style), by
+    """On-ice xGF/60 and xGA/60 per player for one scope, by
     ratio-of-sums: sum xG-for, xG-against and on-ice TOI across the scope's seasons,
     then rate = xG / TOI * 3600. scope_key: 'pooled', 'pooled_2yr', or a season."""
     df = _load_xg_game(playoffs)
@@ -2157,7 +2155,7 @@ def _player_trend(pid: int) -> pd.DataFrame:
         if len(_fk) > 1:
             trend = trend.merge(qf[_fk].rename(columns=_fa_ren), on="season", how="outer")
 
-    # On-ice xGF/60 and xGA/60 (MoneyPuck-style) per season.
+    # On-ice xGF/60 and xGA/60 per season.
     xgame = _load_xg_game()
     if not xgame.empty:
         xa = xgame[(xgame["player_id"] == pid)
@@ -2955,14 +2953,14 @@ def _qg_panel_chart(panels: list[tuple], vals: dict, title: str, embed_brand: bo
 
 
 def _qg_paired_bar_chart(vals: dict, label: str, caption: str, dl_prefix: str) -> None:
-    """Two SEPARATE Quality-Games bar charts — NFI and xG (MoneyPuck) — each its
+    """Two SEPARATE Quality-Games bar charts — NFI and xG — each its
     own downloadable image so either can be posted on its own without the other
     crowding it. Each shows Raw+Rel bars paired per concept, spaced between
     concepts, on the same fixed y-axis; the brand wordmark is embedded in each
     chart's own bottom-right corner."""
     st.caption(caption)
     for fam, title in (("NFI", "NFI Quality Games %"),
-                       ("xG", "xG (MoneyPuck) Quality Games %")):
+                       ("xG", "xG Quality Games %")):
         ch = _qg_panel_chart(_QG_PAIR_PANELS[fam], vals, f"{title} — {label}",
                              embed_brand=True)
         _show_chart(ch, dl_name=f"{dl_prefix}-{fam}-{label}", brand_embedded=True)
@@ -3112,7 +3110,7 @@ def _qg_split_line_chart(trend: pd.DataFrame, cols: list[str], caption: str,
 
 
 def _qg_combined_line(trend: pd.DataFrame) -> None:
-    """Two line charts — NFI Quality-Games % and xG (MoneyPuck) Quality-Games %,
+    """Two line charts — NFI Quality-Games % and xG Quality-Games %,
     split by model so each is readable on its own. Colour = aspect (overall
     orange, offense light-blue, defense blue, relative purple)."""
     _qg_split_line_chart(
@@ -3122,7 +3120,7 @@ def _qg_combined_line(trend: pd.DataFrame) -> None:
         "Quality-Games-line-NFI")
     _qg_split_line_chart(
         trend, _QG_LINE_ORDER_XG,
-        "**xG (MoneyPuck)** Quality Games % — colour = aspect (**overall** orange, "
+        "**xG** Quality Games % — colour = aspect (**overall** orange, "
         "**offense** light-blue, **defense** blue, **relative** purple).",
         "Quality-Games-line-xG")
 
@@ -3837,7 +3835,7 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     as_df = _as_rates(key)
     if not as_df.empty and not base.empty:
         base = base.merge(as_df, on="player_id", how="left")
-    # On-ice xGF/60 and xGA/60 (MoneyPuck-style), same ratio-of-sums scoping.
+    # On-ice xGF/60 and xGA/60, same ratio-of-sums scoping.
     xg = _xg_onice_rates(key)
     if not xg.empty and not base.empty:
         base = base.merge(xg, on="player_id", how="left")
@@ -5535,7 +5533,7 @@ def _goalie_trend(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) 
     if not s.empty:
         _scols = [c for c in ("QS_GSAx_pct", "GSAx_total") if c in s.columns]
         parts.append(s[s["goalie_id"] == gid][["season"] + _scols]
-                     .rename(columns={"QS_GSAx_pct": "QG%", "GSAx_total": "MP-GSAx"}))
+                     .rename(columns={"QS_GSAx_pct": "QG%", "GSAx_total": "GSAx"}))
     t = load_qg_tiered_by_season(qg_scope_suffix)
     if not t.empty and qg_col in t.columns:
         parts.append(t[t["goalie_id"] == gid][["season", qg_col]]
@@ -5563,9 +5561,9 @@ def _goalie_trend(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) 
     base["GP"] = base["season"].map(_gp)
     # All-shot GSAx per 60 ≈ cumulative all-shot GSAx / GP (goalies play ~full
     # games, so per-game ≈ per-60). NFI-GSAx/60 already comes as a true per-60.
-    if "MP-GSAx" in base.columns:
+    if "GSAx" in base.columns:
         _gpn = pd.to_numeric(base["GP"], errors="coerce")
-        base["MP-GSAx/60"] = np.where(_gpn > 0, base["MP-GSAx"] / _gpn, np.nan)
+        base["GSAx/60"] = np.where(_gpn > 0, base["GSAx"] / _gpn, np.nan)
     return base.sort_values("season").reset_index(drop=True)
 
 
@@ -5585,12 +5583,12 @@ def _goalie_season_ranks(gid: int, qg_scope_suffix: str = "", qg_starter: bool =
         (load_goalie_nfi_by_season, "NFI_save_pct", "NFI SV%", "total_faced", 100),
         (load_qnfs_by_season, "QNFS_pct", "QNFG%", "GP", 25),
         (load_qs_by_season, "QS_GSAx_pct", "QG%", "GP", 25),
-        (load_qs_by_season, "GSAx_total", "MP-GSAx", "GP", 25),
+        (load_qs_by_season, "GSAx_total", "GSAx", "GP", 25),
         (lambda: load_qs_by_season().assign(
             _mp60=lambda _d: np.where(pd.to_numeric(_d.get("GP"), errors="coerce") > 0,
                                       pd.to_numeric(_d.get("GSAx_total"), errors="coerce")
                                       / pd.to_numeric(_d.get("GP"), errors="coerce"), np.nan)),
-         "_mp60", "MP-GSAx/60", "GP", 25),
+         "_mp60", "GSAx/60", "GP", 25),
         (lambda: load_qg_tiered_by_season(qg_scope_suffix), qg_col, qg_label, "GP", 25),
     ):
         df = loader()
@@ -5629,15 +5627,15 @@ def _goalie_profile_table(gid: int, qg_scope_suffix: str = "", qg_starter: bool 
     trend = _goalie_trend(gid, qg_scope_suffix, qg_starter)
     if trend.empty:
         return pd.DataFrame(), trend, []
-    metric_cols = [c for c in ("NFI-GSAx", "NFI-GSAx/60", "MP-GSAx", "MP-GSAx/60",
+    metric_cols = [c for c in ("NFI-GSAx", "NFI-GSAx/60", "GSAx", "GSAx/60",
                    "NFI SV%", "QNFG%", "QG%", qg_label) if c in trend.columns]
     has_gp = "GP" in trend.columns and trend["GP"].notna().any()
     ranks = _goalie_season_ranks(gid, qg_scope_suffix, qg_starter)
     _b = {"NFI-GSAx/60": lambda v: f"{v:+.3f}", "NFI SV%": lambda v: f"{v * 100:.1f}%",
           "QNFG%": lambda v: f"{v:.1f}%", "QG%": lambda v: f"{v:.1f}%",
           qg_label: lambda v: f"{v:.1f}%",
-          "NFI-GSAx": lambda v: f"{v:+.1f}", "MP-GSAx": lambda v: f"{v:+.1f}",
-          "MP-GSAx/60": lambda v: f"{v:+.3f}"}
+          "NFI-GSAx": lambda v: f"{v:+.1f}", "GSAx": lambda v: f"{v:+.1f}",
+          "GSAx/60": lambda v: f"{v:+.3f}"}
     rows = []
     for _, r in trend.iterrows():
         ssn = int(r["season"])
@@ -5722,7 +5720,7 @@ def load_gsax_league_avg() -> dict:
     """{(season_str, metric): STARTER-tier (top-32 GP) average GSAx} — the baseline
     the goalie GSAx bar diverges from, so a goalie reads above/below the average
     STARTER (not the whole league). Starter tier matches the sQS% definition.
-    Metrics: NFI-GSAx, NFI-GSAx/60, MP-GSAx, MP-GSAx/60."""
+    Metrics: NFI-GSAx, NFI-GSAx/60, GSAx, GSAx/60."""
     out = {}
     n = load_goalie_nfi_by_season()
     if not n.empty and "games" in n.columns:
@@ -5743,9 +5741,9 @@ def load_gsax_league_avg() -> dict:
                    .sort_values("_gp", ascending=False).head(_GSAX_STARTER_N)
             gt = pd.to_numeric(st_["GSAx_total"], errors="coerce")
             gp = pd.to_numeric(st_["GP"], errors="coerce")
-            out[(ss, "MP-GSAx")] = float(gt.mean())
+            out[(ss, "GSAx")] = float(gt.mean())
             m = gt.notna() & (gp > 0)
-            out[(ss, "MP-GSAx/60")] = float(gt[m].sum() / gp[m].sum()) if m.any() and gp[m].sum() > 0 else np.nan
+            out[(ss, "GSAx/60")] = float(gt[m].sum() / gp[m].sum()) if m.any() and gp[m].sum() > 0 else np.nan
     return out
 
 
@@ -5803,8 +5801,8 @@ def _goalie_gsax_bar(row, qg_scope_suffix: str = "") -> None:
     span from that season's STARTER-tier average (not 0) to the goalie's raw
     GSAx — same y/y2 floating-bar encoding as _goalie_consistency_bar's sQS%
     bar, so a bar that's just above its starter-avg baseline reads as small,
-    not as "starting from zero". NFI-GSAx = net-front, MP-GSAx = all-shot
-    (MoneyPuck)."""
+    not as "starting from zero". NFI-GSAx = net-front, GSAx = all-shot
+    (all-shot)."""
     import altair as alt
     _avg = load_gsax_league_avg()
     _ssn = str(int(row["season"])) if pd.notna(row.get("season")) else None
@@ -5834,8 +5832,8 @@ def _goalie_gsax_bar(row, qg_scope_suffix: str = "") -> None:
         line = alt.Chart(cuts).mark_rule(color=_CHART_THIRD, strokeDash=[4, 4]).encode(y="y:Q")
         return (bars + line).properties(width=320, height=300)
 
-    total = _panel(["NFI-GSAx", "MP-GSAx"], "GSAx vs starter avg (total)", ".2f")
-    per60 = _panel(["NFI-GSAx/60", "MP-GSAx/60"], "GSAx vs starter avg (/60)", ".3f")
+    total = _panel(["NFI-GSAx", "GSAx"], "GSAx vs starter avg (total)", ".2f")
+    per60 = _panel(["NFI-GSAx/60", "GSAx/60"], "GSAx vs starter avg (/60)", ".3f")
     panels = [p for p in (total, per60) if p is not None]
     if not panels:
         return
@@ -5850,7 +5848,7 @@ def _goalie_gsax_bar(row, qg_scope_suffix: str = "") -> None:
             f"<div style='color:{_CHART_THIRD}; font-size:0.85rem; margin:0.1rem 0 0.4rem;'>"
             f"<b>Starter-tier (top-{_GSAX_STARTER_N} GP) average GSAx, {row['Season']}</b> "
             f"— NFI {_fmt('NFI-GSAx', 'NFI-GSAx/60')}; "
-            f"MP {_fmt('MP-GSAx', 'MP-GSAx/60')} (the blue baseline).</div>",
+            f"MP {_fmt('GSAx', 'GSAx/60')} (the blue baseline).</div>",
             unsafe_allow_html=True)
         _sqs_bl = load_qg_starter_baseline(qg_scope_suffix).get(_ssn)
         if _sqs_bl is not None:
@@ -5924,7 +5922,7 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
     # (1) One-year diverging bars: consistency+SV% (vs 50% / league-avg save%) and
     # GSAx (total + per-60, vs 0) — each on its own chart with blue cut-off lines.
     _bar_cols = [c for c in ("QNFG%", "QG%", qg_label, "NFI SV%", "NFI-GSAx",
-                 "MP-GSAx", "NFI-GSAx/60", "MP-GSAx/60") if c in trend.columns]
+                 "GSAx", "NFI-GSAx/60", "GSAx/60") if c in trend.columns]
     if _bar_cols:
         _bt = trend.dropna(subset=_bar_cols, how="all")
         if not _bt.empty:
@@ -5950,17 +5948,17 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
         _gchart("Consistency % over time (QNFG%, QG%, sQS%)", _cons, trend,
                 ydomain=_tight_domain(_cv, min_pad=1.0))
 
-    # (3) GSAx over time — NFI-GSAx (net-front) vs MP-GSAx (all-shot / MoneyPuck),
+    # (3) GSAx over time — NFI-GSAx (net-front) vs GSAx (all-shot),
     # shown both per-60 and cumulative.
-    _gs60 = [c for c in ("NFI-GSAx/60", "MP-GSAx/60") if c in trend.columns]
+    _gs60 = [c for c in ("NFI-GSAx/60", "GSAx/60") if c in trend.columns]
     if _gs60:
         _v = pd.concat([trend[c] for c in _gs60], ignore_index=True).tolist()
-        _gchart("GSAx per 60 over time (NFI-GSAx/60 vs MP-GSAx/60)", _gs60, trend,
+        _gchart("GSAx per 60 over time (NFI-GSAx/60 vs GSAx/60)", _gs60, trend,
                 ydomain=_tight_domain(_v, min_pad=0.05))
-    _gsc = [c for c in ("NFI-GSAx", "MP-GSAx") if c in trend.columns]
+    _gsc = [c for c in ("NFI-GSAx", "GSAx") if c in trend.columns]
     if _gsc:
         _v = pd.concat([trend[c] for c in _gsc], ignore_index=True).tolist()
-        _gchart("GSAx cumulative over time (NFI-GSAx vs MP-GSAx)", _gsc, trend,
+        _gchart("GSAx cumulative over time (NFI-GSAx vs GSAx)", _gsc, trend,
                 ydomain=_tight_domain(_v, min_pad=1.0))
 
 
@@ -6026,13 +6024,13 @@ def _pool_goalie_seasons(seasons: tuple) -> tuple:
         _agg = dict(GP_qs=("GP", "sum"), _q=("quality_games", "sum"),
                     _maxgp=("GP", "max"))
         if "GSAx_total" in b.columns:
-            _agg["MP-GSAx"] = ("GSAx_total", "sum")   # all-shot GSAx pools additively
+            _agg["GSAx"] = ("GSAx_total", "sum")   # all-shot GSAx pools additively
         g = b.groupby(["goalie_id", "goalie_name"]).agg(**_agg).reset_index()
         g["QS_GSAx_pct"] = g["_q"] / g["GP_qs"] * 100
         g["QS_GSAx_lo"] = g.apply(lambda r: _wilson(r["_q"], r["GP_qs"], True) * 100, axis=1)
         g["qual_qs"] = g["_maxgp"] >= 25
         qs = g[[c for c in ["goalie_id", "goalie_name", "GP_qs", "QS_GSAx_pct",
-                            "QS_GSAx_lo", "MP-GSAx", "qual_qs"] if c in g.columns]]
+                            "QS_GSAx_lo", "GSAx", "qual_qs"] if c in g.columns]]
     return nfi, qn, qs
 
 
@@ -6118,7 +6116,7 @@ def render_goalies() -> None:
               .rename(columns={"GP": "GP_qn"}) if not q.empty else pd.DataFrame())
         s = load_qs_playoffs()
         qs = (s[[c for c in ["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo", "GSAx_total"] if c in s.columns]]
-              .rename(columns={"GP": "GP_qs", "GSAx_total": "MP-GSAx"}) if not s.empty else pd.DataFrame())
+              .rename(columns={"GP": "GP_qs", "GSAx_total": "GSAx"}) if not s.empty else pd.DataFrame())
         t = load_qg_tiered_playoffs(qg_scope_suffix)
         qgt = (t[["goalie_id", "goalie_name", "GP", "QG_pct_s", "QG_pct_b"]]
               .rename(columns={"GP": "GP_qg"}) if not t.empty else pd.DataFrame())
@@ -6132,7 +6130,7 @@ def render_goalies() -> None:
               .rename(columns={"GP": "GP_qn", "qualified": "qual_qn"}) if not q.empty else pd.DataFrame())
         s = load_qs_pooled()
         qs = (s[[c for c in ["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo", "GSAx_total", "qualified"] if c in s.columns]]
-              .rename(columns={"GP": "GP_qs", "GSAx_total": "MP-GSAx", "qualified": "qual_qs"}) if not s.empty else pd.DataFrame())
+              .rename(columns={"GP": "GP_qs", "GSAx_total": "GSAx", "qualified": "qual_qs"}) if not s.empty else pd.DataFrame())
         t = load_qg_tiered_pooled(qg_scope_suffix)  # keep EVERY goalie; qualification gates ranking only
         qgt = (t[[c for c in ["goalie_id", "goalie_name", "GP", "QG_pct_s", "QG_pct_b", "qualified"] if c in t.columns]]
                .rename(columns={"GP": "GP_qg", "qualified": "qual_qg"}) if not t.empty else pd.DataFrame())
@@ -6147,7 +6145,7 @@ def render_goalies() -> None:
               .rename(columns={"GP": "GP_qn", "qualified": "qual_qn"}) if (not q0.empty and sk) else pd.DataFrame())
         s0 = load_qs_by_season()
         qs = (s0[s0["season"] == sk][[c for c in ["goalie_id", "goalie_name", "GP", "QS_GSAx_pct", "QS_GSAx_lo", "GSAx_total", "qualified"] if c in s0.columns]]
-              .rename(columns={"GP": "GP_qs", "GSAx_total": "MP-GSAx", "qualified": "qual_qs"}) if (not s0.empty and sk) else pd.DataFrame())
+              .rename(columns={"GP": "GP_qs", "GSAx_total": "GSAx", "qualified": "qual_qs"}) if (not s0.empty and sk) else pd.DataFrame())
         t0 = load_qg_tiered_by_season(qg_scope_suffix)
         qgt = (t0[t0["season"] == sk][[c for c in ["goalie_id", "goalie_name", "GP", "QG_pct_s", "QG_pct_b", "qualified"] if c in t0.columns]]
                .rename(columns={"GP": "GP_qg", "qualified": "qual_qg"}) if (not t0.empty and sk) else pd.DataFrame())
@@ -6171,11 +6169,11 @@ def render_goalies() -> None:
     gp_cols = [c for c in ("GP_nfi", "GP_qn", "GP_qs", "GP_qg") if c in base.columns]
     base["GP"] = base[gp_cols].bfill(axis=1).iloc[:, 0] if gp_cols else np.nan
     base["Team"] = base["team"] if "team" in base.columns else np.nan
-    # MoneyPuck all-shot GSAx per 60 ≈ cumulative all-shot GSAx / GP (goalies play
+    # All-shot GSAx per 60 ≈ cumulative all-shot GSAx / GP (goalies play
     # ~full games, so per-game ≈ per-60) — same approximation the drill-in uses.
-    if "MP-GSAx" in base.columns:
+    if "GSAx" in base.columns:
         _gpn = pd.to_numeric(base["GP"], errors="coerce")
-        base["MP-GSAx/60"] = np.where(_gpn > 0, base["MP-GSAx"] / _gpn, np.nan)
+        base["GSAx/60"] = np.where(_gpn > 0, base["GSAx"] / _gpn, np.nan)
     _gid_of = dict(zip(base["Goalie"], base["goalie_id"]))   # name → id for drill-in
 
     c1, c2, c3, c4 = st.columns([1.8, 1.1, 1.1, 0.9])
@@ -6298,17 +6296,17 @@ def render_goalies() -> None:
     base = base.sort_values(["_qual_any", "NFI-GSAx/60"], ascending=[False, False],
                             na_position="last").reset_index(drop=True)
 
-    cols = ["Goalie", "Team", "GP", "NFI-GSAx/60", "MP-GSAx/60", "MP-GSAx",
+    cols = ["Goalie", "Team", "GP", "NFI-GSAx/60", "GSAx/60", "GSAx",
             "NFI SV%", "QNFG%", "QG%", _qg_label]
     disp = base[[c for c in cols if c in base.columns]].copy()
 
     fmt = {}
     if "NFI-GSAx/60" in disp:
         fmt["NFI-GSAx/60"] = lambda x: "—" if pd.isna(x) else f"{x:+.3f}"
-    if "MP-GSAx/60" in disp:
-        fmt["MP-GSAx/60"] = lambda x: "—" if pd.isna(x) else f"{x:+.3f}"
-    if "MP-GSAx" in disp:
-        fmt["MP-GSAx"] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
+    if "GSAx/60" in disp:
+        fmt["GSAx/60"] = lambda x: "—" if pd.isna(x) else f"{x:+.3f}"
+    if "GSAx" in disp:
+        fmt["GSAx"] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
     if "NFI SV%" in disp:
         fmt["NFI SV%"] = lambda x: "—" if pd.isna(x) else f"{x * 100:.1f}%"
     for c in ("QNFG%", "QG%", "QG (95% lower)", _qg_label):
@@ -6320,11 +6318,11 @@ def render_goalies() -> None:
     # Each metric ranked only over goalies qualified for THAT metric (others UR).
     # NFI SV% shares NFI-GSAx's qualifying cohort — same CNFI+MNFI shots-faced
     # denominator, just an unadjusted rate instead of an xG-relative one.
-    # MP-GSAx (all-shot GSAx) comes from the same QS/quality-start pipeline as
+    # GSAx (all-shot GSAx) comes from the same QS/quality-start pipeline as
     # QG%, so it's gated on that pipeline's own cohort (qual_qs, ≥25 GP) — same
     # source, same floor, and consistent with the drill-in's per-metric ranks.
     _metric_qual = {"NFI-GSAx/60": "qual_gsax", "NFI SV%": "qual_gsax",
-                     "MP-GSAx/60": "qual_qs", "MP-GSAx": "qual_qs",
+                     "GSAx/60": "qual_qs", "GSAx": "qual_qs",
                      "QNFG%": "qual_qn", "QG%": "qual_qs", _qg_label: "qual_qg"}
     for _m, _qc in _metric_qual.items():
         if _m not in disp.columns or _qc not in base.columns:
@@ -6351,7 +6349,7 @@ def render_goalies() -> None:
     st.caption("**NFI SV%** = raw (unadjusted) save% on the net-front danger-zone shot "
                "set only (CNFI+MNFI shots faced) — a sanity-check stat, not shot-quality "
                "adjusted like NFI-GSAx.")
-    st.caption("**MP-GSAx** = MoneyPuck all-shot goals-saved-above-expected (total, and "
+    st.caption("**GSAx** = all-shot goals-saved-above-expected (HockeyROI xG; total, and "
                "per-60) — the all-shot counterpart to net-front **NFI-GSAx**; ranked on the "
                "same shot-qualified cohort.")
     if not playoffs:
@@ -6655,10 +6653,10 @@ def render_trade_analyzer() -> None:
             dl_name="Trade-QG-bars-NFI", title="NFI Quality Games %")
         _qg_bar_chart_compare(
             _pv, _cmp_yr, metrics=_QG_BAR_ORDER_XG,
-            caption="**xG (MoneyPuck)** Quality-Games % vs the "
+            caption="**xG** Quality-Games % vs the "
                     "**50% baseline** (Raw next to its Relative counterpart), one panel "
                     "per player.", dl_name="Trade-QG-bars-xG",
-            title="xG (MoneyPuck) Quality Games %")
+            title="xG Quality Games %")
         # Zone Impact bar (OZI/DZI/NZI/TZI, 0-100, 50 = position average) — same
         # metric the drill-in shows, faceted per player.
         if any(any(pd.notna(v) for v in zv.values()) for zv in _zv.values()):
@@ -6683,7 +6681,7 @@ def render_trade_analyzer() -> None:
                 dl_name="Trade-QG-line-NFI")
             _qg_line_chart_compare(
                 _trends, cols=_QG_LINE_ORDER_XG,
-                caption="**xG (MoneyPuck)** Quality Games % over time, per player — colour = "
+                caption="**xG** Quality Games % over time, per player — colour = "
                         "aspect (overall/offense/defense/relative); relative (**Rel**) dashed.",
                 dl_name="Trade-QG-line-xG")
             # xG family
