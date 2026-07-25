@@ -4441,9 +4441,9 @@ def render_players() -> None:
         return
     _set_dl_title(None)                    # only drill-in charts get a name
     playoffs = game_type == "Playoffs"
-    scope_label = "all playoffs (2022-2025 pooled)" if playoffs else season_label
+    scope_label = "all playoffs (2022-2026 pooled)" if playoffs else season_label
     if playoffs:
-        st.caption("Playoff view — all playoff games (2022-23 → 2024-25) pooled. "
+        st.caption("Playoff view — all playoff games (2022-23 → 2025-26) pooled. "
                    "Use the Min ES TOI slider to threshold small samples.")
     frame, is_pooled = _build_players_frame(season_label, playoffs=playoffs)
     if frame.empty:
@@ -5143,8 +5143,8 @@ def load_team_zone_playoffs() -> pd.DataFrame:
 
 
 def _render_teams_playoffs(season_label: str) -> None:
-    """Teams tab, pooled all-playoffs view (2022-23 → 2024-25)."""
-    st.caption("Playoff view — all playoff games (2022-23 → 2024-25) pooled.")
+    """Teams tab, pooled all-playoffs view (2022-23 → 2025-26)."""
+    st.caption("Playoff view — all playoff games (2022-23 → 2025-26) pooled.")
     team = load_team_playoffs()
     if team.empty:
         st.error("Playoff team data not found "
@@ -5196,7 +5196,7 @@ def _render_teams_playoffs(season_label: str) -> None:
     _sort_hint()
     _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
     st.caption(
-        f"{len(disp)} teams · all playoffs (2022-2025 pooled) · sorted by NFI% "
+        f"{len(disp)} teams · all playoffs (2022-2026 pooled) · sorted by NFI% "
         "(CNFI+MNFI share) descending · Zone Impact (OZI/DZI/NZI/TZI, 0–100 index "
         "where 50 = the average team) is TOI-weighted."
     )
@@ -6068,7 +6068,7 @@ def render_goalies() -> None:
     _set_dl_title(None)                    # only drill-in charts get a name
     playoffs = game_type == "Playoffs"
     if playoffs:
-        st.caption("Playoff view — all playoff games (2022-23 → 2024-25) pooled. "
+        st.caption("Playoff view — all playoff games (2022-23 → 2025-26) pooled. "
                    "Small playoff samples: all goalies are ranked (no qualifying floor).")
 
     # sQS% (Starter Quality Start) — save%-based, judged against that season's
@@ -6370,7 +6370,7 @@ def render_goalies() -> None:
     _gevent = _show_df(disp.style.format(fmt, na_rep="—"), hide_index=True,
                        on_select="rerun", selection_mode="single-row",
                        key=f"goalies_tbl_{_ggen}")
-    _goalie_scope = "all playoffs (2022-2025 pooled)" if playoffs else season_label
+    _goalie_scope = "all playoffs (2022-2026 pooled)" if playoffs else season_label
     st.caption(
         f"{len(disp)} goalies (≥ {min_shots:,} shots faced, ≥ {min_gp} GP) · "
         f"{_goalie_scope} · sorted by NFI-GSAx/60 descending · (UR) = below that "
@@ -6380,7 +6380,7 @@ def render_goalies() -> None:
     if playoffs:
         st.markdown(
             f"<p style='color:{PALETTE['text_secondary']}; font-size:0.82rem; max-width:62rem;'>"
-            "Pooled across all playoff games (2022-23 → 2024-25). Every goalie with "
+            "Pooled across all playoff games (2022-23 → 2025-26). Every goalie with "
             "playoff data is shown and ranked — no qualifying floor is applied to the "
             "small playoff samples. Per-game metric definitions (QNFG ≥3 net-front "
             "shots/game; QG ≥10 shots/game; sQS% ≥10 shots/game) are retained. "

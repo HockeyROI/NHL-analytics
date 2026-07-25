@@ -66,9 +66,10 @@ _IS_PLAYOFF = SCOPE == "playoff"
 _GID_DIGITS = "03" if _IS_PLAYOFF else "02"  # HR game_id digits 4-5
 _OUT_SUFFIX = "_playoffs" if _IS_PLAYOFF else ""
 if _IS_PLAYOFF:
-    # shots_tagged carries playoff data through 2024-25 only (2025-26 playoffs
-    # backfill pending); the season filter below just takes whatever is present.
-    HR_SEASONS_SET = {20222023, 20232024, 20242025}
+    # shots_tagged now carries playoff data through 2025-26 (see
+    # NFI/scripts/tag_playoff_shots.py). The season filter takes whatever's
+    # present, so this just needs to list the playoff seasons available.
+    HR_SEASONS_SET = {20222023, 20232024, 20242025, 20252026}
 
 
 def classify_zone(x, y):
