@@ -5611,9 +5611,9 @@ def _render_team_landscape(scope_key: str, season_label: str) -> None:
                "Follows the Situation filter above.")
     # Each scatter on its OWN full-width row (not squeezed into columns).
     _team_logo_scatter(
-        f, "xGF/60", "xGA/60", "xGF/60 (offense →)", "xGA/60 (← fewer better)",
+        f, "xGF/60", "xGA/60", "xGF/60 (more offense →)", "xGA/60 (fewer against ↑)",
         "team-off-def", "**Offense vs Defense** — top-right = strong both ways "
-        "(xGA axis reversed).", invert_y=True)
+        "(xGA axis reversed so fewer-against is at the top).", invert_y=True)
     _team_logo_scatter(
         f, "xGF%", "GF%", "xGF% (expected)", "GF% (actual)",
         "team-exp-actual", "**Expected vs Actual** — above the cloud = scoring / "
