@@ -1543,7 +1543,8 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
 # Compact team Situation column set shown on the Teams tab (kept tight — the
 # team table shows every column at once, no family pills).
 TEAM_SIT_COLS = ["Sit TOI", "Sit CF%", "Sit xGF%", "Sit GF%",
-                 "Sit xGF/60", "Sit xGA/60", "Sit PP xGF+CF/60", "Sit PK xGA+CA/60"]
+                 "Sit CF/60", "Sit CA/60", "Sit xGF/60", "Sit xGA/60",
+                 "Sit GF/60", "Sit GA/60", "Sit PP xGF+CF/60", "Sit PK xGA+CA/60"]
 
 
 # The situation-aware values REPLACE the older 5v5-only columns under the plain
@@ -5415,7 +5416,8 @@ def render_teams() -> None:
     for c in ("Sit CF%", "Sit xGF%", "Sit GF%"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
-    for c in ("Sit xGF/60", "Sit xGA/60"):
+    for c in ("Sit xGF/60", "Sit xGA/60", "Sit CF/60", "Sit CA/60",
+              "Sit GF/60", "Sit GA/60"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
     for c in ("Sit PP xGF+CF/60", "Sit PK xGA+CA/60"):
@@ -5425,10 +5427,15 @@ def render_teams() -> None:
         fmt["Sit TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
 
     _team_rank = (["NFI%", "Attack events", "Suppress events"] + zcols
-                  + ["xG-QG%", "NFI-QG%"])
-    _apply_ranks(disp, fmt, disp, _team_rank, lower_better={"Suppress events"})
+                  + ["xG-QG%", "NFI-QG%"]
+                  + [c for c in TEAM_SIT_COLS if c in disp.columns and c != "Sit TOI"])
+    # against-rates + the PK value rank lowest-first (fewer allowed = better).
+    _team_lower = {"Suppress events", "Sit CA/60", "Sit xGA/60", "Sit GA/60",
+                   "Sit PK xGA+CA/60"}
+    _apply_ranks(disp, fmt, disp, _team_rank, lower_better=_team_lower)
     st.caption("Each metric shows its **(rank)** across all 32 teams. "
-               "Suppress events (shots against): lowest = #1.")
+               "Against-rates (Suppress events, Sit CA/60 / xGA/60 / GA/60, PK): "
+               "lowest = #1.")
     _sort_hint()
     _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
 
