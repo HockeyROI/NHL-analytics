@@ -4759,9 +4759,11 @@ def render_players() -> None:
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
                     "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
                     "xG-QG-F%", "xG-QG-A%", "NFI-QG-A%", "NFI-QG-S%",
-                    *_EDGE_VALUE_DISP]
-    # lower value = better (rank ascending): shots/xG against
-    _lower = {"NFI-S/60", "xGA/60", "RelxG-A%"}
+                    *_EDGE_VALUE_DISP, *BOX_FAMILY_COLS]
+    # lower value = better (rank ascending): shots/xG against, and the box-score
+    # stats where less is better — giveaways, getting hit, penalties, FO losses.
+    _lower = {"NFI-S/60", "xGA/60", "RelxG-A%",
+              "GV", "Hits Taken", "Min Pen", "Maj Pen", "PIM", "FO L"}
     # Second bracket number = within-team rank. With a team selected, rank within
     # that team; otherwise within each player's own (most-recent) team. Computed
     # per-row over the qualified cohort and keyed to the displayed rows by id.
