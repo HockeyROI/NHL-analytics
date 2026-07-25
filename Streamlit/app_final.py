@@ -5344,6 +5344,17 @@ def render_teams() -> None:
         return
     _set_dl_title(None)
     playoffs = game_type == "Playoffs"
+
+    # Team drill-in: pick a team to collapse the league view into that team's
+    # per-season trend + year-over-year charts + shot map (mirrors the player /
+    # goalie drill-in). Blank = the league leaderboard + scatter landscape.
+    _all_teams = sorted(load_team_situation_onice().get("team", pd.Series(dtype=str)).unique())
+    _tpick = st.selectbox("Drill into a team", ["— League view —"] + _all_teams,
+                          index=0, key="teams_drill_pick")
+    if _tpick and _tpick != "— League view —":
+        _render_team_profile(_tpick, season_label, playoffs)
+        return
+
     if playoffs:
         _render_teams_playoffs(season_label)
         return
@@ -5488,16 +5499,100 @@ def render_teams() -> None:
            f"single-season team zone isn't published.")
     st.caption(cap)
 
-    # League scatter landscape (shown when no single team is drilled into),
-    # then a team picker for the per-team shot map.
+    # League scatter landscape (the shot map now lives in the per-team drill-in's
+    # view toggle at the top, not a separate section here).
     _render_team_landscape(key, season_label)
+    st.caption("↑ **Drill into a team** (selector at the top) for its per-season "
+               "trend, year-over-year charts, and shot map.")
 
-    # Team shot map — pick a team to see where it generates its shots.
-    _teams_avail = sorted(team["Team"].dropna().unique().tolist())
-    _tpick = st.selectbox("Team shot map", ["—"] + _teams_avail, index=0,
-                          key="teams_shotmap_pick")
-    if _tpick and _tpick != "—":
-        _render_shot_chart("team", _tpick, _tpick, _tpick, season_label, playoffs=False)
+
+_TEAM_TREND_COLS = ["xGF%", "GF%", "CF%", "xGF/60", "xGA/60", "GF/60", "GA/60", "PDO"]
+
+
+def _team_trend(team: str, bucket_label: str, playoffs: bool = False) -> pd.DataFrame:
+    """Per-season metrics for ONE team from team_situation_onice, for the current
+    Situation bucket. Ratio-of-sums within each season. Newest season last."""
+    df = load_team_situation_onice()
+    if df.empty:
+        return pd.DataFrame()
+    df = df[(df["team"] == team)
+            & (df["game_type"] == ("playoff" if playoffs else "regular"))]
+    mats = SITUATION_BUCKETS.get(bucket_label, ["5v5"])
+    if mats is not None:
+        df = df[df["situation"].isin(mats)]
+    if df.empty:
+        return pd.DataFrame()
+    g = df.groupby("season")[_TEAM_SIT_COUNTS].sum().reset_index()
+    toi, ok = g["toi_min"], g["toi_min"] > 0
+    p60 = lambda c: np.where(ok, g[c] / toi * 60.0, np.nan)
+    shr = lambda f, a: np.where(g[f] + g[a] > 0, g[f] / (g[f] + g[a]) * 100.0, np.nan)
+    out = pd.DataFrame({"season": g["season"].astype(int)})
+    out["Season"] = out["season"].map(lambda s: SEASON_DISPLAY.get(str(s), str(s)))
+    out["xGF%"], out["CF%"], out["GF%"] = shr("xGF", "xGA"), shr("CF", "CA"), shr("GF", "GA")
+    out["xGF/60"], out["xGA/60"] = p60("xGF"), p60("xGA")
+    out["GF/60"], out["GA/60"] = p60("GF"), p60("GA")
+    sh = np.where(g["FF"] > 0, g["GF"] / g["FF"] * 100.0, np.nan)
+    sv = np.where(g["FA"] > 0, (1 - g["GA"] / g["FA"]) * 100.0, np.nan)
+    out["PDO"] = sh + sv
+    return out.sort_values("season").reset_index(drop=True)
+
+
+def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
+    """Per-team drill-in mirroring the player/goalie profiles: a per-season trend
+    table and a 3-way view — current-year metrics / year-over-year charts / shot
+    map (the team shot chart folded in here, not a separate section)."""
+    import altair as alt
+    sit = _situation_toggle_state()
+    trend = _team_trend(team, sit, playoffs=playoffs)
+    _logo = NHL_LOGO.format(team)
+    st.markdown(
+        f"<div style='display:flex; align-items:center; gap:0.5rem; margin:0.2rem 0;'>"
+        f"<img src='{_logo}' height='34'/>"
+        f"<span style='font-size:1.4rem; font-weight:700; color:{PALETTE['text']};'>"
+        f"{team}</span></div>", unsafe_allow_html=True)
+    if trend.empty:
+        st.info("No per-season data for this team in the current scope.")
+        return
+    _sc_txt = "" if sit == "5v5" else f" · {sit}"
+    view = st.radio("View", ["Show current year data", "Year over year", "Shot map"],
+                    horizontal=True, key=f"team_view_{team}", label_visibility="collapsed")
+
+    if view == "Shot map":
+        _render_shot_chart("team", team, team, team, season_label, playoffs=playoffs)
+        return
+
+    if view == "Year over year":
+        st.caption(f"Year over year{_sc_txt} — one line per metric.")
+        m = trend.melt(id_vars=["Season", "season"], value_vars=_TEAM_TREND_COLS,
+                       var_name="Metric", value_name="Value").dropna(subset=["Value"])
+        for grp, ttl in [(["xGF%", "CF%", "GF%"], "Shares (%)"),
+                         (["xGF/60", "xGA/60", "GF/60", "GA/60"], "Rates per 60"),
+                         (["PDO"], "PDO")]:
+            sub = m[m["Metric"].isin(grp)]
+            if sub.empty:
+                continue
+            ch = alt.Chart(sub).mark_line(point=True).encode(
+                x=alt.X("Season:N", sort=list(trend["Season"])),
+                y=alt.Y("Value:Q", scale=alt.Scale(zero=False), title=ttl),
+                color=alt.Color("Metric:N", legend=alt.Legend(orient="bottom")),
+                tooltip=["Season:N", "Metric:N", alt.Tooltip("Value:Q", format=".2f")])
+            _show_chart(ch, dl_name=f"team-{team}-{ttl}".replace(" ", "-"), keep_tooltip=True)
+        return
+
+    # current-year data: the row for the selected season (or the latest available)
+    _sk = SEASON_KEY.get(season_label)
+    row = trend[trend["season"] == _sk] if _sk and str(_sk).isdigit() else trend.iloc[[-1]]
+    if row.empty:
+        row = trend.iloc[[-1]]
+    st.caption(f"{row['Season'].iloc[0]}{_sc_txt}")
+    disp = row[["Season"] + _TEAM_TREND_COLS].copy()
+    fmt = {c: (lambda x: "—" if pd.isna(x) else f"{x:.1f}%") for c in ("xGF%", "CF%", "GF%")}
+    for c in ("xGF/60", "xGA/60", "GF/60", "GA/60", "PDO"):
+        fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    st.caption("Full per-season history:")
+    _show_df(trend[["Season"] + _TEAM_TREND_COLS].style.format(fmt, na_rep="—"),
+             width="stretch", hide_index=True)
 
 
 def _render_team_landscape(scope_key: str, season_label: str) -> None:
