@@ -29,7 +29,7 @@ OUT = ROOT / "Data" / "box_score_skaters.csv"
 BASE = "https://api.nhle.com/stats/rest/en/skater"
 SEASONS = ["20202021", "20212022", "20222023", "20232024", "20242025", "20252026"]
 GAME_TYPES = {"regular": 2, "playoff": 3}
-REPORTS = ["summary", "realtime", "penalties", "faceoffwins"]
+REPORTS = ["summary", "realtime", "penalties", "faceoffwins", "shootout"]
 HDRS = {"User-Agent": "Mozilla/5.0 (HockeyROI box-score pull)"}
 # fields to keep per report (playerId always kept for the merge)
 KEEP = {
@@ -41,6 +41,9 @@ KEEP = {
     "penalties": ["minorPenalties", "majorPenalties", "misconductPenalties",
                   "penaltiesDrawn"],
     "faceoffwins": ["totalFaceoffs", "totalFaceoffWins", "totalFaceoffLosses"],
+    # Shootout is its own report (regular season only; playoffs have no
+    # shootout, so gt2 returns zeros/empties there and that's fine).
+    "shootout": ["shootoutGoals", "shootoutShots", "shootoutShootingPct"],
 }
 
 

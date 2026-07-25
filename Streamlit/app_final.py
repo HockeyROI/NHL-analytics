@@ -3887,7 +3887,8 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
 # Defined here so PLAYER_FAMILY_COLS below can reference it.
 BOX_FAMILY_COLS = ["G", "A1", "A2", "A", "Pts", "PPP", "SHP", "Sh", "Sh%", "GWG",
                    "Reb Created", "TK", "GV", "Hits", "Hits Taken", "Blocks",
-                   "Min Pen", "Maj Pen", "PIM", "Pen Drawn", "FO W", "FO L", "FO%"]
+                   "Min Pen", "Maj Pen", "PIM", "Pen Drawn",
+                   "SO G", "SO Att", "SO%", "FO W", "FO L", "FO%"]
 
 # Player List metric families — the collapse filter toggles each group's columns
 # (display names, post-rename). Identity columns (Player/Pos/Team/GP/TOI) always
@@ -4308,6 +4309,7 @@ _BOX_SUMS = ["GP", "goals", "assists", "A1", "A2", "points", "shots", "ppGoals",
              "ppPoints", "shPoints", "hits", "hits_taken", "blockedShots",
              "takeaways", "giveaways", "minorPenalties", "majorPenalties",
              "penaltyMinutes", "penaltiesDrawn", "rebounds_created",
+             "shootoutGoals", "shootoutShots",
              "faceoffs_won", "faceoffs_lost", "gameWinningGoals"]
 
 # Box-score display columns (a metric family on the Player List, not a tab).
@@ -4317,6 +4319,7 @@ _BOX_REN = {"goals": "G", "assists": "A", "points": "Pts", "shots": "Sh",
             "takeaways": "TK", "giveaways": "GV", "minorPenalties": "Min Pen",
             "majorPenalties": "Maj Pen", "penaltyMinutes": "PIM",
             "penaltiesDrawn": "Pen Drawn", "rebounds_created": "Reb Created",
+            "shootoutGoals": "SO G", "shootoutShots": "SO Att",
             "faceoffs_won": "FO W", "faceoffs_lost": "FO L",
             "gameWinningGoals": "GWG"}
 
@@ -4342,6 +4345,10 @@ def _box_score_scope(scope_key: str, playoffs: bool = False) -> pd.DataFrame:
     if {"FO W", "FO L"}.issubset(agg.columns):
         _d = agg["FO W"] + agg["FO L"]
         agg["FO%"] = np.where(_d > 0, agg["FO W"] / _d * 100, np.nan)
+    # SO% recomputed from summed shootout goals/attempts (not averaged), same as
+    # Sh%/FO% — so a pooled multi-season SO% is goals ÷ attempts, not a mean.
+    if {"SO G", "SO Att"}.issubset(agg.columns):
+        agg["SO%"] = np.where(agg["SO Att"] > 0, agg["SO G"] / agg["SO Att"] * 100, np.nan)
     keep = ["player_id"] + [c for c in BOX_FAMILY_COLS if c in agg.columns]
     return agg[keep]
 
@@ -4747,7 +4754,7 @@ def render_players() -> None:
     for c in BOX_FAMILY_COLS:
         if c in disp.columns:
             fmt[c] = ((lambda x: "—" if pd.isna(x) else f"{x:.1f}%")
-                      if c in ("Sh%", "FO%")
+                      if c in ("Sh%", "FO%", "SO%")
                       else (lambda x: "—" if pd.isna(x) else f"{x:,.0f}"))
     for c in ("GP",):
         if c in disp.columns:
