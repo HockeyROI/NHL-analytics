@@ -49,34 +49,26 @@ import pandas as pd
 # -----------------------------------------------------------------------------
 ROOT = "/Users/ashgarg/Documents/HockeyROI"
 QG_DIR = f"{ROOT}/Quality_Games"
-MP_DIR = f"{QG_DIR}/Data/Money_puck"
 OUT_DIR = f"{QG_DIR}/output"
+XG_CSV = f"{ROOT}/xG/output/shot_xg_per_event.csv"   # our own per-event xG
 
-MP_SEASONS = [2022, 2023, 2024, 2025]
-HR_SEASON = {2022: 20222023, 2023: 20232024, 2024: 20242025, 2025: 20252026}
-HR_SEASONS_SET = set(HR_SEASON.values())
+HR_SEASONS_SET = {20222023, 20232024, 20242025, 20252026}
 
 # Lifted from 03_onice_attribution_pillars.py lines 36-38
 INFL1 = 55   # MNFI/FNFI boundary
 BLUE = 25
 
-HR_MATCH_FLOOR = 0.99   # sanity gate threshold for MP→HR join match rate
-
 NFI_ZONES = {"CNFI", "MNFI"}
 
-# Scope: "regular" (default, byte-identical) or "playoff" (QG_SCOPE=playoff).
+# Scope: "regular" (default) or "playoff" (QG_SCOPE=playoff).
 SCOPE = os.environ.get("QG_SCOPE", "regular")
 _IS_PLAYOFF = SCOPE == "playoff"
-_GTYPE_FLAG = 1 if _IS_PLAYOFF else 0        # MoneyPuck isPlayoffGame
 _GID_DIGITS = "03" if _IS_PLAYOFF else "02"  # HR game_id digits 4-5
 _OUT_SUFFIX = "_playoffs" if _IS_PLAYOFF else ""
 if _IS_PLAYOFF:
-    HR_MATCH_FLOOR = 0.85  # smaller playoff samples → relax the MP→HR gate
-    # HR shots_tagged has playoff data only through 2024-25; MoneyPuck's
-    # shots_2025 carries 2025-26 playoff shots that HR can't join. Restrict.
-    MP_SEASONS = [2022, 2023, 2024]
-    HR_SEASON = {k: v for k, v in HR_SEASON.items() if k in MP_SEASONS}
-    HR_SEASONS_SET = set(HR_SEASON.values())
+    # shots_tagged carries playoff data through 2024-25 only (2025-26 playoffs
+    # backfill pending); the season filter below just takes whatever is present.
+    HR_SEASONS_SET = {20222023, 20232024, 20242025}
 
 
 def classify_zone(x, y):
@@ -113,80 +105,29 @@ log("=" * 78)
 log("Quality_Games — 01_build_per_player_game.py  (Path X: HR-zone canonical)")
 log("=" * 78)
 log()
-log("Scope:    4 seasons (2022-23, 2023-24, 2024-25, 2025-26)")
+log("Scope:    seasons 2022-23 … 2025-26 (playoffs: through 2024-25)")
 log("Strength: 5v5 even-strength regulation (periods 1-3)")
 log("Filter:   Fenwick (SHOT/MISS/GOAL), no empty net")
-log("Zone:     HR shots_tagged.csv.zone (canonical), MP-recompute fallback")
+log("Zone:     HR shots_tagged.csv.zone (canonical)")
+log("xG:       HockeyROI own model (xG/build_xg.py), merged by (game_id, event_id)")
 log(f"Output:   {OUT_DIR}")
 log()
 
 # -----------------------------------------------------------------------------
-# STEP 1 — Load MoneyPuck shots, filter, MP-recompute zone (for fallback)
+# STEP 1 — Load HR shots_tagged.csv (the shot universe + zone + state intervals)
 # -----------------------------------------------------------------------------
+# MoneyPuck retired (2026). shots_tagged IS the canonical shot log: it carries
+# event_id, so our own per-event xG (xG/build_xg.py) merges straight on and the
+# old MP↔HR join / dedupe / sanity gate are gone. In this scope every ES-tagged
+# regulation Fenwick shot is strict 5v5 with a goalie in net, so `state == 'ES'`
+# is the 5v5-no-empty-net filter (verified 100% on the 2022-26 shot set).
 log("-" * 78)
-log("STEP 1 — Load MoneyPuck shots (filter + MP-recompute fallback zone)")
-log("-" * 78)
-
-mp_keep_cols = [
-    'shotID',
-    'season', 'game_id', 'isPlayoffGame', 'period', 'time',
-    'event', 'xGoal', 'shooterPlayerId',
-    'homeSkatersOnIce', 'awaySkatersOnIce',
-    'homeEmptyNet', 'awayEmptyNet',
-    'isHomeTeam', 'homeTeamCode', 'awayTeamCode',
-    'xCordAdjusted', 'yCordAdjusted',
-]
-
-mp_list = []
-for sy in MP_SEASONS:
-    path = f"{MP_DIR}/shots_{sy}.csv"
-    df = pd.read_csv(path, usecols=mp_keep_cols)
-    n0 = len(df)
-    mask = (
-        (df.isPlayoffGame == _GTYPE_FLAG)
-        & df.event.isin(['SHOT', 'MISS', 'GOAL'])
-        & df.period.between(1, 3)
-        & (df.homeSkatersOnIce == 5) & (df.awaySkatersOnIce == 5)
-        & (df.homeEmptyNet == 0) & (df.awayEmptyNet == 0)
-    )
-    df = df[mask].copy()
-    df['nhl_gid'] = (df.season * 1_000_000 + df.game_id).astype(int)
-    df['hr_season'] = HR_SEASON[sy]
-    df['mp_recompute_zone'] = [classify_zone(x, y)
-                                for x, y in zip(df.xCordAdjusted, df.yCordAdjusted)]
-    n1 = len(df)
-    log(f"  shots_{sy}.csv → {HR_SEASON[sy]}: {n0:>7,} rows → {n1:>7,} after filter ({n1/n0:.1%})")
-    mp_list.append(df)
-
-mp = pd.concat(mp_list, ignore_index=True)
-log(f"  TOTAL MP 5v5 reg Fenwick rows (pre-dedupe, 4 seasons): {len(mp):,}")
-log()
-
-# Dedupe MP on (nhl_gid, period, time, shooterPlayerId): keep first row by shotID
-log("  MP-internal dedupe on (nhl_gid, period, time, shooterPlayerId):")
-mp = mp.sort_values(['nhl_gid', 'period', 'time', 'shooterPlayerId', 'shotID'],
-                    kind='stable')
-pre = len(mp)
-mp_dedupe_drop_per_season = (
-    mp.assign(_dup=mp.duplicated(subset=['nhl_gid', 'period', 'time', 'shooterPlayerId'],
-                                  keep='first'))
-      .groupby('hr_season')['_dup'].sum())
-mp = mp.drop_duplicates(subset=['nhl_gid', 'period', 'time', 'shooterPlayerId'],
-                        keep='first')
-log(f"    dropped {pre - len(mp):,} duplicate rows  "
-    f"(per season: {mp_dedupe_drop_per_season.to_dict()})")
-log(f"  TOTAL MP rows after dedupe: {len(mp):,}")
-log()
-
-# -----------------------------------------------------------------------------
-# STEP 2 — Load HR shots_tagged.csv (zone source + state intervals)
-# -----------------------------------------------------------------------------
-log("-" * 78)
-log("STEP 2 — Load HR shots_tagged.csv")
+log("STEP 1 — Load HR shots_tagged.csv + merge own xG")
 log("-" * 78)
 
-hr_cols = ['game_id', 'season', 'period', 'abs_time',
-           'event_type', 'shooter_player_id', 'state', 'zone']
+hr_cols = ['game_id', 'season', 'period', 'abs_time', 'event_id',
+           'event_type', 'shooter_player_id', 'state', 'zone',
+           'home_team_abbrev', 'away_team_abbrev', 'shoot_home']
 hr_all = pd.read_csv(f"{ROOT}/NFI/Output/shots_tagged.csv", usecols=hr_cols)
 n0 = len(hr_all)
 hr = hr_all[
@@ -195,92 +136,42 @@ hr = hr_all[
     & (hr_all.game_id.astype(str).str[4:6] == _GID_DIGITS)
 ].copy()
 hr['game_id'] = hr.game_id.astype(int)
-log(f"  shots_tagged.csv: {n0:,} → {len(hr):,} after 4-season+reg+period filter")
+log(f"  shots_tagged.csv: {n0:,} → {len(hr):,} after season+reg+period+{_GID_DIGITS} filter")
 log(f"  per-season HR event counts: {hr.groupby('season').size().to_dict()}")
 log()
 
 # -----------------------------------------------------------------------------
-# STEP 3 — Build HR zone-lookup table; join MP ← HR; sanity gate
+# STEP 2 — Build the shot table: 5v5 ES Fenwick + our xG
 # -----------------------------------------------------------------------------
 log("-" * 78)
-log("STEP 3 — MP ← HR zone join (HR canonical, MP-recompute fallback)")
+log("STEP 2 — Shot table (5v5 ES Fenwick) + own xG merge")
 log("-" * 78)
 
-# HR zone lookup limited to 5v5 ES Fenwick events (where shots_tagged carries
-# meaningful zone tags for our scope)
-hr_fen_es = hr[hr.event_type.isin(['shot-on-goal', 'missed-shot', 'goal'])
-               & (hr.state == 'ES')].copy()
+xg = pd.read_csv(XG_CSV)   # game_id, event_id, xg
+shots = hr[hr.event_type.isin(['shot-on-goal', 'missed-shot', 'goal'])
+           & (hr.state == 'ES')].copy()
+shots = shots.merge(xg, on=['game_id', 'event_id'], how='left')
+matched = shots['xg'].notna().mean()
+log(f"  5v5 ES Fenwick shots: {len(shots):,}   own-xG matched: {matched:.3%}")
+if matched < 0.98:
+    raise RuntimeError(f"own-xG match rate {matched:.2%} < 98% — check event_id keys")
 
-# Dedupe HR on same join key (consecutive HR rows at the same key typically
-# share the same zone; keep first for a deterministic 1:1 lookup table)
-hr_lookup = hr_fen_es.sort_values(['game_id', 'period', 'abs_time',
-                                    'shooter_player_id'], kind='stable')
-pre_hr = len(hr_lookup)
-hr_lookup = hr_lookup.drop_duplicates(
-    subset=['game_id', 'period', 'abs_time', 'shooter_player_id'], keep='first')
-log(f"  HR lookup table: {pre_hr:,} → {len(hr_lookup):,} after key dedupe "
-    f"(dropped {pre_hr - len(hr_lookup):,})")
-
-# Left-join MP ← HR (per season for diagnostics)
-mp_keys = mp[['nhl_gid', 'period', 'time', 'shooterPlayerId']].rename(
-    columns={'nhl_gid': 'game_id', 'time': 'abs_time',
-              'shooterPlayerId': 'shooter_player_id'})
-mp_keys.index = mp.index
-joined_zone = pd.merge(
-    mp_keys,
-    hr_lookup[['game_id', 'period', 'abs_time', 'shooter_player_id', 'zone']],
-    on=['game_id', 'period', 'abs_time', 'shooter_player_id'],
-    how='left',
-).set_index(mp.index)
-
-mp['hr_zone'] = joined_zone['zone'].values
-mp['zone_source'] = np.where(mp['hr_zone'].notna(), 'HR', 'MP_recompute')
-mp['nfi_zone'] = np.where(mp['hr_zone'].notna(),
-                           mp['hr_zone'],
-                           mp['mp_recompute_zone'])
-mp['in_nfi'] = mp['nfi_zone'].isin(NFI_ZONES)
-
-# Per-season match-rate sanity gate
-log("  Per-season MP → HR match diagnostic:")
-log(f"  {'season':<10} {'MP rows':>10} {'HR-matched':>12} {'match%':>9} "
-    f"{'fallback':>10} {'fb_rate':>9}")
-fail_seasons = []
-for sn in sorted(HR_SEASONS_SET):
-    sub = mp[mp.hr_season == sn]
-    n = len(sub)
-    n_hr = (sub.zone_source == 'HR').sum()
-    n_fb = n - n_hr
-    rate = n_hr / n if n > 0 else 0.0
-    fb_rate = n_fb / n if n > 0 else 0.0
-    log(f"  {sn:<10} {n:>10,} {n_hr:>12,} {rate:>8.3%} {n_fb:>10,} {fb_rate:>8.3%}")
-    if rate < HR_MATCH_FLOOR:
-        fail_seasons.append((sn, rate))
-
-if fail_seasons:
-    for sn, rate in fail_seasons:
-        log(f"  ⚠  Season {sn} match rate {rate:.3%} < floor {HR_MATCH_FLOOR:.0%}")
-    raise RuntimeError(
-        f"MP→HR match rate below {HR_MATCH_FLOOR:.0%} for: "
-        f"{[f'{sn}={r:.2%}' for sn,r in fail_seasons]}")
-log("  ✓ all seasons pass HR-match-rate gate")
+# Downstream attribution reads MoneyPuck-style column names; keep them so the
+# STEP 7 loop is unchanged, but the values are now all HockeyROI's.
+mp = pd.DataFrame({
+    'nhl_gid': shots['game_id'].astype(int),
+    'period': shots['period'].astype(int),
+    'time': shots['abs_time'].astype(int),
+    'shooterPlayerId': shots['shooter_player_id'],
+    'xGoal': shots['xg'].fillna(0.0),
+    'isHomeTeam': shots['shoot_home'].astype(int),
+    'homeTeamCode': shots['home_team_abbrev'],
+    'awayTeamCode': shots['away_team_abbrev'],
+    'in_nfi': shots['zone'].isin(NFI_ZONES),
+    'hr_season': shots['season'].astype(int),
+})
+log(f"  shot table rows: {len(mp):,}   in_nfi (CNFI∪MNFI): {int(mp['in_nfi'].sum()):,}")
 log()
-
-# Informational: HR-zone vs MP-recompute agreement on matched rows
-log("  Informational — HR vs MP-recompute zone agreement on matched rows:")
-log("    (not a gate; documented for transparency. See May 2026 diagnostic for context.)")
-log(f"  {'season':<10} {'matched':>10} {'5-way agree':>14} {'in_nfi agree':>14}")
-for sn in sorted(HR_SEASONS_SET):
-    sub = mp[(mp.hr_season == sn) & (mp.zone_source == 'HR')]
-    if len(sub) == 0:
-        log(f"  {sn:<10} {0:>10,}  (no matched rows)"); continue
-    full = (sub.hr_zone == sub.mp_recompute_zone).mean()
-    flag_match = (sub.hr_zone.isin(NFI_ZONES) ==
-                  sub.mp_recompute_zone.isin(NFI_ZONES)).mean()
-    log(f"  {sn:<10} {len(sub):>10,} {full:>13.3%} {flag_match:>13.3%}")
-log()
-
-# Cleanup helper columns no longer needed
-mp = mp.drop(columns=['hr_zone', 'mp_recompute_zone'])
 
 # -----------------------------------------------------------------------------
 # STEP 4 — Build 5v5 ES state intervals per game (from HR shots_tagged)
