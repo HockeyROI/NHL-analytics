@@ -6441,24 +6441,23 @@ def _render_goalie_scatters(base: pd.DataFrame, qg_label: str, year_label: str) 
     specs = [
         ("NFI-GSAx/60", "QNFG%", "NFI-GSAx/60 (net-front impact per 60)",
          "QNFG% (net-front quality-game rate)", "goalie-nfigsax-vs-qnfg",
-         "Net-front danger: shot-quality impact vs how often the goalie "
+         "Net-front danger: shot-quality impact per 60 vs how often the goalie "
          "clears expected on net-front shots."),
-        ("GSAx", "QG%", "GSAx (all-shot, total)", "QG% (all-shot quality-game rate)",
-         "goalie-gsax-vs-qg",
-         "All shots: cumulative goals-saved-above-expected vs the share of "
+        ("GSAx/60", "QG%", "GSAx/60 (all-shot impact per 60)",
+         "QG% (all-shot quality-game rate)", "goalie-gsax-vs-qg",
+         "All shots: goals-saved-above-expected per 60 vs the share of "
          "games beating expected."),
         ("NFI SV% (disp)", "sQS%", "NFI SV% (net-front raw save%)",
          f"{qg_label} (starter-quality game rate)", "goalie-nfisv-vs-sqs",
          "Raw net-front save% vs how often the goalie delivers a "
          "starter-quality game."),
     ]
-    cols = st.columns(len(specs))
-    for _c, (xc, yc, xt, yt, dl, cap) in zip(cols, specs):
-        with _c:
-            if xc in d.columns and yc in d.columns:
-                _scatter_with_labels(d, xc, yc, xt, yt, dl, cap,
-                                     team_scoped=False, name_col="Goalie",
-                                     year_label=year_label)
+    # Each scatter on its OWN full-width row (not squeezed into one row).
+    for xc, yc, xt, yt, dl, cap in specs:
+        if xc in d.columns and yc in d.columns:
+            _scatter_with_labels(d, xc, yc, xt, yt, dl, cap,
+                                 team_scoped=False, name_col="Goalie",
+                                 year_label=year_label)
 
 
 def _playoff_sv_baseline(n: pd.DataFrame) -> float:
