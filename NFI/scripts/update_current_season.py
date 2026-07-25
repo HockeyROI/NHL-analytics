@@ -48,9 +48,37 @@ PROCESSED_JSON = ROOT / "NFI" / "processed_game_ids.json"
 LAST_UPDATED   = ROOT / "NFI" / "last_updated_current.txt"
 
 ABBR_MAP = {"ARI": "UTA"}
-CURRENT_SEASON = "20252026"
-SEASON_START = "2025-10-07"
-SEASON_END   = "2026-04-30"
+
+
+def _derive_current_season():
+    """Auto-derive (season_code, start_date, end_date) from today + the NHL API
+    so this never needs manual annual bumping AND is game-count-agnostic — the
+    2026-27 jump to 84 games (from 82) changes nothing here because games come
+    from the schedule, not a hardcoded count. NHL seasons start in October: on
+    or after Oct -> {Y}{Y+1}, else {Y-1}{Y}. The schedule endpoint returns the
+    real regularSeason start/end from any in-window date; fall back to Oct 1 ->
+    Jun 30 if the API is unreachable."""
+    t = datetime.now(timezone.utc).date()
+    start_year = t.year if t.month >= 10 else t.year - 1
+    code = f"{start_year}{start_year + 1}"
+    seed = f"{start_year}-10-07"
+    start, end = f"{start_year}-10-01", f"{start_year + 1}-06-30"
+    try:  # self-contained fetch (curl_json is defined later in the module)
+        out = subprocess.run(
+            ["curl", "-s", "-m", "25",
+             f"https://api-web.nhle.com/v1/schedule/{seed}"],
+            capture_output=True, text=True, check=True)
+        data = json.loads(out.stdout)
+        if data.get("regularSeasonStartDate"):
+            start = data["regularSeasonStartDate"]
+            # to the end of the playoffs so a postseason isn't cut off at April
+            end = data.get("playoffEndDate") or data.get("regularSeasonEndDate") or end
+    except Exception:
+        pass
+    return code, start, end
+
+
+CURRENT_SEASON, SEASON_START, SEASON_END = _derive_current_season()
 FENWICK_TYPES = {"shot-on-goal", "missed-shot", "goal"}
 NFI_ZA_FACTOR = 0.035  # Tulsky 2013 (3.5pp). Mirrored in
                        #   NFI/scripts/build_fa_factors.py  (factors["NFI"])

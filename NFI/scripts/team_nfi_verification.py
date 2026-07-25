@@ -230,9 +230,13 @@ n_teams = len(m)
 chk1 = "PASS" if n_teams == 32 else "FAIL"
 print(f"  [{chk1}] All 32 teams found data: {n_teams}/32")
 
-bad_gp = m[m["games_played"] != 82]
+# Full-season game count is derived, not hardcoded — the NHL goes 82 -> 84 games
+# in 2026-27, and this check should follow. All teams play the same schedule, so
+# the expected count is the mode across teams.
+_full_gp = int(m["games_played"].mode().iloc[0])
+bad_gp = m[m["games_played"] != _full_gp]
 chk2 = "PASS" if len(bad_gp) == 0 else "FAIL"
-print(f"  [{chk2}] All teams played 82 games: {(m['games_played']==82).sum()}/32 at 82 GP")
+print(f"  [{chk2}] All teams played {_full_gp} games: {(m['games_played']==_full_gp).sum()}/32 at {_full_gp} GP")
 if len(bad_gp):
     for _, r in bad_gp.iterrows():
         print(f"         flagged: {r['team']} GP={r['games_played']}")
