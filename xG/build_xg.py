@@ -47,12 +47,18 @@ REBOUND_SEC = 3.0
 
 def main() -> int:
     print("Loading shots...")
-    cols = ["game_id", "event_id", "season", "period", "time_secs", "event_type",
-            "situation_code", "shooting_team_id", "home_team_id", "is_goal",
-            "x_coord_norm", "y_coord_norm", "shot_type", "shooter_player_id"]
+    cols = ["game_id", "event_id", "season", "period", "period_type", "time_secs",
+            "event_type", "situation_code", "shooting_team_id", "home_team_id",
+            "is_goal", "x_coord_norm", "y_coord_norm", "shot_type", "shooter_player_id"]
     s = _ds.load_shot_events(usecols=cols,
                              dtype={"season": str, "situation_code": str})
-    s = s[s["event_type"].isin(FENWICK) & s["period"].between(1, 3)].copy()
+    # Keep regulation AND overtime; DROP the shootout (period_type "SO"), which is
+    # a skills competition (1-on-0 breakaways), not a game shot. Including OT is
+    # what gives 3v3 (regular-season OT) and playoff-OT 5v5 shots real xG — they
+    # were silently 0 before under the period 1-3 filter, so the situation
+    # engine's 3v3 bucket showed xGF=0 despite real goals.
+    s = s[s["event_type"].isin(FENWICK)
+          & s["period_type"].isin(["REG", "OT"])].copy()
     s["is_goal_i"] = s["is_goal"].astype(int)
     s["abs_time"] = s["time_secs"].astype(int) + (s["period"].astype(int) - 1) * 1200
     s["shoot_home"] = s["shooting_team_id"] == s["home_team_id"]
@@ -109,6 +115,11 @@ def main() -> int:
     sh_sk = np.where(s["shoot_home"], hsk2, ask2)
     op_sk = np.where(s["shoot_home"], ask2, hsk2)
     s["strength_diff"] = np.clip(sh_sk - op_sk, -2, 2)
+    # Absolute on-ice skater count (shooter's own side, clip 3-6). strength_diff
+    # alone can't tell 3v3 from 5v5 (both diff 0), yet 3v3 OT is far more
+    # dangerous (open ice). This lets the model price that; without it, adding OT
+    # would just blend 3v3 danger into the 5v5 baseline.
+    s["own_skaters"] = np.clip(sh_sk, 3, 6)
     s["is_home"] = s["shoot_home"].astype(int)
     # geometry recomputed as row-aligned Series on the merged frame
     xx = s["x_coord_norm"].astype(float); yy = s["y_coord_norm"].astype(float)
@@ -123,7 +134,8 @@ def main() -> int:
         "dist_angle": dd * aa, "time_since_last": s["time_since_last"],
         "log_tsl": np.log1p(s["time_since_last"]), "dist_last": s["dist_last"],
         "rebound": s["rebound"], "rush": s["rush"], "score_diff": s["score_diff"],
-        "strength_diff": s["strength_diff"], "is_home": s["is_home"],
+        "strength_diff": s["strength_diff"], "own_skaters": s["own_skaters"],
+        "is_home": s["is_home"],
         "empty_net": s["empty_net"],
     }, index=s.index)
     feat = pd.concat([num, st_d.set_index(s.index), lt_d.set_index(s.index),
