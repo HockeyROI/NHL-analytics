@@ -1493,6 +1493,12 @@ def _team_landscape_frame(scope_key: str, bucket_label: str,
     sh = np.where(g["FF"] > 0, g["GF"] / g["FF"] * 100.0, np.nan)
     sv = np.where(g["FA"] > 0, (1 - g["GA"] / g["FA"]) * 100.0, np.nan)
     out["PDO"] = sh + sv
+    # PDOxG = actual PDO minus xG-expected PDO (expected SH% = xGF/FF,
+    # expected SV% = 1 - xGA/FA). The team analog of the player PDOxG.
+    exp = np.where(g["FF"] > 0, g["xGF"] / g["FF"] * 100.0, np.nan) \
+        + np.where(g["FA"] > 0, (1 - g["xGA"] / g["FA"]) * 100.0, np.nan)
+    out["PDOxG"] = out["PDO"] - exp
+    out["xG%"] = out["xGF%"]   # alias to match the player scatter column name
     out["logo"] = out["Team"].map(lambda t: NHL_LOGO.format(t))
     # Zone tilt (OZI/DZI) from the pooled team-zone data (window-agnostic here).
     tz = load_team_zone()
@@ -1504,35 +1510,50 @@ def _team_landscape_frame(scope_key: str, bucket_label: str,
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def _team_goalie_frame() -> pd.DataFrame:
-    """Team-aggregated goaltending (4-season pooled) for the Teams-tab goalie
-    scatters. Rolls each team's goalies up — GSAx summed over ES-TOI, the
-    consistency rates as quality-games ÷ games — keyed on the goalie's team from
-    the pooled NFI-GSAx file. One row per team, with a logo URL."""
-    base = load_goalie_nfi()
-    if base.empty or "team" not in base.columns:
+def _team_goalie_frame(scope_key: str = "pooled") -> pd.DataFrame:
+    """Team-aggregated goaltending for the Teams-tab goalie scatters, following
+    the season scope (per-season goalie→team from goalie_nfi_gsax_by_season +
+    the per-season consistency files). GSAx summed over ES-TOI (backed out from
+    GSAx_per60), rates as quality-games ÷ games. One row per team, with a logo."""
+    fp = REPO_ROOT / "NFI" / "output" / "goalie_nfi_gsax_by_season.csv"
+    if not fp.exists():
         return pd.DataFrame()
-    b = base[["goalie_id", "team", "GSAx", "es_toi_min", "NFI_save_pct",
-              "total_faced"]].copy()
-
-    def _rd(fp, cols):
-        p = _QC / fp
-        return pd.read_csv(p)[cols] if p.exists() else pd.DataFrame(columns=cols)
-
-    qs = _rd("qs_gsax_2022-2026.csv", ["goalie_id", "GP", "quality_games", "GSAx_total"]) \
-        .rename(columns={"GP": "qs_gp", "quality_games": "qs_q"})
-    qn = _rd("qnfs_2022-2026.csv", ["goalie_id", "GP", "quality_games"]) \
-        .rename(columns={"GP": "qn_gp", "quality_games": "qn_q"})
-    sq = _rd("qg_savepct_2022-2026_allsit.csv", ["goalie_id", "GP", "QGs_games"]) \
-        .rename(columns={"GP": "sq_gp", "QGs_games": "sq_q"})
-    for extra in (qs, qn, sq):
-        if not extra.empty:
-            b = b.merge(extra, on="goalie_id", how="left")
-
+    b = pd.read_csv(fp)
+    if "team" not in b.columns:
+        return pd.DataFrame()
+    seasons = _situation_seasons(scope_key, playoffs=False)
+    if seasons is not None:
+        b = b[b["season"].isin([int(s) for s in seasons])]
+    if b.empty:
+        return pd.DataFrame()
+    # ES-TOI per goalie-season, backed out of the rate (es_toi = GSAx/per60*60);
+    # where the rate is ~0, fall back to games * 50 ES-min as a sane weight.
+    per60 = b["GSAx_per60"].replace(0, np.nan)
+    b["_es_toi"] = np.where(per60.abs() > 0.01, b["GSAx"] / per60 * 60.0, b["games"] * 50.0)
     b["_sv_num"] = b["NFI_save_pct"] * b["total_faced"]
+
+    def _rd(fp_name, cols, ren):
+        p = _QC / fp_name
+        if not p.exists():
+            return None
+        d = pd.read_csv(p)
+        d["season"] = d["season"].astype(int)
+        return d[["goalie_id", "season"] + cols].rename(columns=ren)
+
+    for extra in (
+        _rd("qs_gsax_per_season_2022-2026.csv", ["GP", "quality_games", "GSAx_total"],
+            {"GP": "qs_gp", "quality_games": "qs_q"}),
+        _rd("qnfs_per_season_2022-2026.csv", ["GP", "quality_games"],
+            {"GP": "qn_gp", "quality_games": "qn_q"}),
+        _rd("qg_savepct_per_season_2022-2026_allsit.csv", ["GP", "QGs_games"],
+            {"GP": "sq_gp", "QGs_games": "sq_q"}),
+    ):
+        if extra is not None:
+            b = b.merge(extra, on=["goalie_id", "season"], how="left")
+
     g = b.groupby("team").sum(numeric_only=True).reset_index().rename(columns={"team": "Team"})
     out = pd.DataFrame({"Team": g["Team"]})
-    p60 = lambda n: np.where(g["es_toi_min"] > 0, g[n] / g["es_toi_min"] * 60.0, np.nan)
+    p60 = lambda n: np.where(g["_es_toi"] > 0, g[n] / g["_es_toi"] * 60.0, np.nan)
     out["NFI-GSAx/60"] = p60("GSAx")
     out["GSAx/60"] = p60("GSAx_total") if "GSAx_total" in g else np.nan
     out["NFI SV%"] = np.where(g["total_faced"] > 0, g["_sv_num"] / g["total_faced"] * 100, np.nan)
@@ -5501,7 +5522,7 @@ def render_teams() -> None:
 
     # League scatter landscape (the shot map now lives in the per-team drill-in's
     # view toggle at the top, not a separate section here).
-    _render_team_landscape(key, season_label)
+    _render_team_landscape(key, season_label, team)
     st.caption("↑ **Drill into a team** (selector at the top) for its per-season "
                "trend, year-over-year charts, and shot map.")
 
@@ -5630,48 +5651,66 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
              width="stretch", hide_index=True)
 
 
-def _render_team_landscape(scope_key: str, season_label: str) -> None:
+def _render_team_landscape(scope_key: str, season_label: str,
+                           team_tbl: pd.DataFrame = None) -> None:
     """The Teams-tab league scatter landscape — every team drawn as its logo.
-    Four skater-metric quadrant charts, following the Situation filter. Axes are
-    oriented so 'better' is up and to the right."""
+    Renders the same metric scatters the player leaderboard shows (PDOxG / xG-QG%
+    / NFI-QG% / PDO / xG% / NFI%), plus a couple of team-specific quadrant views,
+    following the Situation filter. Axes oriented so 'better' is up/right."""
     sit = _situation_toggle_state()
     f = _team_landscape_frame(scope_key, sit, playoffs=False)
     if f.empty:
         return
+    # Bring in NFI% / xG-QG% / NFI-QG% from the already-assembled team table
+    # (fractions 0-1 there → scale to % to match the scatter axes).
+    if team_tbl is not None and not team_tbl.empty:
+        _cols = [c for c in ("Team", "NFI%", "xG-QG%", "NFI-QG%") if c in team_tbl.columns]
+        _t = team_tbl[_cols].copy()
+        for c in ("NFI%", "xG-QG%", "NFI-QG%"):
+            if c in _t.columns:
+                _t[c] = pd.to_numeric(_t[c], errors="coerce") * 100.0
+        f = f.merge(_t, on="Team", how="left")
     _sc_txt = "" if sit == "5v5" else f" · {sit}"
     st.markdown(
         f"<h3 style='margin:0.8rem 0 0.2rem; color:{PALETTE['text']};'>"
         f"League Landscape — {season_label}{_sc_txt}</h3>", unsafe_allow_html=True)
-    st.caption("Each team is its logo. Axes oriented so **up-and-right = better**. "
-               "Follows the Situation filter above.")
-    # Each scatter on its OWN full-width row (not squeezed into columns).
-    _team_logo_scatter(
-        f, "xGF/60", "xGA/60", "xGF/60 (more offense →)", "xGA/60 (fewer against ↑)",
+    st.caption("Each team is its logo. The same scatter set as the player "
+               "leaderboard, at team level. Follows the Situation filter above.")
+
+    def _sc(x, y, xt, yt, dl, cap, **kw):
+        if {x, y}.issubset(f.columns) and f[[x, y]].notna().any().all():
+            _team_logo_scatter(f, x, y, xt, yt, dl, cap, **kw)
+
+    # The player-leaderboard scatter pairings, team level (one per full-width row):
+    _sc("xG%", "PDOxG", "xG% (share)", "PDOxG (luck net of shot quality)",
+        "team-pdoxg-xg", "**PDOxG vs xG%** — descriptive, not a ranking.")
+    _sc("NFI%", "PDOxG", "NFI% (net-front share)", "PDOxG",
+        "team-pdoxg-nfi", "**PDOxG vs NFI%**.")
+    _sc("NFI-QG%", "xG-QG%", "NFI-QG%", "xG-QG%",
+        "team-xgqg-nfiqg", "**xG-QG% vs NFI-QG%** — quality-game consistency, two bases.")
+    _sc("xG%", "PDO", "xG% (share)", "PDO (luck)",
+        "team-pdo-xg", "**PDO vs xG%**.")
+    _sc("NFI%", "PDO", "NFI% (net-front share)", "PDO (luck)",
+        "team-pdo-nfi", "**PDO vs NFI%**.")
+    _sc("xG%", "NFI%", "xG% (share)", "NFI% (net-front share)",
+        "team-nfi-xg", "**NFI% vs xG%** — net-front vs all-shot danger share.")
+    # Two team-specific quadrant views (no clean player analog):
+    _sc("xGF/60", "xGA/60", "xGF/60 (more offense →)", "xGA/60 (fewer against ↑)",
         "team-off-def", "**Offense vs Defense** — top-right = strong both ways "
-        "(xGA axis reversed so fewer-against is at the top).", invert_y=True)
-    _team_logo_scatter(
-        f, "xGF%", "GF%", "xGF% (expected)", "GF% (actual)",
-        "team-exp-actual", "**Expected vs Actual** — above the cloud = scoring / "
-        "goaltending over their chances (riding it); below = due to bounce back.")
-    _team_logo_scatter(
-        f, "CF%", "xGF%", "CF% (shot-volume share)", "xGF% (chance-quality share)",
-        "team-poss-danger", "**Possession vs Danger** — volume (x) vs shot "
-        "quality (y).")
-    if {"OZI", "DZI"}.issubset(f.columns):
-        _team_logo_scatter(
-            f, "OZI", "DZI", "OZI (offensive push)", "DZI (defensive strength)",
-            "team-zone-tilt", "**Zone tilt** — where the team lives on the ice "
-            "(0-100 index, 50 = average).")
+        "(xGA axis reversed).", invert_y=True)
+    _sc("OZI", "DZI", "OZI (offensive push)", "DZI (defensive strength)",
+        "team-zone-tilt", "**Zone tilt** — where the team lives on the ice "
+        "(0-100 index, 50 = average).")
 
     # Team goaltending scatters (4-season pooled) — impact vs consistency, the
     # team roll-up of the three goalie-tab plots. One per full-width row.
-    gf = _team_goalie_frame()
+    gf = _team_goalie_frame(scope_key)
     if not gf.empty:
         st.markdown(
             f"<h3 style='margin:0.8rem 0 0.2rem; color:{PALETTE['text']};'>"
-            f"Team Goaltending — 4-season pooled</h3>", unsafe_allow_html=True)
-        st.caption("Each team's goaltending rolled up (impact → x, consistency → y). "
-                   "Pooled across 2022-26; not affected by the season/situation filter.")
+            f"Team Goaltending — {season_label}</h3>", unsafe_allow_html=True)
+        st.caption("Each team's goaltending rolled up (impact → x, consistency → y), "
+                   "following the season filter.")
         _team_logo_scatter(gf, "NFI-GSAx/60", "QNFG%", "NFI-GSAx/60",
                            "QNFG%", "team-g-nfigsax", "**Net-front:** impact vs quality-game rate.")
         _team_logo_scatter(gf, "GSAx/60", "QG%", "GSAx/60", "QG%",
