@@ -1503,6 +1503,47 @@ def _team_landscape_frame(scope_key: str, bucket_label: str,
     return out
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def _team_goalie_frame() -> pd.DataFrame:
+    """Team-aggregated goaltending (4-season pooled) for the Teams-tab goalie
+    scatters. Rolls each team's goalies up — GSAx summed over ES-TOI, the
+    consistency rates as quality-games ÷ games — keyed on the goalie's team from
+    the pooled NFI-GSAx file. One row per team, with a logo URL."""
+    base = load_goalie_nfi()
+    if base.empty or "team" not in base.columns:
+        return pd.DataFrame()
+    b = base[["goalie_id", "team", "GSAx", "es_toi_min", "NFI_save_pct",
+              "total_faced"]].copy()
+
+    def _rd(fp, cols):
+        p = _QC / fp
+        return pd.read_csv(p)[cols] if p.exists() else pd.DataFrame(columns=cols)
+
+    qs = _rd("qs_gsax_2022-2026.csv", ["goalie_id", "GP", "quality_games", "GSAx_total"]) \
+        .rename(columns={"GP": "qs_gp", "quality_games": "qs_q"})
+    qn = _rd("qnfs_2022-2026.csv", ["goalie_id", "GP", "quality_games"]) \
+        .rename(columns={"GP": "qn_gp", "quality_games": "qn_q"})
+    sq = _rd("qg_savepct_2022-2026_allsit.csv", ["goalie_id", "GP", "QGs_games"]) \
+        .rename(columns={"GP": "sq_gp", "QGs_games": "sq_q"})
+    for extra in (qs, qn, sq):
+        if not extra.empty:
+            b = b.merge(extra, on="goalie_id", how="left")
+
+    b["_sv_num"] = b["NFI_save_pct"] * b["total_faced"]
+    g = b.groupby("team").sum(numeric_only=True).reset_index().rename(columns={"team": "Team"})
+    out = pd.DataFrame({"Team": g["Team"]})
+    p60 = lambda n: np.where(g["es_toi_min"] > 0, g[n] / g["es_toi_min"] * 60.0, np.nan)
+    out["NFI-GSAx/60"] = p60("GSAx")
+    out["GSAx/60"] = p60("GSAx_total") if "GSAx_total" in g else np.nan
+    out["NFI SV%"] = np.where(g["total_faced"] > 0, g["_sv_num"] / g["total_faced"] * 100, np.nan)
+    rate = lambda q, gp: np.where(g.get(gp, 0) > 0, g.get(q, np.nan) / g.get(gp, np.nan) * 100, np.nan)
+    out["QNFG%"] = rate("qn_q", "qn_gp")
+    out["QG%"] = rate("qs_q", "qs_gp")
+    out["sQS%"] = rate("sq_q", "sq_gp")
+    out["logo"] = out["Team"].map(lambda t: NHL_LOGO.format(t))
+    return out
+
+
 def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
                        ytitle: str, dl_name: str, caption: str,
                        invert_y: bool = False, invert_x: bool = False) -> None:
@@ -5493,6 +5534,26 @@ def _render_team_landscape(scope_key: str, season_label: str) -> None:
                 f, "OZI", "DZI", "OZI (offensive push)", "DZI (defensive strength)",
                 "team-zone-tilt", "**Zone tilt** — where the team lives on the ice "
                 "(0-100 index, 50 = average).")
+
+    # Team goaltending scatters (4-season pooled) — impact vs consistency, the
+    # team roll-up of the three goalie-tab plots.
+    gf = _team_goalie_frame()
+    if not gf.empty:
+        st.markdown(
+            f"<h3 style='margin:0.8rem 0 0.2rem; color:{PALETTE['text']};'>"
+            f"Team Goaltending — 4-season pooled</h3>", unsafe_allow_html=True)
+        st.caption("Each team's goaltending rolled up (impact → x, consistency → y). "
+                   "Pooled across 2022-26; not affected by the season/situation filter.")
+        gc1, gc2, gc3 = st.columns(3)
+        with gc1:
+            _team_logo_scatter(gf, "NFI-GSAx/60", "QNFG%", "NFI-GSAx/60",
+                               "QNFG%", "team-g-nfigsax", "**Net-front:** impact vs quality-game rate.")
+        with gc2:
+            _team_logo_scatter(gf, "GSAx/60", "QG%", "GSAx/60", "QG%",
+                               "team-g-gsax", "**All-shot:** GSAx/60 vs quality-game rate.")
+        with gc3:
+            _team_logo_scatter(gf, "NFI SV%", "sQS%", "NFI SV%", "sQS%",
+                               "team-g-sv", "**Save% vs starter-quality** consistency.")
 
 
 # ---------------------------------------------------------------------------
