@@ -5609,29 +5609,27 @@ def _render_team_landscape(scope_key: str, season_label: str) -> None:
         f"League Landscape — {season_label}{_sc_txt}</h3>", unsafe_allow_html=True)
     st.caption("Each team is its logo. Axes oriented so **up-and-right = better**. "
                "Follows the Situation filter above.")
-    c1, c2 = st.columns(2)
-    with c1:
+    # Each scatter on its OWN full-width row (not squeezed into columns).
+    _team_logo_scatter(
+        f, "xGF/60", "xGA/60", "xGF/60 (offense →)", "xGA/60 (← fewer better)",
+        "team-off-def", "**Offense vs Defense** — top-right = strong both ways "
+        "(xGA axis reversed).", invert_y=True)
+    _team_logo_scatter(
+        f, "xGF%", "GF%", "xGF% (expected)", "GF% (actual)",
+        "team-exp-actual", "**Expected vs Actual** — above the cloud = scoring / "
+        "goaltending over their chances (riding it); below = due to bounce back.")
+    _team_logo_scatter(
+        f, "CF%", "xGF%", "CF% (shot-volume share)", "xGF% (chance-quality share)",
+        "team-poss-danger", "**Possession vs Danger** — volume (x) vs shot "
+        "quality (y).")
+    if {"OZI", "DZI"}.issubset(f.columns):
         _team_logo_scatter(
-            f, "xGF/60", "xGA/60", "xGF/60 (offense →)", "xGA/60 (← fewer better)",
-            "team-off-def", "**Offense vs Defense** — top-right = strong both ways "
-            "(xGA axis reversed).", invert_y=True)
-        _team_logo_scatter(
-            f, "CF%", "xGF%", "CF% (shot-volume share)", "xGF% (chance-quality share)",
-            "team-poss-danger", "**Possession vs Danger** — volume (x) vs shot "
-            "quality (y).")
-    with c2:
-        _team_logo_scatter(
-            f, "xGF%", "GF%", "xGF% (expected)", "GF% (actual)",
-            "team-exp-actual", "**Expected vs Actual** — above the cloud = scoring / "
-            "goaltending over their chances (riding it); below = due to bounce back.")
-        if {"OZI", "DZI"}.issubset(f.columns):
-            _team_logo_scatter(
-                f, "OZI", "DZI", "OZI (offensive push)", "DZI (defensive strength)",
-                "team-zone-tilt", "**Zone tilt** — where the team lives on the ice "
-                "(0-100 index, 50 = average).")
+            f, "OZI", "DZI", "OZI (offensive push)", "DZI (defensive strength)",
+            "team-zone-tilt", "**Zone tilt** — where the team lives on the ice "
+            "(0-100 index, 50 = average).")
 
     # Team goaltending scatters (4-season pooled) — impact vs consistency, the
-    # team roll-up of the three goalie-tab plots.
+    # team roll-up of the three goalie-tab plots. One per full-width row.
     gf = _team_goalie_frame()
     if not gf.empty:
         st.markdown(
@@ -5639,16 +5637,12 @@ def _render_team_landscape(scope_key: str, season_label: str) -> None:
             f"Team Goaltending — 4-season pooled</h3>", unsafe_allow_html=True)
         st.caption("Each team's goaltending rolled up (impact → x, consistency → y). "
                    "Pooled across 2022-26; not affected by the season/situation filter.")
-        gc1, gc2, gc3 = st.columns(3)
-        with gc1:
-            _team_logo_scatter(gf, "NFI-GSAx/60", "QNFG%", "NFI-GSAx/60",
-                               "QNFG%", "team-g-nfigsax", "**Net-front:** impact vs quality-game rate.")
-        with gc2:
-            _team_logo_scatter(gf, "GSAx/60", "QG%", "GSAx/60", "QG%",
-                               "team-g-gsax", "**All-shot:** GSAx/60 vs quality-game rate.")
-        with gc3:
-            _team_logo_scatter(gf, "NFI SV%", "sQS%", "NFI SV%", "sQS%",
-                               "team-g-sv", "**Save% vs starter-quality** consistency.")
+        _team_logo_scatter(gf, "NFI-GSAx/60", "QNFG%", "NFI-GSAx/60",
+                           "QNFG%", "team-g-nfigsax", "**Net-front:** impact vs quality-game rate.")
+        _team_logo_scatter(gf, "GSAx/60", "QG%", "GSAx/60", "QG%",
+                           "team-g-gsax", "**All-shot:** GSAx/60 vs quality-game rate.")
+        _team_logo_scatter(gf, "NFI SV%", "sQS%", "NFI SV%", "sQS%",
+                           "team-g-sv", "**Save% vs starter-quality** consistency.")
 
 
 # ---------------------------------------------------------------------------
