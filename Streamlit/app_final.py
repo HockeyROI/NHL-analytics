@@ -6413,6 +6413,53 @@ def render_goalies() -> None:
             st.session_state["_gl_tbl_gen"] = _ggen + 1
             st.rerun()
 
+    # League-wide goalie scatters (below the leaderboard), same style as the
+    # player-tab scatters: every qualified goalie a dot, hover to identify.
+    _render_goalie_scatters(base, _qg_label,
+                            "Playoffs" if playoffs else season_label)
+
+
+def _render_goalie_scatters(base: pd.DataFrame, qg_label: str, year_label: str) -> None:
+    """Three league-wide goalie scatters, mirroring the player-tab scatters:
+      1. NFI-GSAx/60 (net-front impact rate) vs QNFG% (net-front consistency)
+      2. GSAx (all-shot impact) vs QG% (all-shot consistency)
+      3. NFI SV% (raw net-front save%) vs sQS% (starter-quality consistency)
+    Each answers "impact vs how consistently they deliver it." Dots are
+    league-wide (hover to identify), name_col=Goalie. NFI SV% is a 0-1 rate;
+    scale to % for readability."""
+    if base is None or base.empty:
+        return
+    d = base.copy()
+    if "NFI SV%" in d.columns:
+        d["NFI SV% (disp)"] = pd.to_numeric(d["NFI SV%"], errors="coerce") * 100
+    st.markdown(
+        f"<h3 style='margin:0.6rem 0 0.2rem; color:{PALETTE['text']};'>"
+        f"Goalie Scatters — {year_label}</h3>", unsafe_allow_html=True)
+    st.caption("Impact (x) vs consistency (y). Every qualified goalie is a dot — "
+               "hover to identify. Top-right = high impact **and** reliable.")
+
+    specs = [
+        ("NFI-GSAx/60", "QNFG%", "NFI-GSAx/60 (net-front impact per 60)",
+         "QNFG% (net-front quality-game rate)", "goalie-nfigsax-vs-qnfg",
+         "Net-front danger: shot-quality impact vs how often the goalie "
+         "clears expected on net-front shots."),
+        ("GSAx", "QG%", "GSAx (all-shot, total)", "QG% (all-shot quality-game rate)",
+         "goalie-gsax-vs-qg",
+         "All shots: cumulative goals-saved-above-expected vs the share of "
+         "games beating expected."),
+        ("NFI SV% (disp)", "sQS%", "NFI SV% (net-front raw save%)",
+         f"{qg_label} (starter-quality game rate)", "goalie-nfisv-vs-sqs",
+         "Raw net-front save% vs how often the goalie delivers a "
+         "starter-quality game."),
+    ]
+    cols = st.columns(len(specs))
+    for _c, (xc, yc, xt, yt, dl, cap) in zip(cols, specs):
+        with _c:
+            if xc in d.columns and yc in d.columns:
+                _scatter_with_labels(d, xc, yc, xt, yt, dl, cap,
+                                     team_scoped=False, name_col="Goalie",
+                                     year_label=year_label)
+
 
 def _playoff_sv_baseline(n: pd.DataFrame) -> float:
     """Simple shots-weighted average NFI save% across ALL playoff goalies (no
