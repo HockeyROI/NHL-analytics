@@ -1510,6 +1510,38 @@ def _team_landscape_frame(scope_key: str, bucket_label: str,
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def _team_edge_frame(scope_key: str = "pooled") -> pd.DataFrame:
+    """Team-level NHL EDGE aggregate for the Teams-tab EDGE scatters, following
+    the season scope. Zone% is games-weighted; TOP SPEED is the AVERAGE of the
+    team's skaters' individual max speeds (speed doesn't sum — a mean of maxes
+    is the team's typical top-end); bursts are per-game."""
+    e = load_edge_player_season()
+    if e.empty or "team" not in e.columns:
+        return pd.DataFrame()
+    seasons = _situation_seasons(scope_key, playoffs=False)
+    if seasons is not None:
+        e = e[e["season"].astype(str).isin([str(s) for s in seasons])]
+    if e.empty:
+        return pd.DataFrame()
+    e = e.copy()
+    gp = pd.to_numeric(e["games_played"], errors="coerce").fillna(0)
+    for c in ("oz_time_pct", "dz_time_pct"):
+        e[f"_{c}_num"] = pd.to_numeric(e[c], errors="coerce") * gp
+    e["_gp"] = gp
+    e["_burst"] = pd.to_numeric(e["speed_bursts_over_20mph"], errors="coerce")
+    e["_spd"] = pd.to_numeric(e["top_skating_speed_mph"], errors="coerce")
+    g = e.groupby("team")
+    out = pd.DataFrame({"Team": list(g.groups.keys())})
+    wgp = g["_gp"].sum().reindex(out["Team"]).values
+    out["EDGE OZ%"] = (g["_oz_time_pct_num"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
+    out["EDGE DZ%"] = (g["_dz_time_pct_num"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
+    out["EDGE Top Speed"] = g["_spd"].mean().reindex(out["Team"]).values   # avg of maxes
+    out["EDGE Bursts/GP"] = (g["_burst"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
+    out["logo"] = out["Team"].map(lambda t: NHL_LOGO.format(t))
+    return out
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
 def _team_goalie_frame(scope_key: str = "pooled") -> pd.DataFrame:
     """Team-aggregated goaltending for the Teams-tab goalie scatters, following
     the season scope (per-season goalie→team from goalie_nfi_gsax_by_season +
@@ -5701,6 +5733,23 @@ def _render_team_landscape(scope_key: str, season_label: str,
     _sc("OZI", "DZI", "OZI (offensive push)", "DZI (defensive strength)",
         "team-zone-tilt", "**Zone tilt** — where the team lives on the ice "
         "(0-100 index, 50 = average).")
+
+    # EDGE scatters (team roll-up of the player EDGE tracking) — merge in.
+    edge = _team_edge_frame(scope_key)
+    if not edge.empty:
+        f2 = f.merge(edge.drop(columns=["logo"]), on="Team", how="left")
+
+        def _sce(x, y, xt, yt, dl, cap, **kw):
+            if {x, y}.issubset(f2.columns) and f2[[x, y]].notna().any().all():
+                _team_logo_scatter(f2, x, y, xt, yt, dl, cap, **kw)
+
+        _sce("EDGE OZ%", "EDGE DZ%", "EDGE OZ-time %", "EDGE DZ-time %",
+             "team-edge-zone", "**EDGE zone time** — games-weighted share of "
+             "time in each zone (NHL tracking).")
+        _sce("EDGE Top Speed", "EDGE Bursts/GP", "Top speed (avg of skaters' maxes, mph)",
+             "Speed bursts 20+ / game", "team-edge-speed",
+             "**EDGE skating** — team top speed (average of players' max speeds) "
+             "vs 20+mph bursts per game.")
 
     # Team goaltending scatters (4-season pooled) — impact vs consistency, the
     # team roll-up of the three goalie-tab plots. One per full-width row.
