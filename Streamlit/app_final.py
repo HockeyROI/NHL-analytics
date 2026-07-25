@@ -1459,6 +1459,87 @@ def _team_situation_metrics(scope_key: str, bucket_label: str,
     return out
 
 
+NHL_LOGO = "https://assets.nhle.com/logos/nhl/svg/{}_light.svg"
+
+
+def _team_landscape_frame(scope_key: str, bucket_label: str,
+                          playoffs: bool = False) -> pd.DataFrame:
+    """Team-level frame for the Teams-tab scatter landscape: per-60 rates, the
+    for/against shares, and PDO, ratio-of-sums over the scope's seasons and the
+    Situation bucket — plus each team's logo URL and OZI/DZI from the zone data.
+    One row per team."""
+    df = load_team_situation_onice()
+    if df.empty:
+        return pd.DataFrame()
+    df = df[df["game_type"] == ("playoff" if playoffs else "regular")]
+    seasons = _situation_seasons(scope_key, playoffs)
+    if seasons is not None:
+        df = df[df["season"].isin(seasons)]
+    mats = SITUATION_BUCKETS.get(bucket_label, ["5v5"])
+    if mats is not None:
+        df = df[df["situation"].isin(mats)]
+    if df.empty:
+        return pd.DataFrame()
+    g = df.groupby("team")[_TEAM_SIT_COUNTS].sum().reset_index()
+    toi, ok = g["toi_min"], g["toi_min"] > 0
+    p60 = lambda c: np.where(ok, g[c] / toi * 60.0, np.nan)
+    shr = lambda f, a: np.where(g[f] + g[a] > 0, g[f] / (g[f] + g[a]) * 100.0, np.nan)
+    out = pd.DataFrame({"Team": g["team"]})
+    out["xGF/60"], out["xGA/60"] = p60("xGF"), p60("xGA")
+    out["CF/60"], out["CA/60"] = p60("CF"), p60("CA")
+    out["GF/60"], out["GA/60"] = p60("GF"), p60("GA")
+    out["xGF%"], out["CF%"], out["GF%"] = shr("xGF", "xGA"), shr("CF", "CA"), shr("GF", "GA")
+    # PDO = on-ice shooting% + save% (Fenwick basis, matching the player PDO).
+    sh = np.where(g["FF"] > 0, g["GF"] / g["FF"] * 100.0, np.nan)
+    sv = np.where(g["FA"] > 0, (1 - g["GA"] / g["FA"]) * 100.0, np.nan)
+    out["PDO"] = sh + sv
+    out["logo"] = out["Team"].map(lambda t: NHL_LOGO.format(t))
+    # Zone tilt (OZI/DZI) from the pooled team-zone data (window-agnostic here).
+    tz = load_team_zone()
+    if not tz.empty:
+        win = _team_zone_window(scope_key)
+        tzw = tz[tz["window"] == win][["team", "OZI", "DZI"]].rename(columns={"team": "Team"})
+        out = out.merge(tzw, on="Team", how="left")
+    return out
+
+
+def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
+                       ytitle: str, dl_name: str, caption: str,
+                       invert_y: bool = False, invert_x: bool = False) -> None:
+    """Scatter with each team drawn as its LOGO (Altair mark_image, NHL CDN)
+    instead of a dot. invert_x/invert_y flip an axis so 'better' is always
+    up/right (e.g. xGA/60 — fewer is better — gets a reversed axis). A faint
+    team-colored point sits under each logo so a team is still identifiable if a
+    logo fails to load, and it carries the hover tooltip."""
+    import altair as alt
+    try:
+        import shot_charts as _sc
+        _tc = lambda t: _sc.team_color(t)[0]
+    except Exception:
+        _tc = lambda t: "#4C6EF5"   # neutral fallback if the module isn't on path
+    d = df.dropna(subset=[xcol, ycol]).copy()
+    if d.empty:
+        return
+    st.caption(caption)
+    xdom = _tight_domain(d[xcol], pad_frac=0.12, min_pad=1e-6)
+    ydom = _tight_domain(d[ycol], pad_frac=0.12, min_pad=1e-6)
+    if invert_x:
+        xdom = xdom[::-1]
+    if invert_y:
+        ydom = ydom[::-1]
+    d["_c"] = d["Team"].map(_tc)
+    enc_x = alt.X(f"{xcol}:Q", title=xtitle, scale=alt.Scale(domain=xdom, zero=False))
+    enc_y = alt.Y(f"{ycol}:Q", title=ytitle, scale=alt.Scale(domain=ydom, zero=False))
+    tip = [alt.Tooltip("Team:N"), alt.Tooltip(f"{xcol}:Q", format=".2f"),
+           alt.Tooltip(f"{ycol}:Q", format=".2f")]
+    base = alt.Chart(d)
+    dots = base.mark_circle(size=120, opacity=0.9).encode(
+        x=enc_x, y=enc_y, color=alt.Color("_c:N", scale=None, legend=None), tooltip=tip)
+    logos = base.mark_image(width=26, height=26).encode(
+        x=enc_x, y=enc_y, url="logo:N", tooltip=tip)
+    _show_chart(dots + logos, dl_name=dl_name, keep_tooltip=True)
+
+
 # Compact team Situation column set shown on the Teams tab (kept tight — the
 # team table shows every column at once, no family pills).
 TEAM_SIT_COLS = ["Sit TOI", "Sit CF%", "Sit xGF%", "Sit GF%",
@@ -5359,12 +5440,52 @@ def render_teams() -> None:
            f"single-season team zone isn't published.")
     st.caption(cap)
 
+    # League scatter landscape (shown when no single team is drilled into),
+    # then a team picker for the per-team shot map.
+    _render_team_landscape(key, season_label)
+
     # Team shot map — pick a team to see where it generates its shots.
     _teams_avail = sorted(team["Team"].dropna().unique().tolist())
     _tpick = st.selectbox("Team shot map", ["—"] + _teams_avail, index=0,
                           key="teams_shotmap_pick")
     if _tpick and _tpick != "—":
         _render_shot_chart("team", _tpick, _tpick, _tpick, season_label, playoffs=False)
+
+
+def _render_team_landscape(scope_key: str, season_label: str) -> None:
+    """The Teams-tab league scatter landscape — every team drawn as its logo.
+    Four skater-metric quadrant charts, following the Situation filter. Axes are
+    oriented so 'better' is up and to the right."""
+    sit = _situation_toggle_state()
+    f = _team_landscape_frame(scope_key, sit, playoffs=False)
+    if f.empty:
+        return
+    _sc_txt = "" if sit == "5v5" else f" · {sit}"
+    st.markdown(
+        f"<h3 style='margin:0.8rem 0 0.2rem; color:{PALETTE['text']};'>"
+        f"League Landscape — {season_label}{_sc_txt}</h3>", unsafe_allow_html=True)
+    st.caption("Each team is its logo. Axes oriented so **up-and-right = better**. "
+               "Follows the Situation filter above.")
+    c1, c2 = st.columns(2)
+    with c1:
+        _team_logo_scatter(
+            f, "xGF/60", "xGA/60", "xGF/60 (offense →)", "xGA/60 (← fewer better)",
+            "team-off-def", "**Offense vs Defense** — top-right = strong both ways "
+            "(xGA axis reversed).", invert_y=True)
+        _team_logo_scatter(
+            f, "CF%", "xGF%", "CF% (shot-volume share)", "xGF% (chance-quality share)",
+            "team-poss-danger", "**Possession vs Danger** — volume (x) vs shot "
+            "quality (y).")
+    with c2:
+        _team_logo_scatter(
+            f, "xGF%", "GF%", "xGF% (expected)", "GF% (actual)",
+            "team-exp-actual", "**Expected vs Actual** — above the cloud = scoring / "
+            "goaltending over their chances (riding it); below = due to bounce back.")
+        if {"OZI", "DZI"}.issubset(f.columns):
+            _team_logo_scatter(
+                f, "OZI", "DZI", "OZI (offensive push)", "DZI (defensive strength)",
+                "team-zone-tilt", "**Zone tilt** — where the team lives on the ice "
+                "(0-100 index, 50 = average).")
 
 
 # ---------------------------------------------------------------------------
