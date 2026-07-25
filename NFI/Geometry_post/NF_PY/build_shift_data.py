@@ -10,9 +10,15 @@ import time
 import requests
 
 # ── Paths ────────────────────────────────────────────────────────────────────
-BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR    = os.path.join(BASE_DIR, "Data")
-GAME_IDS_F  = os.path.join(DATA_DIR, "game_ids.csv")
+# game_ids.csv lives at the repo-root Data/; the canonical 426MB shift_data.csv
+# lives at NFI/Geometry_post/Data/ (where every reader expects it). The old
+# BASE_DIR/Data default pointed at a NF_PY/Data folder that doesn't exist in the
+# current layout, so the fetch died before appending. Incremental+resume-safe:
+# loads already-processed game_ids from the existing shift_data.csv and only
+# fetches the missing ones (e.g. a freshly-registered postseason), then appends.
+ROOT        = os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI")
+GAME_IDS_F  = os.path.join(ROOT, "Data", "game_ids.csv")
+DATA_DIR    = os.path.join(ROOT, "NFI", "Geometry_post", "Data")
 SHIFT_OUT_F = os.path.join(DATA_DIR, "shift_data.csv")
 FAILED_F    = os.path.join(DATA_DIR, "failed_shifts.csv")
 
