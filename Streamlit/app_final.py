@@ -1526,6 +1526,11 @@ def _team_landscape_frame(scope_key: str, bucket_label: str,
     return out
 
 
+# Team EDGE table family — the columns _team_edge_frame produces (also feed the
+# EDGE scatters). OZ% higher / DZ% lower = better tilt; speed & bursts higher.
+TEAM_EDGE_COLS = ["EDGE OZ%", "EDGE DZ%", "EDGE Top Speed", "EDGE Bursts/60"]
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def _team_edge_frame(scope_key: str = "pooled") -> pd.DataFrame:
     """Team-level NHL EDGE aggregate for the Teams-tab EDGE scatters, following
@@ -5617,6 +5622,13 @@ def render_teams() -> None:
     if not tbox.empty:
         team = team.merge(tbox, on="team", how="left")
 
+    # EDGE — reuse the SAME team aggregate that already backs the EDGE scatters
+    # (games-weighted OZ%/DZ%, avg-of-maxes Top Speed, Bursts/60); no new build.
+    tedge = _team_edge_frame(key)
+    if not tedge.empty:
+        team = team.merge(tedge.drop(columns=["logo"]).rename(columns={"Team": "team"}),
+                          on="team", how="left")
+
     _fa_disp = list(_TEAM_QG_FA.values())   # xG-QG-F%, xG-QG-A%, NFI-QG-A%, NFI-QG-S%
     for c in ["TOI", "xG-QG%", "NFI-QG%", "Attack events",
               "Suppress events"] + zcols + _fa_disp:
@@ -5629,7 +5641,8 @@ def render_teams() -> None:
             + zcols + ["xG-QG%", "xG-QG-F%", "xG-QG-A%",
                        "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%"]
             + [c for c in TEAM_SIT_COLS if c in team.columns]
-            + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS) if c in team.columns])
+            + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS) if c in team.columns]
+            + [c for c in TEAM_EDGE_COLS if c in team.columns])
     disp = team[[c for c in cols if c in team.columns]].copy()
     # Drop the internal "Sit " prefix for display (plain metric names).
     disp = disp.rename(columns=_TEAM_SIT_DISP)
@@ -5645,6 +5658,7 @@ def render_teams() -> None:
         "Zone Impact": list(zcols),
         "Box Score": list(TEAM_BOX_COUNT_COLS),
         "Special Teams": list(TEAM_ST_COLS),
+        "EDGE": list(TEAM_EDGE_COLS),
     }
     # Default = Quality Games only (mirrors the player side); tap other families
     # on/off. Empty selection shows just the identity columns.
@@ -5689,17 +5703,27 @@ def render_teams() -> None:
     for c in ("PP%", "PK%", "PPG Share%", "SHGA Share%"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
+    # EDGE: zone-time% (fractions → %), top speed (mph), bursts/60.
+    for c in ("EDGE OZ%", "EDGE DZ%"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x*100:.1f}%"
+    if "EDGE Top Speed" in disp:
+        fmt["EDGE Top Speed"] = lambda x: "—" if pd.isna(x) else f"{x:.1f} mph"
+    if "EDGE Bursts/60" in disp:
+        fmt["EDGE Bursts/60"] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
 
     _sit_ranked = [_TEAM_SIT_DISP[c] for c in TEAM_SIT_COLS
                    if _TEAM_SIT_DISP[c] in disp.columns and c != "Sit TOI"]
     _team_rank = (["NFI%", "Attack events", "Suppress events"] + zcols
                   + ["xG-QG%", "NFI-QG%"] + _sit_ranked
-                  + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS) if c in disp.columns])
+                  + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS + TEAM_EDGE_COLS)
+                     if c in disp.columns])
     # against-rates rank lowest-first (fewer allowed = better). For the box/ST
     # suite: giveaways, PP goals allowed, times shorthanded, SH goals allowed,
-    # and the SH-against share are all "less = better".
+    # and the SH-against share are all "less = better". EDGE DZ%: less D-zone
+    # time = better tilt, so lowest = #1.
     _team_lower = {"Suppress events", "CA/60", "xGA/60", "GA/60",
-                   "GV", "PPGA", "Times SH", "SHGA", "SHGA Share%"}
+                   "GV", "PPGA", "Times SH", "SHGA", "SHGA Share%", "EDGE DZ%"}
     _apply_ranks(disp, fmt, disp, _team_rank, lower_better=_team_lower)
     st.caption("Each metric shows its **(rank)** across all 32 teams. "
                "Against-rates rank lowest = #1 (Suppress events, CA/60 / xGA/60 / "
