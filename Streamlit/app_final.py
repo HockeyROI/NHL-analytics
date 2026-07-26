@@ -5431,14 +5431,25 @@ def render_teams() -> None:
     _set_dl_title(None)
     playoffs = game_type == "Playoffs"
 
-    # Team drill-in: pick a team to collapse the league view into that team's
-    # per-season trend + year-over-year charts + shot map (mirrors the player /
-    # goalie drill-in). Blank = the league leaderboard + scatter landscape.
+    # Team drill-in: pick a team (dropdown OR a row-click in the table below) to
+    # collapse the league view into that team's profile (mirrors the player /
+    # goalie drill-in). The dropdown syncs into a non-widget key so a table
+    # row-click can drive the same state.
     _all_teams = sorted(load_team_situation_onice().get("team", pd.Series(dtype=str)).unique())
-    _tpick = st.selectbox("Team", ["— League view —"] + _all_teams,
-                          index=0, key="teams_drill_pick")
-    if _tpick and _tpick != "— League view —":
-        _render_team_profile(_tpick, season_label, playoffs)
+
+    def _sync_team_drill():
+        v = st.session_state.get("teams_drill_pick")
+        st.session_state["_team_drill"] = None if v in (None, "— League view —") else v
+
+    st.selectbox("Team", ["— League view —"] + _all_teams, index=0,
+                 key="teams_drill_pick", on_change=_sync_team_drill)
+    _drill = st.session_state.get("_team_drill")
+    if _drill and _drill in _all_teams:
+        if st.button("← Back to league view", key="team_back"):
+            st.session_state["_team_drill"] = None
+            st.session_state["teams_drill_pick"] = "— League view —"
+            st.rerun()
+        _render_team_profile(_drill, season_label, playoffs)
         return
 
     if playoffs:
@@ -5595,7 +5606,16 @@ def render_teams() -> None:
                "Against-rates (Suppress events, CA/60 / xGA/60 / GA/60, PK): "
                "lowest = #1.")
     _sort_hint()
-    _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
+    st.caption("**Click a team's row** to drill into it.")
+    _tev = _show_df(disp.style.format(fmt, na_rep="—"), width="stretch",
+                    hide_index=True, on_select="rerun", selection_mode="single-row",
+                    key="teams_tbl_sel")
+    _trows = getattr(getattr(_tev, "selection", None), "rows", None)
+    if _trows:
+        _clicked = disp.iloc[_trows[0]]["Team"]
+        if pd.notna(_clicked):
+            st.session_state["_team_drill"] = str(_clicked)
+            st.rerun()
 
     zwin_label = "4-year pool (2022-26)" if zwin == "4y_pool" else "2-year pool (2024-26)"
     cap = (f"{len(disp)} teams · {season_label} · sorted by NFI% (CNFI+MNFI share) "
