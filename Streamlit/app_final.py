@@ -5563,10 +5563,12 @@ def render_teams() -> None:
         "Net Front Impact": ["NFI%", "Attack events", "Suppress events"],
         "Zone Impact": list(zcols),
     }
+    # Default = Quality Games only (mirrors the player side); tap other families
+    # on/off. Empty selection shows just the identity columns.
+    st.session_state.setdefault("teams_display_seg", ["Quality Games"])
     _tsel = st.pills("**Display a Metric Family**", list(_team_fams),
-                     selection_mode="multi", default=list(_team_fams),
-                     key="teams_display_seg",
-                     help="Tap a family to show its columns; tap again to hide.") or list(_team_fams)
+                     selection_mode="multi", key="teams_display_seg",
+                     help="Tap a family to show its columns; tap again to hide.") or []
     _keep = {"Team", "GP", "TOI"}
     for _f in _tsel:
         _keep.update(_team_fams[_f])
@@ -5711,9 +5713,10 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
                                  "GF/60", "GA/60", "PDO"],
              "Net Front Impact": ["NFI%"],
              "Quality Games": ["xG-QG%", "NFI-QG%"]}
+    st.session_state.setdefault(f"team_prof_fam_{team}", ["Quality Games"])
     _fsel = st.pills("**Display a Metric Family**", list(_fams),
-                     selection_mode="multi", default=list(_fams),
-                     key=f"team_prof_fam_{team}") or list(_fams)
+                     selection_mode="multi",
+                     key=f"team_prof_fam_{team}") or []
     _on = lambda fam: fam in _fsel
 
     _seasons_order = list(trend["Season"])
