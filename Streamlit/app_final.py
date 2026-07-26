@@ -5538,6 +5538,25 @@ def render_teams() -> None:
     # Drop the internal "Sit " prefix for display (plain metric names).
     disp = disp.rename(columns=_TEAM_SIT_DISP)
 
+    # Metric-family filter pills (like the player side): tap a family to show its
+    # columns. Identity columns (Team/GP/TOI) always show. Default = all families.
+    _team_fams = {
+        "Quality Games": ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "NFI-QG%",
+                          "NFI-QG-A%", "NFI-QG-S%"],
+        "xG / Possession": ["CF%", "xGF%", "GF%", "CF/60", "CA/60", "xGF/60",
+                            "xGA/60", "GF/60", "GA/60", "Situation TOI"],
+        "Net Front Impact": ["NFI%", "Attack events", "Suppress events"],
+        "Zone Impact": list(zcols),
+    }
+    _tsel = st.pills("**Display a Metric Family**", list(_team_fams),
+                     selection_mode="multi", default=list(_team_fams),
+                     key="teams_display_seg",
+                     help="Tap a family to show its columns; tap again to hide.") or list(_team_fams)
+    _keep = {"Team", "GP", "TOI"}
+    for _f in _tsel:
+        _keep.update(_team_fams[_f])
+    disp = disp[[c for c in disp.columns if c in _keep]]
+
     fmt = {}
     for c in ("NFI%", "xG-QG%", "NFI-QG%") + tuple(_fa_disp):
         if c in disp:
