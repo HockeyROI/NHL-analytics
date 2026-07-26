@@ -5817,17 +5817,11 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
         st.info("No per-season data for this team in the current scope.")
         return
     _sc_txt = "" if sit == "5v5" else f" · {sit}"
-    view = st.radio("View", ["Show current year data", "Year over year", "Shot map"],
-                    horizontal=True, key=f"team_view_{team}", label_visibility="collapsed")
-
-    if view == "Shot map":
-        _render_shot_chart("team", team, team, team, season_label, playoffs=playoffs)
-        return
-
-    # Metric-family filter for the drill-in (like the player profile). Each group
-    # of charts below only shows if its family is selected.
+    # Metric-family pills FIRST, then the View toggles BELOW them (mirrors the
+    # player side). The pills reorder the year-over-year charts (selected family
+    # floats to top); the current-year bars always show regardless.
     _fams = {"xG": ["xGF%", "CF%", "GF%", "xGF/60", "xGA/60",
-                                 "GF/60", "GA/60", "PDO"],
+                    "GF/60", "GA/60", "PDO"],
              "Net Front Impact": ["NFI%"],
              "Quality Games": ["xG-QG%", "NFI-QG%"]}
     st.session_state.setdefault(f"team_prof_fam_{team}", ["Quality Games"])
@@ -5835,6 +5829,13 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
                      selection_mode="multi",
                      key=f"team_prof_fam_{team}") or []
     _on = lambda fam: fam in _fsel
+
+    view = st.radio("View", ["Show current year data", "Year over year", "Shot map"],
+                    horizontal=True, key=f"team_view_{team}", label_visibility="collapsed")
+
+    if view == "Shot map":
+        _render_shot_chart("team", team, team, team, season_label, playoffs=playoffs)
+        return
 
     _seasons_order = list(trend["Season"])
 
@@ -5929,24 +5930,23 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
     def _pctvals(cols):
         return {c: (float(r[c]) if pd.notna(r.get(c)) else np.nan) for c in cols}
 
-    if _on("xG"):
-        # Percentage shares use the player-side diverging bar vs the 50 baseline
-        # (darker = further from 50); rates and PDO aren't 50-centred, so they
-        # keep the plain rate bars.
-        _qg_bar_chart(_pctvals(["xGF%", "CF%", "GF%"]), r["Season"],
-                      caption="On-ice **shares** vs the **50% baseline** "
-                              "(bar up = above 50%, down = below).",
-                      dl_prefix=f"team-{team}-Shares", title="Shares")
-        _bars("On-ice rates per 60", ["xGF/60", "xGA/60", "GF/60", "GA/60"])
-        _bars("PDO — 100 = neutral luck", ["PDO"], ref=100)
-    if _on("Net Front Impact"):
-        _qg_bar_chart(_pctvals(["NFI%"]), r["Season"],
-                      caption="**Net-front danger share** vs the **50% baseline**.",
-                      dl_prefix=f"team-{team}-NFI", title="NFI%")
-    if _on("Quality Games"):
-        _qg_bar_chart(_pctvals(["xG-QG%", "NFI-QG%"]), r["Season"],
-                      caption="**Quality Games %** vs the **50% baseline**.",
-                      dl_prefix=f"team-{team}-QG", title="Quality Games %")
+    # Current-year bars ALWAYS show (like the player side) — not gated by the
+    # family pills, so the drill-in never collapses to a single chart.
+    # Percentage shares use the player-side diverging bar vs the 50 baseline
+    # (darker = further from 50); rates and PDO aren't 50-centred, so they keep
+    # the plain rate bars.
+    _qg_bar_chart(_pctvals(["xGF%", "CF%", "GF%"]), r["Season"],
+                  caption="On-ice **shares** vs the **50% baseline** "
+                          "(bar up = above 50%, down = below).",
+                  dl_prefix=f"team-{team}-Shares", title="Shares")
+    _bars("On-ice rates per 60", ["xGF/60", "xGA/60", "GF/60", "GA/60"])
+    _bars("PDO — 100 = neutral luck", ["PDO"], ref=100)
+    _qg_bar_chart(_pctvals(["NFI%"]), r["Season"],
+                  caption="**Net-front danger share** vs the **50% baseline**.",
+                  dl_prefix=f"team-{team}-NFI", title="NFI%")
+    _qg_bar_chart(_pctvals(["xG-QG%", "NFI-QG%"]), r["Season"],
+                  caption="**Quality Games %** vs the **50% baseline**.",
+                  dl_prefix=f"team-{team}-QG", title="Quality Games %")
 
 
 def _render_team_landscape(scope_key: str, season_label: str,
