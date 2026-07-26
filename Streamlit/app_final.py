@@ -5445,8 +5445,11 @@ def render_teams() -> None:
         v = st.session_state.get(f"teams_drill_pick_{_gen}")
         st.session_state["_team_drill"] = None if v in (None, "— League view —") else v
 
-    st.selectbox("Team", ["— League view —"] + _all_teams, index=0,
-                 key=f"teams_drill_pick_{_gen}", on_change=_sync_team_drill)
+    # Blank-placeholder search box (first widget in the row), matching the
+    # "Search a player" / "Find a goalie" convention — picking a team drills in.
+    st.selectbox("Search a team", _all_teams, index=None, placeholder="",
+                 key=f"teams_drill_pick_{_gen}", on_change=_sync_team_drill,
+                 help="Pick a team to drill into its profile (or click a row below).")
     _drill = st.session_state.get("_team_drill")
     if _drill and _drill in _all_teams:
         if st.button("← Back to league view", key="team_back"):
