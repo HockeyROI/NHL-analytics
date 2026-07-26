@@ -1644,28 +1644,19 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
         xdom = xdom[::-1]
     if invert_y:
         ydom = ydom[::-1]
-    d["_c"] = d["Team"].map(_tc)
     enc_x = alt.X(f"{xcol}:Q", title=xtitle, scale=alt.Scale(domain=xdom, zero=False))
     enc_y = alt.Y(f"{ycol}:Q", title=ytitle, scale=alt.Scale(domain=ydom, zero=False))
     tip = [alt.Tooltip("Team:N"), alt.Tooltip(f"{xcol}:Q", format=".2f"),
            alt.Tooltip(f"{ycol}:Q", format=".2f")]
-    base = alt.Chart(d)
-    # Colored dot + team-abbrev label ALWAYS render (identifies every team even
-    # if the logo image doesn't); the base64 data-URI logo draws on top. Rendered
-    # DIRECTLY via st.altair_chart — NOT _show_chart, whose brand re-layering wraps
-    # this in a nested layer that Vega fails to draw when an image mark is present
-    # (that was the "charts not showing" bug).
-    dots = base.mark_circle(size=170, opacity=0.85).encode(
-        x=enc_x, y=enc_y, color=alt.Color("_c:N", scale=None, legend=None), tooltip=tip)
-    labels = base.mark_text(dy=-13, fontSize=9, fontWeight="bold").encode(
-        x=enc_x, y=enc_y, text="Team:N",
-        color=alt.Color("_c:N", scale=None, legend=None))
-    logos = base.mark_image(width=28, height=28).encode(
+    logos = alt.Chart(d).mark_image(width=32, height=32).encode(
         x=enc_x, y=enc_y, url="logo:N", tooltip=tip)
-    # Render the SAME way every other chart in this app does — a raw Vega-Lite
-    # spec via st.vega_lite_chart (st.altair_chart wasn't drawing here).
-    st.vega_lite_chart((dots + labels + logos).properties(height=340).to_dict(),
-                       use_container_width=True)
+    spec = logos.properties(height=360).to_dict()
+    # Logos ONLY (no dots/labels). Force Vega's SVG renderer: the default CANVAS
+    # renderer can't rasterize the NHL logo SVGs (viewBox-only, no intrinsic
+    # width/height → drawn 0x0, blank) — the SVG renderer draws them as real
+    # <image> elements. THIS is why the logo scatters showed nothing.
+    spec.setdefault("usermeta", {}).setdefault("embedOptions", {})["renderer"] = "svg"
+    st.vega_lite_chart(spec, use_container_width=True)
 
 
 # Compact team Situation column set shown on the Teams tab (kept tight — the
