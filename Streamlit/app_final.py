@@ -573,8 +573,8 @@ _ABBR_FULL = {
     "SHP": "Shorthanded points",
     "PPG Share%": "Power-play goal share — % of goals scored on the power play (PPG ÷ G)",
     "PPA Share%": "Power-play assist share — % of assists earned on the power play (PP assists ÷ A)",
-    "Sh": "Shots on goal",
-    "Sh%": "Shooting % (goals ÷ shots on goal)",
+    "Shots": "Shots on goal",
+    "Shot%": "Shooting % (goals ÷ shots on goal)",
     "GWG": "Game-winning goals",
     "Reb Created": "Rebounds created",
     "TK": "Takeaways",
@@ -4141,7 +4141,7 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
 # Box-score display columns (a metric family on the Player List, not a tab).
 # Defined here so PLAYER_FAMILY_COLS below can reference it.
 BOX_FAMILY_COLS = ["G", "A1", "A2", "A", "Pts", "PPP", "SHP",
-                   "PPG Share%", "PPA Share%", "Sh", "Sh%", "GWG",
+                   "PPG Share%", "PPA Share%", "Shots", "Shot%", "GWG",
                    "Reb Created", "TK", "GV", "Hits", "Hits Taken", "Blocks",
                    "Min Pen", "Maj Pen", "PIM", "Pen Drawn",
                    "SO G", "SO Att", "SO%", "FO W", "FO L", "FO%"]
@@ -4569,7 +4569,7 @@ _BOX_SUMS = ["GP", "goals", "assists", "A1", "A2", "points", "shots", "ppGoals",
              "faceoffs_won", "faceoffs_lost", "gameWinningGoals"]
 
 # Box-score display columns (a metric family on the Player List, not a tab).
-_BOX_REN = {"goals": "G", "assists": "A", "points": "Pts", "shots": "Sh",
+_BOX_REN = {"goals": "G", "assists": "A", "points": "Pts", "shots": "Shots",
             "ppPoints": "PPP", "shPoints": "SHP", "hits": "Hits",
             "hits_taken": "Hits Taken", "blockedShots": "Blocks",
             "takeaways": "TK", "giveaways": "GV", "minorPenalties": "Min Pen",
@@ -4596,8 +4596,8 @@ def _box_score_scope(scope_key: str, playoffs: bool = False) -> pd.DataFrame:
     sums = {c: (c, "sum") for c in _BOX_SUMS if c in d.columns and c != "GP"}
     agg = d.groupby("player_id").agg(**sums).reset_index()
     agg = agg.rename(columns=_BOX_REN)
-    if {"G", "Sh"}.issubset(agg.columns):
-        agg["Sh%"] = np.where(agg["Sh"] > 0, agg["G"] / agg["Sh"] * 100, np.nan)
+    if {"G", "Shots"}.issubset(agg.columns):
+        agg["Shot%"] = np.where(agg["Shots"] > 0, agg["G"] / agg["Shots"] * 100, np.nan)
     if {"FO W", "FO L"}.issubset(agg.columns):
         _d = agg["FO W"] + agg["FO L"]
         agg["FO%"] = np.where(_d > 0, agg["FO W"] / _d * 100, np.nan)
@@ -5014,7 +5014,7 @@ def render_players() -> None:
     for c in BOX_FAMILY_COLS:
         if c in disp.columns:
             fmt[c] = ((lambda x: "—" if pd.isna(x) else f"{x:.1f}%")
-                      if c in ("Sh%", "FO%", "SO%", "PPG Share%", "PPA Share%")
+                      if c in ("Shot%", "FO%", "SO%", "PPG Share%", "PPA Share%")
                       else (lambda x: "—" if pd.isna(x) else f"{x:,.0f}"))
     for c in ("GP",):
         if c in disp.columns:
@@ -5359,7 +5359,7 @@ _TEAM_BOX_SUMS = ["goalsFor", "goalsAgainst", "shots", "hits", "blockedShots",
                   "takeaways", "giveaways", "emptyNetGoals",
                   "powerPlayGoalsFor", "ppOpportunities", "ppGoalsAgainst",
                   "timesShorthanded", "shGoalsFor", "shGoalsAgainst"]
-_TEAM_BOX_COUNT_REN = {"shots": "Sh", "hits": "Hits", "blockedShots": "Blk",
+_TEAM_BOX_COUNT_REN = {"shots": "Shots", "hits": "Hits", "blockedShots": "Blk",
                        "takeaways": "TK", "giveaways": "GV",
                        "emptyNetGoals": "EN G", "powerPlayGoalsFor": "PPGF",
                        "ppOpportunities": "PP Opp", "ppGoalsAgainst": "PPGA",
@@ -5368,7 +5368,7 @@ _TEAM_BOX_COUNT_REN = {"shots": "Sh", "hits": "Hits", "blockedShots": "Blk",
 # Box Score family = team counting stats; Special Teams family = the PP/PK suite.
 # PP%/PK% are the OFFICIAL success rates; PPG Share% / SHGA Share% are the "share
 # of offense / defense" versions (a diff view the user wanted alongside).
-TEAM_BOX_COUNT_COLS = ["Sh", "Hits", "Blk", "TK", "GV", "EN G"]
+TEAM_BOX_COUNT_COLS = ["Shots", "Hits", "Blk", "TK", "GV", "EN G"]
 TEAM_ST_COLS = ["PP%", "PK%", "PPG Share%", "SHGA Share%",
                 "PPGF", "PP Opp", "PPGA", "Times SH", "SHGF", "SHGA"]
 
