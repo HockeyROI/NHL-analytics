@@ -5657,6 +5657,23 @@ def _team_trend(team: str, bucket_label: str, playoffs: bool = False) -> pd.Data
     sh = np.where(g["FF"] > 0, g["GF"] / g["FF"] * 100.0, np.nan)
     sv = np.where(g["FA"] > 0, (1 - g["GA"] / g["FA"]) * 100.0, np.nan)
     out["PDO"] = sh + sv
+    # NFI% per season (Net Front Impact family) from team_level.
+    tl = load_team_level()
+    if not tl.empty:
+        s = tl[tl["team"] == team].copy()
+        if not s.empty and {"CNFI_FF", "MNFI_FF", "CNFI_FA", "MNFI_FA"}.issubset(s.columns):
+            s["NFI%"] = _team_nfi_share(s) * 100.0
+            out = out.merge(s[["season", "NFI%"]].assign(season=s["season"].astype(int)),
+                            on="season", how="left")
+    # xG-QG% / NFI-QG% per season (Quality Games family) from team_qg.
+    q = load_team_qg()
+    if not q.empty:
+        qc = q[q["team"] == team][["season", "team_xG_QG_pct", "team_NFI_QG_pct"]].copy()
+        qc = qc.rename(columns={"team_xG_QG_pct": "xG-QG%", "team_NFI_QG_pct": "NFI-QG%"})
+        qc["season"] = qc["season"].astype(int)
+        for c in ("xG-QG%", "NFI-QG%"):
+            qc[c] = pd.to_numeric(qc[c], errors="coerce") * 100.0
+        out = out.merge(qc, on="season", how="left")
     return out.sort_values("season").reset_index(drop=True)
 
 
@@ -5684,6 +5701,17 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
         _render_shot_chart("team", team, team, team, season_label, playoffs=playoffs)
         return
 
+    # Metric-family filter for the drill-in (like the player profile). Each group
+    # of charts below only shows if its family is selected.
+    _fams = {"xG / Possession": ["xGF%", "CF%", "GF%", "xGF/60", "xGA/60",
+                                 "GF/60", "GA/60", "PDO"],
+             "Net Front Impact": ["NFI%"],
+             "Quality Games": ["xG-QG%", "NFI-QG%"]}
+    _fsel = st.pills("**Display a Metric Family**", list(_fams),
+                     selection_mode="multi", default=list(_fams),
+                     key=f"team_prof_fam_{team}") or list(_fams)
+    _on = lambda fam: fam in _fsel
+
     _seasons_order = list(trend["Season"])
 
     def _tchart(title, cols, ydomain=None):
@@ -5707,10 +5735,15 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
 
     if view == "Year over year":
         st.caption(f"Year over year{_sc_txt}")
-        _tchart("Shares — xGF%, CF%, GF%", ["xGF%", "CF%", "GF%"])
-        _tchart("On-ice rates per 60 (xGF/60, xGA/60, GF/60, GA/60)",
-                ["xGF/60", "xGA/60", "GF/60", "GA/60"])
-        _tchart("PDO — luck (100 = neutral)", ["PDO"])
+        if _on("xG / Possession"):
+            _tchart("Shares — xGF%, CF%, GF%", ["xGF%", "CF%", "GF%"])
+            _tchart("On-ice rates per 60 (xGF/60, xGA/60, GF/60, GA/60)",
+                    ["xGF/60", "xGA/60", "GF/60", "GA/60"])
+            _tchart("PDO — luck (100 = neutral)", ["PDO"])
+        if _on("Net Front Impact"):
+            _tchart("NFI% — net-front danger share", ["NFI%"])
+        if _on("Quality Games"):
+            _tchart("Quality Games % (xG-QG%, NFI-QG%)", ["xG-QG%", "NFI-QG%"])
         return
 
     # current-year data: bar charts for the selected season (matches the player
@@ -5745,9 +5778,14 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
         _show_chart(layers.properties(height=28 * len(vals) + 40),
                     dl_name=f"team-{team}-{title.split(' ')[0]}")
 
-    _bars("Shares (%) — 50 = even", ["xGF%", "CF%", "GF%"], ref=50, pct=True)
-    _bars("On-ice rates per 60", ["xGF/60", "xGA/60", "GF/60", "GA/60"])
-    _bars("PDO — 100 = neutral luck", ["PDO"], ref=100)
+    if _on("xG / Possession"):
+        _bars("Shares (%) — 50 = even", ["xGF%", "CF%", "GF%"], ref=50, pct=True)
+        _bars("On-ice rates per 60", ["xGF/60", "xGA/60", "GF/60", "GA/60"])
+        _bars("PDO — 100 = neutral luck", ["PDO"], ref=100)
+    if _on("Net Front Impact"):
+        _bars("Net-front danger share (%)", ["NFI%"], ref=50, pct=True)
+    if _on("Quality Games"):
+        _bars("Quality Games % (xG / NFI)", ["xG-QG%", "NFI-QG%"], pct=True)
     st.caption("Per-season history:")
     _hfmt = {c: (lambda x: "—" if pd.isna(x) else f"{x:.1f}%") for c in ("xGF%", "CF%", "GF%")}
     for c in ("xGF/60", "xGA/60", "GF/60", "GA/60", "PDO"):
