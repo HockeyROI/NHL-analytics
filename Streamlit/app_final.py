@@ -5783,7 +5783,7 @@ def _render_team_landscape(scope_key: str, season_label: str,
         _sce("EDGE Top Speed", "EDGE Bursts/60", "Top speed (avg of skaters' maxes, mph)",
              "Speed bursts 20+ / 60", "team-edge-speed",
              "**EDGE skating** — team top speed (average of players' max speeds) "
-             "vs 20+mph bursts per game.")
+             "vs 20+mph bursts per 60.")
 
     # Team goaltending scatters (4-season pooled) — impact vs consistency, the
     # team roll-up of the three goalie-tab plots. One per full-width row.
