@@ -4750,9 +4750,6 @@ def render_players() -> None:
             selection_mode="multi", key="players_display_seg",
             help="Tap a metric group to show its columns (Net Front Impact, "
                  "Zone Impact, Quality Games). Tap again to hide it.") or []
-        if "Zone Impact" not in display_fams and "EDGE" not in display_fams:
-            st.caption("↑ Raw DZ/NZ/OZ Start% values only appear in the table below "
-                       "once **Zone Impact** (or **EDGE**) is tapped on.")
     if "EDGE" in display_fams:
         st.session_state.setdefault("players_edge_scope", "Even Strength")
         st.radio("EDGE OZ% scope", list(_EDGE_OZ_SCOPE_COL.keys()), horizontal=True,
