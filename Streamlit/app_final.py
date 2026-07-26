@@ -1661,7 +1661,7 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
 # team table shows every column at once, no family pills).
 TEAM_SIT_COLS = ["Sit TOI", "Sit CF%", "Sit xGF%", "Sit GF%",
                  "Sit CF/60", "Sit CA/60", "Sit xGF/60", "Sit xGA/60",
-                 "Sit GF/60", "Sit GA/60", "Sit PP xGF+CF/60", "Sit PK xGA+CA/60"]
+                 "Sit GF/60", "Sit GA/60"]
 
 # Display rename for the team table — drop the internal "Sit " prefix so the
 # columns read as plain metric names (the Situation filter already labels the
@@ -1695,7 +1695,7 @@ _SIT_DROP = ["Sit TOI/GP"]
 # family — there is no separate "Situations" family any more).
 _SIT_PLAIN = ["CF/60", "CA/60", "CF%", "FF/60", "FA/60", "FF%",
               "GF/60", "GA/60", "GF%", "iCF/60", "ixG/60", "iG/60", "ixG", "iG",
-              "RelCF%", "RelxGF%", "PP Value", "PK Value"]
+              "RelCF%", "RelxGF%"]
 
 
 def _unify_situation_xg(base: pd.DataFrame) -> pd.DataFrame:
