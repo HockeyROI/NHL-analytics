@@ -1667,7 +1667,7 @@ TEAM_SIT_COLS = ["Sit TOI", "Sit CF%", "Sit xGF%", "Sit GF%",
 # columns read as plain metric names (the Situation filter already labels the
 # scope). PP/PK match the player-side "PP Value"/"PK Value".
 _TEAM_SIT_DISP = {
-    "Sit TOI": "TOI (sit)", "Sit CF%": "CF%", "Sit xGF%": "xGF%", "Sit GF%": "GF%",
+    "Sit TOI": "Situation TOI", "Sit CF%": "CF%", "Sit xGF%": "xGF%", "Sit GF%": "GF%",
     "Sit CF/60": "CF/60", "Sit CA/60": "CA/60", "Sit xGF/60": "xGF/60",
     "Sit xGA/60": "xGA/60", "Sit GF/60": "GF/60", "Sit GA/60": "GA/60",
     "Sit PP xGF+CF/60": "PP Value", "Sit PK xGA+CA/60": "PK Value",
@@ -5562,8 +5562,8 @@ def render_teams() -> None:
     for c in ("PP Value", "PK Value"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
-    if "TOI (sit)" in disp:
-        fmt["TOI (sit)"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
+    if "Situation TOI" in disp:
+        fmt["Situation TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
 
     _sit_ranked = [_TEAM_SIT_DISP[c] for c in TEAM_SIT_COLS
                    if _TEAM_SIT_DISP[c] in disp.columns and c != "Sit TOI"]
