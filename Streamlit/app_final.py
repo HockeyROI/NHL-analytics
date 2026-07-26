@@ -5764,12 +5764,29 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
         return
 
     # current-year data: bar charts for the selected season (matches the player
-    # side). SEASON_KEY returns a season-code STRING ("20242025") but trend.season
-    # is int — cast, or the match silently fails and it shows the wrong year.
-    _sk = SEASON_KEY.get(season_label)
+    # side, where the per-season table sits ON TOP and clicking a row moves the
+    # bars). Render the history table first so its row-click is known before the
+    # bars draw.
+    st.caption("Per-season history — click a season to move the bars:")
+    _hfmt = {c: (lambda x: "—" if pd.isna(x) else f"{x:.1f}%") for c in ("xGF%", "CF%", "GF%")}
+    for c in ("xGF/60", "xGA/60", "GF/60", "GA/60", "PDO"):
+        _hfmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    _hev = _show_df(trend[["Season"] + _TEAM_TREND_COLS].style.format(_hfmt, na_rep="—"),
+                    width="stretch", hide_index=True, on_select="rerun",
+                    selection_mode="single-row", key=f"team_hist_{team}")
+    _hsel = getattr(getattr(_hev, "selection", None), "rows", None)
+
+    # Which season drives the bars: a clicked history row wins; else the global
+    # Season filter (SEASON_KEY returns a code STRING "20242025" but trend.season
+    # is int — cast, or the match silently fails and shows the wrong year); else
+    # the latest season.
     row = pd.DataFrame()
-    if _sk and str(_sk).isdigit():
-        row = trend[trend["season"] == int(_sk)]
+    if _hsel and 0 <= _hsel[0] < len(trend):
+        row = trend.iloc[[_hsel[0]]]
+    if row.empty:
+        _sk = SEASON_KEY.get(season_label)
+        if _sk and str(_sk).isdigit():
+            row = trend[trend["season"] == int(_sk)]
     if row.empty:
         row = trend.iloc[[-1]]
     r = row.iloc[0]
@@ -5803,12 +5820,6 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
         _bars("Net-front danger share (%)", ["NFI%"], ref=50, pct=True)
     if _on("Quality Games"):
         _bars("Quality Games % (xG / NFI)", ["xG-QG%", "NFI-QG%"], pct=True)
-    st.caption("Per-season history:")
-    _hfmt = {c: (lambda x: "—" if pd.isna(x) else f"{x:.1f}%") for c in ("xGF%", "CF%", "GF%")}
-    for c in ("xGF/60", "xGA/60", "GF/60", "GA/60", "PDO"):
-        _hfmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
-    _show_df(trend[["Season"] + _TEAM_TREND_COLS].style.format(_hfmt, na_rep="—"),
-             width="stretch", hide_index=True)
 
 
 def _render_team_landscape(scope_key: str, season_label: str,
