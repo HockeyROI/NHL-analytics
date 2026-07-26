@@ -5842,6 +5842,17 @@ def _team_trend(team: str, bucket_label: str, playoffs: bool = False) -> pd.Data
         for c in ("xG-QG%", "NFI-QG%"):
             qc[c] = pd.to_numeric(qc[c], errors="coerce") * 100.0
         out = out.merge(qc, on="season", how="left")
+    # QG For/Against splits per season (for the current-year QG bar).
+    fa = load_qg_fa_team()
+    if not fa.empty:
+        _faren = {"team_xG_QG_F_pct": "xG-QG-F%", "team_xG_QG_A_pct": "xG-QG-A%",
+                  "team_NFI_QG_F_pct": "NFI-QG-F%", "team_NFI_QG_A_pct": "NFI-QG-A%"}
+        fc = fa[fa["team_abbrev"] == team][["season"] + list(_faren)].copy()
+        fc = fc.rename(columns=_faren)
+        fc["season"] = fc["season"].astype(int)
+        for c in _faren.values():
+            fc[c] = pd.to_numeric(fc[c], errors="coerce") * 100.0
+        out = out.merge(fc, on="season", how="left")
     # Zone Impact per season (single-season team-zone windows now exist).
     tz = load_team_zone()
     if not tz.empty:
@@ -5925,17 +5936,26 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
         st.caption(f"Year over year{_sc_txt}")
         # Like the player side: ALL line charts show regardless of which family
         # pills are selected — the selected family just floats to the top.
+        # One chart per metric group (like the player side — each on its own
+        # scale, not crammed together), selected family floats to the top.
         _yoy = [
-            ("xG", lambda: _tchart("Shares — xGF%, CF%, GF%",
+            ("Quality Games", lambda: _tchart("Quality Games % (xG-QG%, NFI-QG%)",
+                    ["xG-QG%", "NFI-QG%"])),
+            ("Quality Games", lambda: _tchart(
+                    "xG Quality Games For/Against % (xG-QG-F%, xG-QG-A%)",
+                    ["xG-QG-F%", "xG-QG-A%"])),
+            ("Quality Games", lambda: _tchart(
+                    "NFI Quality Games For/Against % (NFI-QG-F%, NFI-QG-A%)",
+                    ["NFI-QG-F%", "NFI-QG-A%"])),
+            ("xG", lambda: _tchart("On-ice xG per 60 (xGF/60, xGA/60)",
+                    ["xGF/60", "xGA/60"])),
+            ("xG", lambda: _tchart("On-ice goals per 60 (GF/60, GA/60)",
+                    ["GF/60", "GA/60"])),
+            ("xG", lambda: _tchart("On-ice shares (xGF%, CF%, GF%)",
                     ["xGF%", "CF%", "GF%"])),
-            ("xG", lambda: _tchart(
-                    "On-ice rates per 60 (xGF/60, xGA/60, GF/60, GA/60)",
-                    ["xGF/60", "xGA/60", "GF/60", "GA/60"])),
             ("xG", lambda: _tchart("PDO — luck (100 = neutral)", ["PDO"])),
             ("Net Front Impact", lambda: _tchart("NFI% — net-front danger share",
                     ["NFI%"])),
-            ("Quality Games", lambda: _tchart("Quality Games % (xG-QG%, NFI-QG%)",
-                    ["xG-QG%", "NFI-QG%"])),
             ("Zone Impact", lambda: _tchart(
                     "Zone Impact 0–100 (OZI, DZI, NZI, TZI) — 50 = average",
                     ["OZI", "DZI", "NZI", "TZI"], ydomain=[40, 60])),
@@ -5974,45 +5994,18 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
     r = row.iloc[0]
     st.caption(f"{r['Season']}{_sc_txt}")
 
-    def _bars(title, cols, ref=None, pct=False):
-        vals = [(c, float(r[c])) for c in cols if c in row.columns and pd.notna(r[c])]
-        if not vals:
-            return
-        bar_df = pd.DataFrame(vals, columns=["Metric", "Value"])
-        st.caption(title)
-        fmt = ".1f" if pct else ".2f"
-        base = alt.Chart(bar_df).mark_bar().encode(
-            x=alt.X("Value:Q", title=None, scale=alt.Scale(zero=True)),
-            y=alt.Y("Metric:N", sort=cols, title=None),
-            color=alt.Color("Metric:N", legend=None),
-            tooltip=["Metric:N", alt.Tooltip("Value:Q", format=fmt)])
-        layers = base
-        if ref is not None:
-            rule = alt.Chart(pd.DataFrame({"r": [ref]})).mark_rule(
-                color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(x="r:Q")
-            layers = base + rule
-        _show_chart(layers.properties(height=28 * len(vals) + 40),
-                    dl_name=f"team-{team}-{title.split(' ')[0]}")
-
     def _pctvals(cols):
         return {c: (float(r[c]) if pd.notna(r.get(c)) else np.nan) for c in cols}
 
-    # Current-year bars ALWAYS show (like the player side) — not gated by the
-    # family pills, so the drill-in never collapses to a single chart.
-    # Percentage shares use the player-side diverging bar vs the 50 baseline
-    # (darker = further from 50); rates and PDO aren't 50-centred, so they keep
-    # the plain rate bars.
-    _qg_bar_chart(_pctvals(["xGF%", "CF%", "GF%"]), r["Season"],
-                  caption="On-ice **shares** vs the **50% baseline** "
-                          "(bar up = above 50%, down = below).",
-                  dl_prefix=f"team-{team}-Shares", title="Shares")
-    _bars("On-ice rates per 60", ["xGF/60", "xGA/60", "GF/60", "GA/60"])
-    _bars("PDO — 100 = neutral luck", ["PDO"], ref=100)
-    _qg_bar_chart(_pctvals(["NFI%"]), r["Season"],
-                  caption="**Net-front danger share** vs the **50% baseline**.",
-                  dl_prefix=f"team-{team}-NFI", title="NFI%")
-    _qg_bar_chart(_pctvals(["xG-QG%", "NFI-QG%"]), r["Season"],
-                  caption="**Quality Games %** vs the **50% baseline**.",
+    # Current-year bars mirror the player profile EXACTLY: a Quality-Games bar
+    # (Overall + For/Against, xG orange / NFI blue) and a Zone Impact bar, both
+    # on the diverging vs-50 scale. Shares, rates, PDO and NFI% live in the
+    # year-over-year line charts (as on the player side), not as current-year
+    # bars — so there are no plain-coloured rate bars here.
+    _qg_bar_chart(_pctvals(["xG-QG%", "xG-QG-F%", "xG-QG-A%",
+                            "NFI-QG%", "NFI-QG-F%", "NFI-QG-A%"]), r["Season"],
+                  caption="**Quality Games %** vs the **50% baseline** "
+                          "(Overall + For/Against; xG orange, NFI blue).",
                   dl_prefix=f"team-{team}-QG", title="Quality Games %")
     _qg_bar_chart(_pctvals(["OZI", "DZI", "NZI", "TZI"]), r["Season"],
                   caption="**Zone Impact** index vs **50** (league-average team).",
