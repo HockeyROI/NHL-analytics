@@ -5379,12 +5379,16 @@ def load_team_zone() -> pd.DataFrame:
 
 
 def _team_zone_window(key: str) -> str:
-    """Season key → team-zone window. No raw single-season team zone (2024-25 is
-    hit-zoneCode distorted), so single seasons map to their pool: 2024-26 era →
-    2y_2426, 2022-24 era + full pooled → 4y_pool."""
-    if key in ("pooled_2yr", "20242025", "20252026"):
+    """Season key → team-zone window. Single seasons now have their OWN window
+    (the 2024-25 hit-zoneCode corruption is fixed upstream by
+    repair_hit_zonecodes.py, so per-season team zone is trustworthy); the two
+    pools map to their pool windows."""
+    if key == "pooled_2yr":
         return "2y_2426"
-    return "4y_pool"
+    if key == "pooled":
+        return "4y_pool"
+    # single-season code "20242025" → the "2024-25" window
+    return SEASON_DISPLAY.get(key, "4y_pool")
 
 
 def _team_nfi_share(df: pd.DataFrame) -> np.ndarray:
@@ -5601,7 +5605,9 @@ def render_teams() -> None:
     # seasons show their pooled window — no raw single-season team zone (2024-25
     # is hit-distorted). Headers carry the window suffix so the pool is unambiguous.
     zwin = _team_zone_window(key)
-    zsfx = "2yr" if zwin == "2y_2426" else "4yr"
+    # Header suffix: pools keep "2yr"/"4yr"; a single-season window shows the
+    # season itself (e.g. "OZI (2024-25)").
+    zsfx = {"2y_2426": "2yr", "4y_pool": "4yr"}.get(zwin, zwin)
     _zbase = ["OZI", "DZI", "NZI", "TZI"]
     zcols = [f"{m} ({zsfx})" for m in _zbase]
     tz = load_team_zone()
@@ -5740,12 +5746,14 @@ def render_teams() -> None:
             st.session_state["_team_drill"] = str(_clicked)
             st.rerun()
 
-    zwin_label = "4-year pool (2022-26)" if zwin == "4y_pool" else "2-year pool (2024-26)"
+    zwin_label = {"4y_pool": "4-year pool (2022-26)",
+                  "2y_2426": "2-year pool (2024-26)"}.get(zwin, f"the {zwin} season")
+    _zextra = ("" if zwin in ("4y_pool", "2y_2426")
+               else " (single-season team zone, with the 2024-25 hit-zoneCode "
+                    "artifact corrected)")
     cap = (f"{len(disp)} teams · {season_label} · sorted by NFI% (CNFI+MNFI share) "
            f"descending · Zone Impact (OZI/DZI/NZI/TZI, 0–100 index where 50 = the "
-           f"average team) is TOI-weighted, shown as the {zwin_label}; single seasons "
-           f"display their pooled window (2022-24 → 4yr, 2024-26 → 2yr) since "
-           f"single-season team zone isn't published.")
+           f"average team) is TOI-weighted, shown for {zwin_label}{_zextra}.")
     st.caption(cap)
 
     # League scatter landscape.

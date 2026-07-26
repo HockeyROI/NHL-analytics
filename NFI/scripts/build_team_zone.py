@@ -44,6 +44,13 @@ WINDOWS = {
                 "seasons": ["20222023", "20232024", "20242025", "20252026"]},
     "2y_2426": {"scope": "2yr",
                 "seasons": ["20242025", "20252026"]},
+    # Per-season windows (2024-25 hit-zoneCode corruption fixed upstream by
+    # repair_hit_zonecodes.py, so single seasons are now trustworthy). The
+    # window name matches the season-display label used in the app.
+    "2022-23": {"scope": "2022-23", "seasons": ["20222023"]},
+    "2023-24": {"scope": "2023-24", "seasons": ["20232024"]},
+    "2024-25": {"scope": "2024-25", "seasons": ["20242025"]},
+    "2025-26": {"scope": "2025-26", "seasons": ["20252026"]},
 }
 
 
