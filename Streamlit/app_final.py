@@ -1650,14 +1650,20 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
     tip = [alt.Tooltip("Team:N"), alt.Tooltip(f"{xcol}:Q", format=".2f"),
            alt.Tooltip(f"{ycol}:Q", format=".2f")]
     base = alt.Chart(d)
-    # Colored dot (with hover tooltip) always renders — the scatter is never
-    # blank even if a logo image is unavailable; the base64 data-URI logo draws
-    # on top and identifies the team.
-    dots = base.mark_circle(size=180, opacity=0.85).encode(
+    # Colored dot + team-abbrev label ALWAYS render (identifies every team even
+    # if the logo image doesn't); the base64 data-URI logo draws on top. Rendered
+    # DIRECTLY via st.altair_chart — NOT _show_chart, whose brand re-layering wraps
+    # this in a nested layer that Vega fails to draw when an image mark is present
+    # (that was the "charts not showing" bug).
+    dots = base.mark_circle(size=170, opacity=0.85).encode(
         x=enc_x, y=enc_y, color=alt.Color("_c:N", scale=None, legend=None), tooltip=tip)
-    logos = base.mark_image(width=30, height=30).encode(
+    labels = base.mark_text(dy=-13, fontSize=9, fontWeight="bold").encode(
+        x=enc_x, y=enc_y, text="Team:N",
+        color=alt.Color("_c:N", scale=None, legend=None))
+    logos = base.mark_image(width=28, height=28).encode(
         x=enc_x, y=enc_y, url="logo:N", tooltip=tip)
-    _show_chart(dots + logos, dl_name=dl_name, keep_tooltip=True)
+    st.altair_chart((dots + labels + logos).properties(height=340),
+                    use_container_width=True)
 
 
 # Compact team Situation column set shown on the Teams tab (kept tight — the
