@@ -5289,6 +5289,70 @@ def _team_attack_suppress(key: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def load_team_box_score() -> pd.DataFrame:
+    """Team box-score + special-teams totals from Data/team_box_score.csv (built
+    by NFI/scripts/build_team_box_score.py). These are the league's OWN team
+    totals, so a mid-season trade doesn't smear a player line across a pseudo-
+    team the way aggregating the skater box would."""
+    fp = REPO_ROOT / "Data" / "team_box_score.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(fp, dtype={"season": str})
+    df["team"] = df["team"].replace({"ARI": "UTA"})
+    return df
+
+
+# Team box-score display: counting stats + special teams. Raw counts sum across
+# pooled scopes; the %s / shares are recomputed from the sums (ratio of sums).
+_TEAM_BOX_SUMS = ["goalsFor", "goalsAgainst", "shots", "hits", "blockedShots",
+                  "takeaways", "giveaways", "emptyNetGoals",
+                  "powerPlayGoalsFor", "ppOpportunities", "ppGoalsAgainst",
+                  "timesShorthanded", "shGoalsFor", "shGoalsAgainst"]
+_TEAM_BOX_COUNT_REN = {"shots": "Sh", "hits": "Hits", "blockedShots": "Blk",
+                       "takeaways": "TK", "giveaways": "GV",
+                       "emptyNetGoals": "EN G", "powerPlayGoalsFor": "PPGF",
+                       "ppOpportunities": "PP Opp", "ppGoalsAgainst": "PPGA",
+                       "timesShorthanded": "Times SH", "shGoalsFor": "SHGF",
+                       "shGoalsAgainst": "SHGA"}
+# Box Score family = team counting stats; Special Teams family = the PP/PK suite.
+# PP%/PK% are the OFFICIAL success rates; PPG Share% / SHGA Share% are the "share
+# of offense / defense" versions (a diff view the user wanted alongside).
+TEAM_BOX_COUNT_COLS = ["Sh", "Hits", "Blk", "TK", "GV", "EN G"]
+TEAM_ST_COLS = ["PP%", "PK%", "PPG Share%", "SHGA Share%",
+                "PPGF", "PP Opp", "PPGA", "Times SH", "SHGF", "SHGA"]
+
+
+def _team_box_frame(key: str) -> pd.DataFrame:
+    """Per-team box-score + special-teams columns for a scope. key: 'pooled'
+    (4yr 2022-26), 'pooled_2yr' (2024-26), or a season string. Regular season
+    only (the league table's scope); raw counts summed, %s recomputed from sums."""
+    d = load_team_box_score()
+    if d.empty:
+        return pd.DataFrame()
+    d = d[d["game_type"] == "regular"]
+    if key == "pooled":
+        d = d[d["season"].isin(POOLED_SEASONS)]
+    elif key == "pooled_2yr":
+        d = d[d["season"].isin(POOLED_2YR_SEASONS)]
+    else:
+        d = d[d["season"] == key]
+    if d.empty:
+        return pd.DataFrame()
+    sums = {c: (c, "sum") for c in _TEAM_BOX_SUMS if c in d.columns}
+    g = d.groupby("team").agg(**sums).reset_index()
+    ppo, tsh = g["ppOpportunities"], g["timesShorthanded"]
+    g["PP%"] = np.where(ppo > 0, g["powerPlayGoalsFor"] / ppo * 100, np.nan)
+    g["PK%"] = np.where(tsh > 0, (1 - g["ppGoalsAgainst"] / tsh) * 100, np.nan)
+    g["PPG Share%"] = np.where(g["goalsFor"] > 0,
+                               g["powerPlayGoalsFor"] / g["goalsFor"] * 100, np.nan)
+    g["SHGA Share%"] = np.where(g["goalsAgainst"] > 0,
+                                g["ppGoalsAgainst"] / g["goalsAgainst"] * 100, np.nan)
+    g = g.rename(columns=_TEAM_BOX_COUNT_REN)
+    keep = ["team"] + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS) if c in g.columns]
+    return g[keep]
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_team_zone() -> pd.DataFrame:
     """Team Zone Impact (OZI/DZI/NZI/TZI + composite, 0–100 index, 50 = average
     team) per window from NFI/output/team_zone.csv (built by
@@ -5540,6 +5604,12 @@ def render_teams() -> None:
         team = team.merge(tsit[["Team"] + TEAM_SIT_COLS].rename(columns={"Team": "team"}),
                           on="team", how="left")
 
+    # Box Score (counting stats) + Special Teams (PP/PK suite) — official NHL
+    # team totals; raw counts summed for pools, %s recomputed from the sums.
+    tbox = _team_box_frame(key)
+    if not tbox.empty:
+        team = team.merge(tbox, on="team", how="left")
+
     _fa_disp = list(_TEAM_QG_FA.values())   # xG-QG-F%, xG-QG-A%, NFI-QG-A%, NFI-QG-S%
     for c in ["TOI", "xG-QG%", "NFI-QG%", "Attack events",
               "Suppress events"] + zcols + _fa_disp:
@@ -5551,7 +5621,8 @@ def render_teams() -> None:
     cols = (["Team", "GP", "TOI", "NFI%", "Attack events", "Suppress events"]
             + zcols + ["xG-QG%", "xG-QG-F%", "xG-QG-A%",
                        "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%"]
-            + [c for c in TEAM_SIT_COLS if c in team.columns])
+            + [c for c in TEAM_SIT_COLS if c in team.columns]
+            + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS) if c in team.columns])
     disp = team[[c for c in cols if c in team.columns]].copy()
     # Drop the internal "Sit " prefix for display (plain metric names).
     disp = disp.rename(columns=_TEAM_SIT_DISP)
@@ -5565,6 +5636,8 @@ def render_teams() -> None:
                             "xGA/60", "GF/60", "GA/60", "Situation TOI"],
         "Net Front Impact": ["NFI%", "Attack events", "Suppress events"],
         "Zone Impact": list(zcols),
+        "Box Score": list(TEAM_BOX_COUNT_COLS),
+        "Special Teams": list(TEAM_ST_COLS),
     }
     # Default = Quality Games only (mirrors the player side); tap other families
     # on/off. Empty selection shows just the identity columns.
@@ -5600,17 +5673,30 @@ def render_teams() -> None:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
     if "Situation TOI" in disp:
         fmt["Situation TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
+    # Box Score counting stats + special-teams raw counts: integers.
+    for c in TEAM_BOX_COUNT_COLS + ["PPGF", "PP Opp", "PPGA", "Times SH",
+                                    "SHGF", "SHGA"]:
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
+    # Special-teams percentages: one decimal + % sign.
+    for c in ("PP%", "PK%", "PPG Share%", "SHGA Share%"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
 
     _sit_ranked = [_TEAM_SIT_DISP[c] for c in TEAM_SIT_COLS
                    if _TEAM_SIT_DISP[c] in disp.columns and c != "Sit TOI"]
     _team_rank = (["NFI%", "Attack events", "Suppress events"] + zcols
-                  + ["xG-QG%", "NFI-QG%"] + _sit_ranked)
-    # against-rates rank lowest-first (fewer allowed = better).
-    _team_lower = {"Suppress events", "CA/60", "xGA/60", "GA/60"}
+                  + ["xG-QG%", "NFI-QG%"] + _sit_ranked
+                  + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS) if c in disp.columns])
+    # against-rates rank lowest-first (fewer allowed = better). For the box/ST
+    # suite: giveaways, PP goals allowed, times shorthanded, SH goals allowed,
+    # and the SH-against share are all "less = better".
+    _team_lower = {"Suppress events", "CA/60", "xGA/60", "GA/60",
+                   "GV", "PPGA", "Times SH", "SHGA", "SHGA Share%"}
     _apply_ranks(disp, fmt, disp, _team_rank, lower_better=_team_lower)
     st.caption("Each metric shows its **(rank)** across all 32 teams. "
-               "Against-rates (Suppress events, CA/60 / xGA/60 / GA/60, PK): "
-               "lowest = #1.")
+               "Against-rates rank lowest = #1 (Suppress events, CA/60 / xGA/60 / "
+               "GA/60, GV, PPGA, Times SH, SHGA, SHGA Share%). PP%/PK% higher = #1.")
     _sort_hint()
     st.caption("**Click a team's row** to drill into it.")
     _tev = _show_df(disp.style.format(fmt, na_rep="—"), width="stretch",
