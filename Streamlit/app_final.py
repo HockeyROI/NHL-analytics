@@ -563,6 +563,47 @@ _ABBR_FULL = {
     "RelxGF%": "Relative xGF % — on-ice xGF% minus the team's xGF% with the player OFF (Situation filter; season-aggregate on/off)",
     "PDO": "PDO (luck) — on-ice SH% + SV% (SOG-based), Situation filter; ~100 = neutral, higher = running hot. Raw, NOT xG-adjusted (that's PDOxG).",
     "PDOxG": "PDOxG — PDO net of expected: (SH% − xSH%) + (SV% − xSV%) from the xG model, SOG-based. 0-centered; + = finishing/goaltending above xG.",
+    # Box Score — skater counting stats (all situations)
+    "G": "Goals",
+    "A": "Assists",
+    "A1": "Primary (first) assists",
+    "A2": "Secondary assists",
+    "Pts": "Points (goals + assists)",
+    "PPP": "Power-play points",
+    "SHP": "Shorthanded points",
+    "PPG Share%": "Power-play goal share — % of goals scored on the power play (PPG ÷ G)",
+    "PPA Share%": "Power-play assist share — % of assists earned on the power play (PP assists ÷ A)",
+    "Sh": "Shots on goal",
+    "Sh%": "Shooting % (goals ÷ shots on goal)",
+    "GWG": "Game-winning goals",
+    "Reb Created": "Rebounds created",
+    "TK": "Takeaways",
+    "GV": "Giveaways",
+    "Hits": "Hits given",
+    "Hits Taken": "Hits taken (received)",
+    "Blocks": "Blocked shots",
+    "Blk": "Blocked shots",
+    "Min Pen": "Minor penalties",
+    "Maj Pen": "Major penalties",
+    "PIM": "Penalty minutes",
+    "Pen Drawn": "Penalties drawn",
+    "SO G": "Shootout goals",
+    "SO Att": "Shootout attempts",
+    "SO%": "Shootout shooting % (shootout goals ÷ attempts)",
+    "FO W": "Faceoffs won",
+    "FO L": "Faceoffs lost",
+    "FO%": "Faceoff win % (won ÷ total)",
+    # Team Box Score + Special Teams (official NHL team totals)
+    "EN G": "Empty-net goals for",
+    "PP%": "Power-play % — power-play goals ÷ power-play opportunities (official)",
+    "PK%": "Penalty-kill % — 1 − (power-play goals against ÷ times shorthanded) (official)",
+    "SHGA Share%": "Shorthanded-against share — % of goals allowed that came while shorthanded (PPGA ÷ GA)",
+    "PPGF": "Power-play goals for",
+    "PP Opp": "Power-play opportunities",
+    "PPGA": "Power-play goals against — goals allowed while shorthanded (on the PK)",
+    "Times SH": "Times shorthanded (penalty kills faced)",
+    "SHGF": "Shorthanded goals for — goals scored while shorthanded (on the PK)",
+    "SHGA": "Shorthanded goals against — goals allowed while on the power play",
 }
 
 
@@ -4100,7 +4141,7 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
 # Box-score display columns (a metric family on the Player List, not a tab).
 # Defined here so PLAYER_FAMILY_COLS below can reference it.
 BOX_FAMILY_COLS = ["G", "A1", "A2", "A", "Pts", "PPP", "SHP",
-                   "PPG Share%", "SHG Share%", "Sh", "Sh%", "GWG",
+                   "PPG Share%", "PPA Share%", "Sh", "Sh%", "GWG",
                    "Reb Created", "TK", "GV", "Hits", "Hits Taken", "Blocks",
                    "Min Pen", "Maj Pen", "PIM", "Pen Drawn",
                    "SO G", "SO Att", "SO%", "FO W", "FO L", "FO%"]
@@ -4521,7 +4562,7 @@ def load_box_score() -> pd.DataFrame:
 
 # Box-score count columns (summed across pooled scopes); rates recomputed after.
 _BOX_SUMS = ["GP", "goals", "assists", "A1", "A2", "points", "shots", "ppGoals",
-             "ppPoints", "shGoals", "shPoints", "hits", "hits_taken", "blockedShots",
+             "ppPoints", "shPoints", "hits", "hits_taken", "blockedShots",
              "takeaways", "giveaways", "minorPenalties", "majorPenalties",
              "penaltyMinutes", "penaltiesDrawn", "rebounds_created",
              "shootoutGoals", "shootoutShots",
@@ -4564,12 +4605,13 @@ def _box_score_scope(scope_key: str, playoffs: bool = False) -> pd.DataFrame:
     # Sh%/FO% — so a pooled multi-season SO% is goals ÷ attempts, not a mean.
     if {"SO G", "SO Att"}.issubset(agg.columns):
         agg["SO%"] = np.where(agg["SO Att"] > 0, agg["SO G"] / agg["SO Att"] * 100, np.nan)
-    # Share of a player's goals scored on the PP / while shorthanded (PK) — the
-    # "% of production" view (parallels the team Special Teams shares).
+    # Share of a player's production earned on the power play: goals (PPG ÷ G)
+    # and assists (PP assists ÷ A, where PP assists = PP points − PP goals).
     if {"ppGoals", "G"}.issubset(agg.columns):
         agg["PPG Share%"] = np.where(agg["G"] > 0, agg["ppGoals"] / agg["G"] * 100, np.nan)
-    if {"shGoals", "G"}.issubset(agg.columns):
-        agg["SHG Share%"] = np.where(agg["G"] > 0, agg["shGoals"] / agg["G"] * 100, np.nan)
+    if {"PPP", "ppGoals", "A"}.issubset(agg.columns):
+        _ppa = agg["PPP"] - agg["ppGoals"]
+        agg["PPA Share%"] = np.where(agg["A"] > 0, _ppa / agg["A"] * 100, np.nan)
     keep = ["player_id"] + [c for c in BOX_FAMILY_COLS if c in agg.columns]
     return agg[keep]
 
@@ -4972,7 +5014,7 @@ def render_players() -> None:
     for c in BOX_FAMILY_COLS:
         if c in disp.columns:
             fmt[c] = ((lambda x: "—" if pd.isna(x) else f"{x:.1f}%")
-                      if c in ("Sh%", "FO%", "SO%", "PPG Share%", "SHG Share%")
+                      if c in ("Sh%", "FO%", "SO%", "PPG Share%", "PPA Share%")
                       else (lambda x: "—" if pd.isna(x) else f"{x:,.0f}"))
     for c in ("GP",):
         if c in disp.columns:
@@ -5602,11 +5644,9 @@ def render_teams() -> None:
     # seasons show their pooled window — no raw single-season team zone (2024-25
     # is hit-distorted). Headers carry the window suffix so the pool is unambiguous.
     zwin = _team_zone_window(key)
-    # Header suffix: pools keep "2yr"/"4yr"; a single-season window shows the
-    # season itself (e.g. "OZI (2024-25)").
-    zsfx = {"2y_2426": "2yr", "4y_pool": "4yr"}.get(zwin, zwin)
     _zbase = ["OZI", "DZI", "NZI", "TZI"]
-    zcols = [f"{m} ({zsfx})" for m in _zbase]
+    # Plain zone headers — no window/year suffix (the caption states the window).
+    zcols = list(_zbase)
     tz = load_team_zone()
     if not tz.empty:
         tzw = (tz[tz["window"] == zwin][["team"] + _zbase]
