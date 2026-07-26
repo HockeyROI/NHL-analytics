@@ -1662,8 +1662,10 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
         color=alt.Color("_c:N", scale=None, legend=None))
     logos = base.mark_image(width=28, height=28).encode(
         x=enc_x, y=enc_y, url="logo:N", tooltip=tip)
-    st.altair_chart((dots + labels + logos).properties(height=340),
-                    use_container_width=True)
+    # Render the SAME way every other chart in this app does — a raw Vega-Lite
+    # spec via st.vega_lite_chart (st.altair_chart wasn't drawing here).
+    st.vega_lite_chart((dots + labels + logos).properties(height=340).to_dict(),
+                       use_container_width=True)
 
 
 # Compact team Situation column set shown on the Teams tab (kept tight — the
