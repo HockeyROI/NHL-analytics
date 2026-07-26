@@ -5805,6 +5805,15 @@ def _team_trend(team: str, bucket_label: str, playoffs: bool = False) -> pd.Data
         for c in ("xG-QG%", "NFI-QG%"):
             qc[c] = pd.to_numeric(qc[c], errors="coerce") * 100.0
         out = out.merge(qc, on="season", how="left")
+    # Zone Impact per season (single-season team-zone windows now exist).
+    tz = load_team_zone()
+    if not tz.empty:
+        _inv = {v: k for k, v in SEASON_DISPLAY.items()}   # "2024-25" -> "20242025"
+        zt = tz[(tz["team"] == team) & (tz["window"].isin(_inv))].copy()
+        if not zt.empty:
+            zt["season"] = zt["window"].map(lambda w: int(_inv[w]))
+            out = out.merge(zt[["season", "OZI", "DZI", "NZI", "TZI"]],
+                            on="season", how="left")
     return out.sort_values("season").reset_index(drop=True)
 
 
@@ -5831,7 +5840,8 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
     _fams = {"xG": ["xGF%", "CF%", "GF%", "xGF/60", "xGA/60",
                     "GF/60", "GA/60", "PDO"],
              "Net Front Impact": ["NFI%"],
-             "Quality Games": ["xG-QG%", "NFI-QG%"]}
+             "Quality Games": ["xG-QG%", "NFI-QG%"],
+             "Zone Impact": ["OZI", "DZI", "NZI", "TZI"]}
     st.session_state.setdefault(f"team_prof_fam_{team}", ["Quality Games"])
     _fsel = st.pills("**Display a Metric Family**", list(_fams),
                      selection_mode="multi",
@@ -5881,6 +5891,9 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
                     ["NFI%"])),
             ("Quality Games", lambda: _tchart("Quality Games % (xG-QG%, NFI-QG%)",
                     ["xG-QG%", "NFI-QG%"])),
+            ("Zone Impact", lambda: _tchart(
+                    "Zone Impact 0–100 (OZI, DZI, NZI, TZI) — 50 = average",
+                    ["OZI", "DZI", "NZI", "TZI"], ydomain=[40, 60])),
         ]
         for _fam, _fn in sorted(_yoy, key=lambda it: it[0] not in _fsel):
             _fn()
@@ -5955,6 +5968,10 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
     _qg_bar_chart(_pctvals(["xG-QG%", "NFI-QG%"]), r["Season"],
                   caption="**Quality Games %** vs the **50% baseline**.",
                   dl_prefix=f"team-{team}-QG", title="Quality Games %")
+    _qg_bar_chart(_pctvals(["OZI", "DZI", "NZI", "TZI"]), r["Season"],
+                  caption="**Zone Impact** index vs **50** (league-average team).",
+                  dl_prefix=f"team-{team}-Zone", ydomain=_PROFILE_BAR_YDOM,
+                  title="Zone Impact Index")
 
 
 def _render_team_landscape(scope_key: str, season_label: str,
