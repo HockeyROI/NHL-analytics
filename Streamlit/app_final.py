@@ -5598,9 +5598,6 @@ def render_teams() -> None:
     for c in ("xGF/60", "xGA/60", "CF/60", "CA/60", "GF/60", "GA/60"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
-    for c in ("PP Value", "PK Value"):
-        if c in disp:
-            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "Situation TOI" in disp:
         fmt["Situation TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
 
@@ -5608,8 +5605,8 @@ def render_teams() -> None:
                    if _TEAM_SIT_DISP[c] in disp.columns and c != "Sit TOI"]
     _team_rank = (["NFI%", "Attack events", "Suppress events"] + zcols
                   + ["xG-QG%", "NFI-QG%"] + _sit_ranked)
-    # against-rates + the PK value rank lowest-first (fewer allowed = better).
-    _team_lower = {"Suppress events", "CA/60", "xGA/60", "GA/60", "PK Value"}
+    # against-rates rank lowest-first (fewer allowed = better).
+    _team_lower = {"Suppress events", "CA/60", "xGA/60", "GA/60"}
     _apply_ranks(disp, fmt, disp, _team_rank, lower_better=_team_lower)
     st.caption("Each metric shows its **(rank)** across all 32 teams. "
                "Against-rates (Suppress events, CA/60 / xGA/60 / GA/60, PK): "
