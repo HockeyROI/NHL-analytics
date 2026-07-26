@@ -1547,13 +1547,19 @@ def _team_edge_frame(scope_key: str = "pooled") -> pd.DataFrame:
     e["_gp"] = gp
     e["_burst"] = pd.to_numeric(e["speed_bursts_over_20mph"], errors="coerce")
     e["_spd"] = pd.to_numeric(e["top_skating_speed_mph"], errors="coerce")
+    # Bursts per 60 (matching the player metric): join each player's all-situations
+    # TOI so the team rate is Σbursts ÷ Σtoi × 60, not per game.
+    _toi = _allsit_toi(scope_key)
+    e = e.merge(_toi, on="player_id", how="left") if not _toi.empty else e.assign(allsit_toi_min=np.nan)
+    e["_toi"] = pd.to_numeric(e["allsit_toi_min"], errors="coerce")
     g = e.groupby("team")
     out = pd.DataFrame({"Team": list(g.groups.keys())})
-    wgp = g["_gp"].sum().reindex(out["Team"]).values
     out["EDGE OZ%"] = (g["_oz_time_pct_num"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
     out["EDGE DZ%"] = (g["_dz_time_pct_num"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
     out["EDGE Top Speed"] = g["_spd"].mean().reindex(out["Team"]).values   # avg of maxes
-    out["EDGE Bursts/GP"] = (g["_burst"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
+    _bt = g["_burst"].sum().reindex(out["Team"]).values
+    _tt = g["_toi"].sum().reindex(out["Team"]).values
+    out["EDGE Bursts/60"] = np.where((_tt > 0) & np.isfinite(_tt), _bt / _tt * 60.0, np.nan)
     out["logo"] = out["Team"].map(lambda t: NHL_LOGO.format(t))
     return out
 
@@ -5774,8 +5780,8 @@ def _render_team_landscape(scope_key: str, season_label: str,
         _sce("EDGE OZ%", "EDGE DZ%", "EDGE OZ-time %", "EDGE DZ-time %",
              "team-edge-zone", "**EDGE zone time** — games-weighted share of "
              "time in each zone (NHL tracking).")
-        _sce("EDGE Top Speed", "EDGE Bursts/GP", "Top speed (avg of skaters' maxes, mph)",
-             "Speed bursts 20+ / game", "team-edge-speed",
+        _sce("EDGE Top Speed", "EDGE Bursts/60", "Top speed (avg of skaters' maxes, mph)",
+             "Speed bursts 20+ / 60", "team-edge-speed",
              "**EDGE skating** — team top speed (average of players' max speeds) "
              "vs 20+mph bursts per game.")
 
