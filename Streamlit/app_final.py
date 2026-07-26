@@ -5641,8 +5641,8 @@ def render_teams() -> None:
             + zcols + ["xG-QG%", "xG-QG-F%", "xG-QG-A%",
                        "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%"]
             + [c for c in TEAM_SIT_COLS if c in team.columns]
-            + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS) if c in team.columns]
-            + [c for c in TEAM_EDGE_COLS if c in team.columns])
+            + [c for c in TEAM_EDGE_COLS if c in team.columns]
+            + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS) if c in team.columns])
     disp = team[[c for c in cols if c in team.columns]].copy()
     # Drop the internal "Sit " prefix for display (plain metric names).
     disp = disp.rename(columns=_TEAM_SIT_DISP)
@@ -5656,9 +5656,9 @@ def render_teams() -> None:
                             "xGA/60", "GF/60", "GA/60", "Situation TOI"],
         "Net Front Impact": ["NFI%", "Attack events", "Suppress events"],
         "Zone Impact": list(zcols),
-        "Box Score": list(TEAM_BOX_COUNT_COLS),
-        "Special Teams": list(TEAM_ST_COLS),
         "EDGE": list(TEAM_EDGE_COLS),
+        # Special teams folded into Box Score; Box Score kept last.
+        "Box Score": list(TEAM_BOX_COUNT_COLS) + list(TEAM_ST_COLS),
     }
     # Default = Quality Games only (mirrors the player side); tap other families
     # on/off. Empty selection shows just the identity columns.
