@@ -5854,6 +5854,14 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
 
     _seasons_order = list(trend["Season"])
 
+    def _team_roster_scatters():
+        """This team's roster scatter charts — the same set the player drill-in
+        shows for a player's team (shown in both current-year and YoY views,
+        like the player side)."""
+        _render_team_scatters(pd.DataFrame({"Team": [team]}), season_label,
+                              same_pos=False, cohort="all skaters",
+                              highlight_name=None)
+
     def _tchart(title, cols, ydomain=None):
         """Year-over-year line chart, same style/legend as the player side
         (stroke legend symbols, tightened y)."""
@@ -5894,6 +5902,7 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
         ]
         for _fam, _fn in sorted(_yoy, key=lambda it: it[0] not in _fsel):
             _fn()
+        _team_roster_scatters()
         return
 
     # current-year data: bar charts for the selected season (matches the player
@@ -5969,6 +5978,7 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
                   caption="**Zone Impact** index vs **50** (league-average team).",
                   dl_prefix=f"team-{team}-Zone", ydomain=_PROFILE_BAR_YDOM,
                   title="Zone Impact Index")
+    _team_roster_scatters()
 
 
 def _render_team_landscape(scope_key: str, season_label: str,
