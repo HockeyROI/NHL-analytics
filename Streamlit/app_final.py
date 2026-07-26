@@ -5639,7 +5639,7 @@ def render_teams() -> None:
     _team_fams = {
         "Quality Games": ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "NFI-QG%",
                           "NFI-QG-A%", "NFI-QG-S%"],
-        "xG / Possession": ["CF%", "xGF%", "GF%", "CF/60", "CA/60", "xGF/60",
+        "xG": ["CF%", "xGF%", "GF%", "CF/60", "CA/60", "xGF/60",
                             "xGA/60", "GF/60", "GA/60", "Situation TOI"],
         "Net Front Impact": ["NFI%", "Attack events", "Suppress events"],
         "Zone Impact": list(zcols),
@@ -5802,7 +5802,7 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
 
     # Metric-family filter for the drill-in (like the player profile). Each group
     # of charts below only shows if its family is selected.
-    _fams = {"xG / Possession": ["xGF%", "CF%", "GF%", "xGF/60", "xGA/60",
+    _fams = {"xG": ["xGF%", "CF%", "GF%", "xGF/60", "xGA/60",
                                  "GF/60", "GA/60", "PDO"],
              "Net Front Impact": ["NFI%"],
              "Quality Games": ["xG-QG%", "NFI-QG%"]}
@@ -5838,12 +5838,12 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
         # Like the player side: ALL line charts show regardless of which family
         # pills are selected — the selected family just floats to the top.
         _yoy = [
-            ("xG / Possession", lambda: _tchart("Shares — xGF%, CF%, GF%",
+            ("xG", lambda: _tchart("Shares — xGF%, CF%, GF%",
                     ["xGF%", "CF%", "GF%"])),
-            ("xG / Possession", lambda: _tchart(
+            ("xG", lambda: _tchart(
                     "On-ice rates per 60 (xGF/60, xGA/60, GF/60, GA/60)",
                     ["xGF/60", "xGA/60", "GF/60", "GA/60"])),
-            ("xG / Possession", lambda: _tchart("PDO — luck (100 = neutral)", ["PDO"])),
+            ("xG", lambda: _tchart("PDO — luck (100 = neutral)", ["PDO"])),
             ("Net Front Impact", lambda: _tchart("NFI% — net-front danger share",
                     ["NFI%"])),
             ("Quality Games", lambda: _tchart("Quality Games % (xG-QG%, NFI-QG%)",
@@ -5905,7 +5905,7 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
     def _pctvals(cols):
         return {c: (float(r[c]) if pd.notna(r.get(c)) else np.nan) for c in cols}
 
-    if _on("xG / Possession"):
+    if _on("xG"):
         # Percentage shares use the player-side diverging bar vs the 50 baseline
         # (darker = further from 50); rates and PDO aren't 50-centred, so they
         # keep the plain rate bars.
