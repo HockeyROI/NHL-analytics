@@ -5745,15 +5745,22 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
 
     if view == "Year over year":
         st.caption(f"Year over year{_sc_txt}")
-        if _on("xG / Possession"):
-            _tchart("Shares — xGF%, CF%, GF%", ["xGF%", "CF%", "GF%"])
-            _tchart("On-ice rates per 60 (xGF/60, xGA/60, GF/60, GA/60)",
-                    ["xGF/60", "xGA/60", "GF/60", "GA/60"])
-            _tchart("PDO — luck (100 = neutral)", ["PDO"])
-        if _on("Net Front Impact"):
-            _tchart("NFI% — net-front danger share", ["NFI%"])
-        if _on("Quality Games"):
-            _tchart("Quality Games % (xG-QG%, NFI-QG%)", ["xG-QG%", "NFI-QG%"])
+        # Like the player side: ALL line charts show regardless of which family
+        # pills are selected — the selected family just floats to the top.
+        _yoy = [
+            ("xG / Possession", lambda: _tchart("Shares — xGF%, CF%, GF%",
+                    ["xGF%", "CF%", "GF%"])),
+            ("xG / Possession", lambda: _tchart(
+                    "On-ice rates per 60 (xGF/60, xGA/60, GF/60, GA/60)",
+                    ["xGF/60", "xGA/60", "GF/60", "GA/60"])),
+            ("xG / Possession", lambda: _tchart("PDO — luck (100 = neutral)", ["PDO"])),
+            ("Net Front Impact", lambda: _tchart("NFI% — net-front danger share",
+                    ["NFI%"])),
+            ("Quality Games", lambda: _tchart("Quality Games % (xG-QG%, NFI-QG%)",
+                    ["xG-QG%", "NFI-QG%"])),
+        ]
+        for _fam, _fn in sorted(_yoy, key=lambda it: it[0] not in _fsel):
+            _fn()
         return
 
     # current-year data: bar charts for the selected season (matches the player
