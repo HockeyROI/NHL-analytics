@@ -5812,14 +5812,27 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
         _show_chart(layers.properties(height=28 * len(vals) + 40),
                     dl_name=f"team-{team}-{title.split(' ')[0]}")
 
+    def _pctvals(cols):
+        return {c: (float(r[c]) if pd.notna(r.get(c)) else np.nan) for c in cols}
+
     if _on("xG / Possession"):
-        _bars("Shares (%) — 50 = even", ["xGF%", "CF%", "GF%"], ref=50, pct=True)
+        # Percentage shares use the player-side diverging bar vs the 50 baseline
+        # (darker = further from 50); rates and PDO aren't 50-centred, so they
+        # keep the plain rate bars.
+        _qg_bar_chart(_pctvals(["xGF%", "CF%", "GF%"]), r["Season"],
+                      caption="On-ice **shares** vs the **50% baseline** "
+                              "(bar up = above 50%, down = below).",
+                      dl_prefix=f"team-{team}-Shares", title="Shares")
         _bars("On-ice rates per 60", ["xGF/60", "xGA/60", "GF/60", "GA/60"])
         _bars("PDO — 100 = neutral luck", ["PDO"], ref=100)
     if _on("Net Front Impact"):
-        _bars("Net-front danger share (%)", ["NFI%"], ref=50, pct=True)
+        _qg_bar_chart(_pctvals(["NFI%"]), r["Season"],
+                      caption="**Net-front danger share** vs the **50% baseline**.",
+                      dl_prefix=f"team-{team}-NFI", title="NFI%")
     if _on("Quality Games"):
-        _bars("Quality Games % (xG / NFI)", ["xG-QG%", "NFI-QG%"], pct=True)
+        _qg_bar_chart(_pctvals(["xG-QG%", "NFI-QG%"]), r["Season"],
+                      caption="**Quality Games %** vs the **50% baseline**.",
+                      dl_prefix=f"team-{team}-QG", title="Quality Games %")
 
 
 def _render_team_landscape(scope_key: str, season_label: str,
