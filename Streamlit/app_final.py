@@ -1462,6 +1462,23 @@ def _team_situation_metrics(scope_key: str, bucket_label: str,
 NHL_LOGO = "https://assets.nhle.com/logos/nhl/svg/{}_light.svg"
 
 
+@st.cache_data(show_spinner=False, ttl=86400)
+def _team_logos() -> dict:
+    """team abbrev -> base64 data-URI SVG logo. Data URIs render reliably in the
+    chart's canvas (no external fetch / CORS), unlike a remote URL. Committed at
+    Streamlit/team_logos.json (see the fetch in git history)."""
+    import json
+    fp = APP_DIR / "team_logos.json" if False else REPO_ROOT / "Streamlit" / "team_logos.json"
+    try:
+        return json.loads(fp.read_text())
+    except Exception:
+        return {}
+
+
+def _team_logo_uri(team: str) -> str:
+    return _team_logos().get(str(team), NHL_LOGO.format(team))
+
+
 def _team_landscape_frame(scope_key: str, bucket_label: str,
                           playoffs: bool = False) -> pd.DataFrame:
     """Team-level frame for the Teams-tab scatter landscape: per-60 rates, the
@@ -1499,7 +1516,7 @@ def _team_landscape_frame(scope_key: str, bucket_label: str,
         + np.where(g["FA"] > 0, (1 - g["xGA"] / g["FA"]) * 100.0, np.nan)
     out["PDOxG"] = out["PDO"] - exp
     out["xG%"] = out["xGF%"]   # alias to match the player scatter column name
-    out["logo"] = out["Team"].map(lambda t: NHL_LOGO.format(t))
+    out["logo"] = out["Team"].map(_team_logo_uri)
     # Zone tilt (OZI/DZI) from the pooled team-zone data (window-agnostic here).
     tz = load_team_zone()
     if not tz.empty:
@@ -1543,7 +1560,7 @@ def _team_edge_frame(scope_key: str = "pooled") -> pd.DataFrame:
     _bt = g["_burst"].sum().reindex(out["Team"]).values
     _tt = g["_toi"].sum().reindex(out["Team"]).values
     out["EDGE Bursts/60"] = np.where((_tt > 0) & np.isfinite(_tt), _bt / _tt * 60.0, np.nan)
-    out["logo"] = out["Team"].map(lambda t: NHL_LOGO.format(t))
+    out["logo"] = out["Team"].map(_team_logo_uri)
     return out
 
 
@@ -1599,7 +1616,7 @@ def _team_goalie_frame(scope_key: str = "pooled") -> pd.DataFrame:
     out["QNFG%"] = rate("qn_q", "qn_gp")
     out["QG%"] = rate("qs_q", "qs_gp")
     out["sQS%"] = rate("sq_q", "sq_gp")
-    out["logo"] = out["Team"].map(lambda t: NHL_LOGO.format(t))
+    out["logo"] = out["Team"].map(_team_logo_uri)
     return out
 
 
@@ -1633,15 +1650,14 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
     tip = [alt.Tooltip("Team:N"), alt.Tooltip(f"{xcol}:Q", format=".2f"),
            alt.Tooltip(f"{ycol}:Q", format=".2f")]
     base = alt.Chart(d)
-    # Colored dot + team-abbrev label ALWAYS render (a scatter is never blank
-    # even if a logo fails to load); the logo image sits on top when it loads.
-    dots = base.mark_circle(size=200, opacity=0.85).encode(
+    # Colored dot (with hover tooltip) always renders — the scatter is never
+    # blank even if a logo image is unavailable; the base64 data-URI logo draws
+    # on top and identifies the team.
+    dots = base.mark_circle(size=180, opacity=0.85).encode(
         x=enc_x, y=enc_y, color=alt.Color("_c:N", scale=None, legend=None), tooltip=tip)
-    labels = base.mark_text(dy=-14, fontSize=9, fontWeight="bold").encode(
-        x=enc_x, y=enc_y, text="Team:N", color=alt.Color("_c:N", scale=None, legend=None))
-    logos = base.mark_image(width=28, height=28).encode(
+    logos = base.mark_image(width=30, height=30).encode(
         x=enc_x, y=enc_y, url="logo:N", tooltip=tip)
-    _show_chart(dots + labels + logos, dl_name=dl_name, keep_tooltip=True)
+    _show_chart(dots + logos, dl_name=dl_name, keep_tooltip=True)
 
 
 # Compact team Situation column set shown on the Teams tab (kept tight — the
@@ -1649,6 +1665,16 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
 TEAM_SIT_COLS = ["Sit TOI", "Sit CF%", "Sit xGF%", "Sit GF%",
                  "Sit CF/60", "Sit CA/60", "Sit xGF/60", "Sit xGA/60",
                  "Sit GF/60", "Sit GA/60", "Sit PP xGF+CF/60", "Sit PK xGA+CA/60"]
+
+# Display rename for the team table — drop the internal "Sit " prefix so the
+# columns read as plain metric names (the Situation filter already labels the
+# scope). PP/PK match the player-side "PP Value"/"PK Value".
+_TEAM_SIT_DISP = {
+    "Sit TOI": "TOI (sit)", "Sit CF%": "CF%", "Sit xGF%": "xGF%", "Sit GF%": "GF%",
+    "Sit CF/60": "CF/60", "Sit CA/60": "CA/60", "Sit xGF/60": "xGF/60",
+    "Sit xGA/60": "xGA/60", "Sit GF/60": "GF/60", "Sit GA/60": "GA/60",
+    "Sit PP xGF+CF/60": "PP Value", "Sit PK xGA+CA/60": "PK Value",
+}
 
 
 # The situation-aware values REPLACE the older 5v5-only columns under the plain
@@ -5512,6 +5538,8 @@ def render_teams() -> None:
                        "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%"]
             + [c for c in TEAM_SIT_COLS if c in team.columns])
     disp = team[[c for c in cols if c in team.columns]].copy()
+    # Drop the internal "Sit " prefix for display (plain metric names).
+    disp = disp.rename(columns=_TEAM_SIT_DISP)
 
     fmt = {}
     for c in ("NFI%", "xG-QG%", "NFI-QG%") + tuple(_fa_disp):
@@ -5527,29 +5555,28 @@ def render_teams() -> None:
         fmt["TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     if "GP" in disp:
         fmt["GP"] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
-    # Team Situation columns
-    for c in ("Sit CF%", "Sit xGF%", "Sit GF%"):
+    # Team Situation columns (now plain-named)
+    for c in ("CF%", "xGF%", "GF%"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
-    for c in ("Sit xGF/60", "Sit xGA/60", "Sit CF/60", "Sit CA/60",
-              "Sit GF/60", "Sit GA/60"):
+    for c in ("xGF/60", "xGA/60", "CF/60", "CA/60", "GF/60", "GA/60"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
-    for c in ("Sit PP xGF+CF/60", "Sit PK xGA+CA/60"):
+    for c in ("PP Value", "PK Value"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
-    if "Sit TOI" in disp:
-        fmt["Sit TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
+    if "TOI (sit)" in disp:
+        fmt["TOI (sit)"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
 
+    _sit_ranked = [_TEAM_SIT_DISP[c] for c in TEAM_SIT_COLS
+                   if _TEAM_SIT_DISP[c] in disp.columns and c != "Sit TOI"]
     _team_rank = (["NFI%", "Attack events", "Suppress events"] + zcols
-                  + ["xG-QG%", "NFI-QG%"]
-                  + [c for c in TEAM_SIT_COLS if c in disp.columns and c != "Sit TOI"])
+                  + ["xG-QG%", "NFI-QG%"] + _sit_ranked)
     # against-rates + the PK value rank lowest-first (fewer allowed = better).
-    _team_lower = {"Suppress events", "Sit CA/60", "Sit xGA/60", "Sit GA/60",
-                   "Sit PK xGA+CA/60"}
+    _team_lower = {"Suppress events", "CA/60", "xGA/60", "GA/60", "PK Value"}
     _apply_ranks(disp, fmt, disp, _team_rank, lower_better=_team_lower)
     st.caption("Each metric shows its **(rank)** across all 32 teams. "
-               "Against-rates (Suppress events, Sit CA/60 / xGA/60 / GA/60, PK): "
+               "Against-rates (Suppress events, CA/60 / xGA/60 / GA/60, PK): "
                "lowest = #1.")
     _sort_hint()
     _show_df(disp.style.format(fmt, na_rep="—"), width="stretch", hide_index=True)
