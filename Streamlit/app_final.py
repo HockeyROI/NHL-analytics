@@ -1530,13 +1530,19 @@ def _team_edge_frame(scope_key: str = "pooled") -> pd.DataFrame:
     e["_gp"] = gp
     e["_burst"] = pd.to_numeric(e["speed_bursts_over_20mph"], errors="coerce")
     e["_spd"] = pd.to_numeric(e["top_skating_speed_mph"], errors="coerce")
+    # Bursts per 60 (matching the player metric): join each player's
+    # all-situations TOI so the team rate is Σbursts ÷ Σtoi × 60, not per game.
+    toi = _allsit_toi(scope_key)
+    e = e.merge(toi, on="player_id", how="left") if not toi.empty else e.assign(allsit_toi_min=np.nan)
+    e["_toi"] = pd.to_numeric(e["allsit_toi_min"], errors="coerce")
     g = e.groupby("team")
     out = pd.DataFrame({"Team": list(g.groups.keys())})
-    wgp = g["_gp"].sum().reindex(out["Team"]).values
     out["EDGE OZ%"] = (g["_oz_time_pct_num"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
     out["EDGE DZ%"] = (g["_dz_time_pct_num"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
     out["EDGE Top Speed"] = g["_spd"].mean().reindex(out["Team"]).values   # avg of maxes
-    out["EDGE Bursts/GP"] = (g["_burst"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
+    _bt = g["_burst"].sum().reindex(out["Team"]).values
+    _tt = g["_toi"].sum().reindex(out["Team"]).values
+    out["EDGE Bursts/60"] = np.where((_tt > 0) & np.isfinite(_tt), _bt / _tt * 60.0, np.nan)
     out["logo"] = out["Team"].map(lambda t: NHL_LOGO.format(t))
     return out
 
@@ -1627,11 +1633,15 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
     tip = [alt.Tooltip("Team:N"), alt.Tooltip(f"{xcol}:Q", format=".2f"),
            alt.Tooltip(f"{ycol}:Q", format=".2f")]
     base = alt.Chart(d)
-    dots = base.mark_circle(size=120, opacity=0.9).encode(
+    # Colored dot + team-abbrev label ALWAYS render (a scatter is never blank
+    # even if a logo fails to load); the logo image sits on top when it loads.
+    dots = base.mark_circle(size=200, opacity=0.85).encode(
         x=enc_x, y=enc_y, color=alt.Color("_c:N", scale=None, legend=None), tooltip=tip)
-    logos = base.mark_image(width=26, height=26).encode(
+    labels = base.mark_text(dy=-14, fontSize=9, fontWeight="bold").encode(
+        x=enc_x, y=enc_y, text="Team:N", color=alt.Color("_c:N", scale=None, legend=None))
+    logos = base.mark_image(width=28, height=28).encode(
         x=enc_x, y=enc_y, url="logo:N", tooltip=tip)
-    _show_chart(dots + logos, dl_name=dl_name, keep_tooltip=True)
+    _show_chart(dots + labels + logos, dl_name=dl_name, keep_tooltip=True)
 
 
 # Compact team Situation column set shown on the Teams tab (kept tight — the
@@ -5644,9 +5654,12 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
         return
 
     # current-year data: bar charts for the selected season (matches the player
-    # side, which shows bars here rather than a table).
+    # side). SEASON_KEY returns a season-code STRING ("20242025") but trend.season
+    # is int — cast, or the match silently fails and it shows the wrong year.
     _sk = SEASON_KEY.get(season_label)
-    row = trend[trend["season"] == _sk] if _sk and str(_sk).isdigit() else trend.iloc[[-1]]
+    row = pd.DataFrame()
+    if _sk and str(_sk).isdigit():
+        row = trend[trend["season"] == int(_sk)]
     if row.empty:
         row = trend.iloc[[-1]]
     r = row.iloc[0]
