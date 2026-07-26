@@ -5436,18 +5436,22 @@ def render_teams() -> None:
     # goalie drill-in). The dropdown syncs into a non-widget key so a table
     # row-click can drive the same state.
     _all_teams = sorted(load_team_situation_onice().get("team", pd.Series(dtype=str)).unique())
+    # A generation counter on the widget keys lets "Back" fully reset the picker
+    # AND the table's row selection — otherwise the stale table selection
+    # re-fires on the next run and instantly re-drills (the double-click bug).
+    _gen = st.session_state.get("_team_gen", 0)
 
     def _sync_team_drill():
-        v = st.session_state.get("teams_drill_pick")
+        v = st.session_state.get(f"teams_drill_pick_{_gen}")
         st.session_state["_team_drill"] = None if v in (None, "— League view —") else v
 
     st.selectbox("Team", ["— League view —"] + _all_teams, index=0,
-                 key="teams_drill_pick", on_change=_sync_team_drill)
+                 key=f"teams_drill_pick_{_gen}", on_change=_sync_team_drill)
     _drill = st.session_state.get("_team_drill")
     if _drill and _drill in _all_teams:
         if st.button("← Back to league view", key="team_back"):
             st.session_state["_team_drill"] = None
-            st.session_state["teams_drill_pick"] = "— League view —"
+            st.session_state["_team_gen"] = _gen + 1   # fresh picker + table
             st.rerun()
         _render_team_profile(_drill, season_label, playoffs)
         return
@@ -5609,7 +5613,7 @@ def render_teams() -> None:
     st.caption("**Click a team's row** to drill into it.")
     _tev = _show_df(disp.style.format(fmt, na_rep="—"), width="stretch",
                     hide_index=True, on_select="rerun", selection_mode="single-row",
-                    key="teams_tbl_sel")
+                    key=f"teams_tbl_sel_{_gen}")
     _trows = getattr(getattr(_tev, "selection", None), "rows", None)
     if _trows:
         _clicked = disp.iloc[_trows[0]]["Team"]
