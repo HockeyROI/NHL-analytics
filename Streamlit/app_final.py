@@ -1623,20 +1623,20 @@ def _team_goalie_frame(scope_key: str = "pooled") -> pd.DataFrame:
 def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
                        ytitle: str, dl_name: str, caption: str,
                        invert_y: bool = False, invert_x: bool = False) -> None:
-    """Scatter with each team drawn as its LOGO (Altair mark_image, NHL CDN)
-    instead of a dot. invert_x/invert_y flip an axis so 'better' is always
-    up/right (e.g. xGA/60 — fewer is better — gets a reversed axis). A faint
-    team-colored point sits under each logo so a team is still identifiable if a
-    logo fails to load, and it carries the hover tooltip."""
+    """Team scatter, rendered the EXACT proven way the player scatters are
+    (colored dots via _show_chart). DIAGNOSTIC baseline: logos are OFF here to
+    confirm charts render on the team side at all; once confirmed, logos come
+    back as PNG data-URIs (which the canvas renderer can draw)."""
     import altair as alt
     try:
         import shot_charts as _sc
         _tc = lambda t: _sc.team_color(t)[0]
     except Exception:
-        _tc = lambda t: "#4C6EF5"   # neutral fallback if the module isn't on path
+        _tc = lambda t: "#4C6EF5"
     d = df.dropna(subset=[xcol, ycol]).copy()
     if d.empty:
         return
+    d["_c"] = d["Team"].map(_tc)
     st.caption(caption)
     xdom = _tight_domain(d[xcol], pad_frac=0.12, min_pad=1e-6)
     ydom = _tight_domain(d[ycol], pad_frac=0.12, min_pad=1e-6)
@@ -1644,19 +1644,13 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
         xdom = xdom[::-1]
     if invert_y:
         ydom = ydom[::-1]
-    enc_x = alt.X(f"{xcol}:Q", title=xtitle, scale=alt.Scale(domain=xdom, zero=False))
-    enc_y = alt.Y(f"{ycol}:Q", title=ytitle, scale=alt.Scale(domain=ydom, zero=False))
-    tip = [alt.Tooltip("Team:N"), alt.Tooltip(f"{xcol}:Q", format=".2f"),
-           alt.Tooltip(f"{ycol}:Q", format=".2f")]
-    logos = alt.Chart(d).mark_image(width=32, height=32).encode(
-        x=enc_x, y=enc_y, url="logo:N", tooltip=tip)
-    spec = logos.properties(height=360).to_dict()
-    # Logos ONLY (no dots/labels). Force Vega's SVG renderer: the default CANVAS
-    # renderer can't rasterize the NHL logo SVGs (viewBox-only, no intrinsic
-    # width/height → drawn 0x0, blank) — the SVG renderer draws them as real
-    # <image> elements. THIS is why the logo scatters showed nothing.
-    spec.setdefault("usermeta", {}).setdefault("embedOptions", {})["renderer"] = "svg"
-    st.vega_lite_chart(spec, use_container_width=True)
+    pts = alt.Chart(d).mark_circle(size=140, opacity=0.9).encode(
+        x=alt.X(f"{xcol}:Q", title=xtitle, scale=alt.Scale(domain=xdom, zero=False)),
+        y=alt.Y(f"{ycol}:Q", title=ytitle, scale=alt.Scale(domain=ydom, zero=False)),
+        color=alt.Color("_c:N", scale=None, legend=None),
+        tooltip=[alt.Tooltip("Team:N"), alt.Tooltip(f"{xcol}:Q", format=".2f"),
+                 alt.Tooltip(f"{ycol}:Q", format=".2f")])
+    _show_chart(pts, dl_name=dl_name, keep_tooltip=True)
 
 
 # Compact team Situation column set shown on the Teams tab (kept tight — the
