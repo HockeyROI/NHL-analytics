@@ -1628,15 +1628,9 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
     confirm charts render on the team side at all; once confirmed, logos come
     back as PNG data-URIs (which the canvas renderer can draw)."""
     import altair as alt
-    try:
-        import shot_charts as _sc
-        _tc = lambda t: _sc.team_color(t)[0]
-    except Exception:
-        _tc = lambda t: "#4C6EF5"
     d = df.dropna(subset=[xcol, ycol]).copy()
     if d.empty:
         return
-    d["_c"] = d["Team"].map(_tc)
     st.caption(caption)
     xdom = _tight_domain(d[xcol], pad_frac=0.12, min_pad=1e-6)
     ydom = _tight_domain(d[ycol], pad_frac=0.12, min_pad=1e-6)
@@ -1644,13 +1638,18 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
         xdom = xdom[::-1]
     if invert_y:
         ydom = ydom[::-1]
-    pts = alt.Chart(d).mark_circle(size=140, opacity=0.9).encode(
+    # EXACT player-league-scatter pattern: fixed dot color in the mark (no
+    # per-team color ENCODING — the earlier `alt.Color(scale=None)` literal-color
+    # encoding is what wasn't rendering) + team label + hover tooltip.
+    base = alt.Chart(d).encode(
         x=alt.X(f"{xcol}:Q", title=xtitle, scale=alt.Scale(domain=xdom, zero=False)),
-        y=alt.Y(f"{ycol}:Q", title=ytitle, scale=alt.Scale(domain=ydom, zero=False)),
-        color=alt.Color("_c:N", scale=None, legend=None),
+        y=alt.Y(f"{ycol}:Q", title=ytitle, scale=alt.Scale(domain=ydom, zero=False)))
+    pts = base.mark_circle(size=110, opacity=0.75, color=PALETTE["blue"]).encode(
         tooltip=[alt.Tooltip("Team:N"), alt.Tooltip(f"{xcol}:Q", format=".2f"),
                  alt.Tooltip(f"{ycol}:Q", format=".2f")])
-    _show_chart(pts, dl_name=dl_name, keep_tooltip=True)
+    labels = base.mark_text(dy=-11, fontSize=9, fontWeight="bold",
+                            color=PALETTE["text"]).encode(text="Team:N")
+    _show_chart(pts + labels, dl_name=dl_name, keep_tooltip=True)
 
 
 # Compact team Situation column set shown on the Teams tab (kept tight — the
@@ -5582,12 +5581,8 @@ def render_teams() -> None:
            f"single-season team zone isn't published.")
     st.caption(cap)
 
-    # NOTE: the league scatter landscape was removed — it wouldn't render on this
-    # tab (charts came up blank even as plain dots) and needs a separate look.
-    # The team table above + the per-team drill-in (selector at the top: trend,
-    # year-over-year, shot map) both work.
-    st.caption("↑ **Drill into a team** (selector at the top) for its per-season "
-               "trend, year-over-year charts, and shot map.")
+    # League scatter landscape.
+    _render_team_landscape(key, season_label, team)
 
 
 _TEAM_TREND_COLS = ["xGF%", "GF%", "CF%", "xGF/60", "xGA/60", "GF/60", "GA/60", "PDO"]
