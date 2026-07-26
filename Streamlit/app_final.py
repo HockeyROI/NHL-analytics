@@ -5582,9 +5582,10 @@ def render_teams() -> None:
            f"single-season team zone isn't published.")
     st.caption(cap)
 
-    # League scatter landscape (the shot map now lives in the per-team drill-in's
-    # view toggle at the top, not a separate section here).
-    _render_team_landscape(key, season_label, team)
+    # NOTE: the league scatter landscape was removed — it wouldn't render on this
+    # tab (charts came up blank even as plain dots) and needs a separate look.
+    # The team table above + the per-team drill-in (selector at the top: trend,
+    # year-over-year, shot map) both work.
     st.caption("↑ **Drill into a team** (selector at the top) for its per-season "
                "trend, year-over-year charts, and shot map.")
 
