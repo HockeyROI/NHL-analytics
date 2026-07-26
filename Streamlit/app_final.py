@@ -4094,7 +4094,8 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
 
 # Box-score display columns (a metric family on the Player List, not a tab).
 # Defined here so PLAYER_FAMILY_COLS below can reference it.
-BOX_FAMILY_COLS = ["G", "A1", "A2", "A", "Pts", "PPP", "SHP", "Sh", "Sh%", "GWG",
+BOX_FAMILY_COLS = ["G", "A1", "A2", "A", "Pts", "PPP", "SHP",
+                   "PPG Share%", "SHG Share%", "Sh", "Sh%", "GWG",
                    "Reb Created", "TK", "GV", "Hits", "Hits Taken", "Blocks",
                    "Min Pen", "Maj Pen", "PIM", "Pen Drawn",
                    "SO G", "SO Att", "SO%", "FO W", "FO L", "FO%"]
@@ -4515,7 +4516,7 @@ def load_box_score() -> pd.DataFrame:
 
 # Box-score count columns (summed across pooled scopes); rates recomputed after.
 _BOX_SUMS = ["GP", "goals", "assists", "A1", "A2", "points", "shots", "ppGoals",
-             "ppPoints", "shPoints", "hits", "hits_taken", "blockedShots",
+             "ppPoints", "shGoals", "shPoints", "hits", "hits_taken", "blockedShots",
              "takeaways", "giveaways", "minorPenalties", "majorPenalties",
              "penaltyMinutes", "penaltiesDrawn", "rebounds_created",
              "shootoutGoals", "shootoutShots",
@@ -4558,6 +4559,12 @@ def _box_score_scope(scope_key: str, playoffs: bool = False) -> pd.DataFrame:
     # Sh%/FO% — so a pooled multi-season SO% is goals ÷ attempts, not a mean.
     if {"SO G", "SO Att"}.issubset(agg.columns):
         agg["SO%"] = np.where(agg["SO Att"] > 0, agg["SO G"] / agg["SO Att"] * 100, np.nan)
+    # Share of a player's goals scored on the PP / while shorthanded (PK) — the
+    # "% of production" view (parallels the team Special Teams shares).
+    if {"ppGoals", "G"}.issubset(agg.columns):
+        agg["PPG Share%"] = np.where(agg["G"] > 0, agg["ppGoals"] / agg["G"] * 100, np.nan)
+    if {"shGoals", "G"}.issubset(agg.columns):
+        agg["SHG Share%"] = np.where(agg["G"] > 0, agg["shGoals"] / agg["G"] * 100, np.nan)
     keep = ["player_id"] + [c for c in BOX_FAMILY_COLS if c in agg.columns]
     return agg[keep]
 
@@ -4963,7 +4970,7 @@ def render_players() -> None:
     for c in BOX_FAMILY_COLS:
         if c in disp.columns:
             fmt[c] = ((lambda x: "—" if pd.isna(x) else f"{x:.1f}%")
-                      if c in ("Sh%", "FO%", "SO%")
+                      if c in ("Sh%", "FO%", "SO%", "PPG Share%", "SHG Share%")
                       else (lambda x: "—" if pd.isna(x) else f"{x:,.0f}"))
     for c in ("GP",):
         if c in disp.columns:
