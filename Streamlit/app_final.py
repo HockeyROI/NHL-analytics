@@ -1516,7 +1516,7 @@ def _team_landscape_frame(scope_key: str, bucket_label: str,
         + np.where(g["FA"] > 0, (1 - g["xGA"] / g["FA"]) * 100.0, np.nan)
     out["PDOxG"] = out["PDO"] - exp
     out["xG%"] = out["xGF%"]   # alias to match the player scatter column name
-    out["logo"] = out["Team"].map(_team_logo_uri)
+    out["logo"] = out["Team"].map(lambda t: NHL_LOGO.format(t))
     # Zone tilt (OZI/DZI) from the pooled team-zone data (window-agnostic here).
     tz = load_team_zone()
     if not tz.empty:
@@ -1547,20 +1547,14 @@ def _team_edge_frame(scope_key: str = "pooled") -> pd.DataFrame:
     e["_gp"] = gp
     e["_burst"] = pd.to_numeric(e["speed_bursts_over_20mph"], errors="coerce")
     e["_spd"] = pd.to_numeric(e["top_skating_speed_mph"], errors="coerce")
-    # Bursts per 60 (matching the player metric): join each player's
-    # all-situations TOI so the team rate is Σbursts ÷ Σtoi × 60, not per game.
-    toi = _allsit_toi(scope_key)
-    e = e.merge(toi, on="player_id", how="left") if not toi.empty else e.assign(allsit_toi_min=np.nan)
-    e["_toi"] = pd.to_numeric(e["allsit_toi_min"], errors="coerce")
     g = e.groupby("team")
     out = pd.DataFrame({"Team": list(g.groups.keys())})
+    wgp = g["_gp"].sum().reindex(out["Team"]).values
     out["EDGE OZ%"] = (g["_oz_time_pct_num"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
     out["EDGE DZ%"] = (g["_dz_time_pct_num"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
     out["EDGE Top Speed"] = g["_spd"].mean().reindex(out["Team"]).values   # avg of maxes
-    _bt = g["_burst"].sum().reindex(out["Team"]).values
-    _tt = g["_toi"].sum().reindex(out["Team"]).values
-    out["EDGE Bursts/60"] = np.where((_tt > 0) & np.isfinite(_tt), _bt / _tt * 60.0, np.nan)
-    out["logo"] = out["Team"].map(_team_logo_uri)
+    out["EDGE Bursts/GP"] = (g["_burst"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
+    out["logo"] = out["Team"].map(lambda t: NHL_LOGO.format(t))
     return out
 
 
@@ -1616,18 +1610,24 @@ def _team_goalie_frame(scope_key: str = "pooled") -> pd.DataFrame:
     out["QNFG%"] = rate("qn_q", "qn_gp")
     out["QG%"] = rate("qs_q", "qs_gp")
     out["sQS%"] = rate("sq_q", "sq_gp")
-    out["logo"] = out["Team"].map(_team_logo_uri)
+    out["logo"] = out["Team"].map(lambda t: NHL_LOGO.format(t))
     return out
 
 
 def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
                        ytitle: str, dl_name: str, caption: str,
                        invert_y: bool = False, invert_x: bool = False) -> None:
-    """Team scatter, rendered the EXACT proven way the player scatters are
-    (colored dots via _show_chart). DIAGNOSTIC baseline: logos are OFF here to
-    confirm charts render on the team side at all; once confirmed, logos come
-    back as PNG data-URIs (which the canvas renderer can draw)."""
+    """Scatter with each team drawn as its LOGO (Altair mark_image, NHL CDN)
+    instead of a dot. invert_x/invert_y flip an axis so 'better' is always
+    up/right (e.g. xGA/60 — fewer is better — gets a reversed axis). A faint
+    team-colored point sits under each logo so a team is still identifiable if a
+    logo fails to load, and it carries the hover tooltip."""
     import altair as alt
+    try:
+        import shot_charts as _sc
+        _tc = lambda t: _sc.team_color(t)[0]
+    except Exception:
+        _tc = lambda t: "#4C6EF5"   # neutral fallback if the module isn't on path
     d = df.dropna(subset=[xcol, ycol]).copy()
     if d.empty:
         return
@@ -1638,18 +1638,17 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
         xdom = xdom[::-1]
     if invert_y:
         ydom = ydom[::-1]
-    # EXACT player-league-scatter pattern: fixed dot color in the mark (no
-    # per-team color ENCODING — the earlier `alt.Color(scale=None)` literal-color
-    # encoding is what wasn't rendering) + team label + hover tooltip.
-    base = alt.Chart(d).encode(
-        x=alt.X(f"{xcol}:Q", title=xtitle, scale=alt.Scale(domain=xdom, zero=False)),
-        y=alt.Y(f"{ycol}:Q", title=ytitle, scale=alt.Scale(domain=ydom, zero=False)))
-    pts = base.mark_circle(size=110, opacity=0.75, color=PALETTE["blue"]).encode(
-        tooltip=[alt.Tooltip("Team:N"), alt.Tooltip(f"{xcol}:Q", format=".2f"),
-                 alt.Tooltip(f"{ycol}:Q", format=".2f")])
-    labels = base.mark_text(dy=-11, fontSize=9, fontWeight="bold",
-                            color=PALETTE["text"]).encode(text="Team:N")
-    _show_chart(pts + labels, dl_name=dl_name, keep_tooltip=True)
+    d["_c"] = d["Team"].map(_tc)
+    enc_x = alt.X(f"{xcol}:Q", title=xtitle, scale=alt.Scale(domain=xdom, zero=False))
+    enc_y = alt.Y(f"{ycol}:Q", title=ytitle, scale=alt.Scale(domain=ydom, zero=False))
+    tip = [alt.Tooltip("Team:N"), alt.Tooltip(f"{xcol}:Q", format=".2f"),
+           alt.Tooltip(f"{ycol}:Q", format=".2f")]
+    base = alt.Chart(d)
+    dots = base.mark_circle(size=120, opacity=0.9).encode(
+        x=enc_x, y=enc_y, color=alt.Color("_c:N", scale=None, legend=None), tooltip=tip)
+    logos = base.mark_image(width=26, height=26).encode(
+        x=enc_x, y=enc_y, url="logo:N", tooltip=tip)
+    _show_chart(dots + logos, dl_name=dl_name, keep_tooltip=True)
 
 
 # Compact team Situation column set shown on the Teams tab (kept tight — the
