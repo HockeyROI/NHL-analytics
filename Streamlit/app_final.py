@@ -5829,24 +5829,7 @@ def render_teams() -> None:
            f"average team) is TOI-weighted, shown for {zwin_label}{_zextra}.")
     st.caption(cap)
 
-    # Team-level TZI vs xGF% scatter (one dot per team). Kept OUTSIDE the
-    # protected landscape code, so it sits just above the landscape section
-    # (which ends with the EDGE scatters).
-    if {"TZI", "Sit xGF%"}.issubset(team.columns):
-        _tzt = (team[["Team", "TZI", "Sit xGF%"]]
-                .rename(columns={"Sit xGF%": "xGF%"}).dropna(subset=["TZI", "xGF%"]))
-        if not _tzt.empty:
-            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>TZI vs "
-                        f"xGF% (team)</h4>", unsafe_allow_html=True)
-            _scatter_with_labels(
-                _tzt, "xGF%", "TZI", "xGF% (follows the Situation filter)",
-                "TZI (Transitional Zone Impact)", "team-tzi-vs-xg",
-                "One point per team. TZI = Transitional Zone Impact (0–100, "
-                "50 = average team); it tracks team xG share most closely of "
-                "the four zone indices.",
-                team_scoped=True, name_col="Team", year_label=season_label)
-
-    # League scatter landscape.
+    # League scatter landscape (includes the TZI vs xG% team scatter, above EDGE).
     _render_team_landscape(key, season_label, team)
 
 
@@ -6104,9 +6087,9 @@ def _render_team_landscape(scope_key: str, season_label: str,
     # Bring in NFI% / xG-QG% / NFI-QG% from the already-assembled team table
     # (fractions 0-1 there → scale to % to match the scatter axes).
     if team_tbl is not None and not team_tbl.empty:
-        _cols = [c for c in ("Team", "NFI%", "xG-QG%", "NFI-QG%") if c in team_tbl.columns]
+        _cols = [c for c in ("Team", "NFI%", "xG-QG%", "NFI-QG%", "TZI") if c in team_tbl.columns]
         _t = team_tbl[_cols].copy()
-        for c in ("NFI%", "xG-QG%", "NFI-QG%"):
+        for c in ("NFI%", "xG-QG%", "NFI-QG%"):   # TZI is already a 0-100 index — no ×100
             if c in _t.columns:
                 _t[c] = pd.to_numeric(_t[c], errors="coerce") * 100.0
         f = f.merge(_t, on="Team", how="left")
@@ -6141,6 +6124,9 @@ def _render_team_landscape(scope_key: str, season_label: str,
     _sc("OZI", "DZI", "OZI (offensive push)", "DZI (defensive strength)",
         "team-zone-tilt", "**Zone tilt** — where the team lives on the ice "
         "(0-100 index, 50 = average).")
+    _sc("xG%", "TZI", "xG% (share)", "TZI (Transitional Zone Impact, 0-100)",
+        "team-tzi-xg", "**TZI vs xG%** — transitional zone impact tracks team "
+        "xG share most closely of the four zone indices (50 = average).")
 
     # EDGE scatters (team roll-up of the player EDGE tracking) — merge in.
     edge = _team_edge_frame(scope_key)
