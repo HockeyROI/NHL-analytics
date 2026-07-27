@@ -537,7 +537,7 @@ _ABBR_FULL = {
     "QG%b": "Quality Start % vs Backup-tier save% baseline",
     "GSAx": "Goals Saved Above Expected (all shots, HockeyROI xG)",
     "GSAx/60": "Goals Saved Above Expected per 60 (all shots, HockeyROI xG)",
-    # Per-situation suite — all follow the Situation toggle (5v5/PP/PK/4v4/3v3/5v3/All)
+    # Per-situation suite — all follow the Situation toggle (5v5/PP/PK/4v4/3v3/All)
     # Situation-driven columns (these follow the Situation filter). Listed after
     # the originals above so they override those entries with the fuller text.
     "CF/60": "On-ice Corsi (shot attempts) For per 60 — follows the Situation filter",
@@ -839,7 +839,7 @@ def render_methodology() -> None:
             "The <b>Situation</b> toggle (and the <b>Sit</b> columns / Situation-splits table) "
             "recomputes the on-ice possession/xG/individual suite for a chosen game state: "
             "<b>5v5</b>, <b>PP</b> (5v4+5v3+4v3), <b>PK</b> (4v5+3v5+3v4), <b>4v4</b>, <b>3v3</b> "
-            "(regular-season OT), <b>5v3</b>, or <b>All</b>. Built from a fresh per-situation on-ice "
+            "(regular-season OT), or <b>All</b>. Built from a fresh per-situation on-ice "
             "attribution over the raw shot + shift data: each strength state comes from the event "
             "<i>situation_code</i>, on-ice players from the shift intervals, and time-on-ice per "
             "situation is reconstructed the same way (so every rate is counts ÷ that situation's TOI, "
@@ -1267,7 +1267,6 @@ SITUATION_BUCKETS: dict[str, list[str] | None] = {
     "PK": ["4v5", "3v5", "3v4"],      # shorthanded
     "4v4": ["4v4"],
     "3v3": ["3v3"],
-    "5v3": ["5v3"],
 }
 # Buckets where the bespoke 5v5-native families (RelNFI/QG/Zone) still apply
 # as-is. Outside this, those columns are shown labeled "5v5" or as N/A.
@@ -1773,7 +1772,7 @@ def _unify_situation_xg(base: pd.DataFrame) -> pd.DataFrame:
     return base.rename(columns=have)
 
 
-_SIT_SPLIT_BUCKETS = ["5v5", "PP", "PK", "4v4", "3v3", "5v3"]
+_SIT_SPLIT_BUCKETS = ["5v5", "PP", "PK", "4v4", "3v3"]
 
 
 def _player_situation_table(pid: int, season_label: str | None = None,
@@ -4135,7 +4134,7 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     if not qgfa.empty and not base.empty:
         base = base.merge(qgfa, on="player_id", how="left")
     # Per-situation possession/xG/individual suite — reflects the situation
-    # toggle (5v5 / PP / PK / 4v4 / 3v3 / 5v3 / All). Additive "Sit " columns.
+    # toggle (5v5 / PP / PK / 4v4 / 3v3 / All). Additive "Sit " columns.
     sit = _situation_metrics(key, _situation_toggle_state(), playoffs=False)
     if not sit.empty and not base.empty:
         base = base.merge(sit, on="player_id", how="left")
