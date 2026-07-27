@@ -1593,11 +1593,24 @@ def _team_edge_frame(scope_key: str = "pooled") -> pd.DataFrame:
     e["_gp"] = gp
     e["_burst"] = pd.to_numeric(e["speed_bursts_over_20mph"], errors="coerce")
     e["_spd"] = pd.to_numeric(e["top_skating_speed_mph"], errors="coerce")
-    # Bursts per 60 (matching the player metric): join each player's all-situations
-    # TOI so the team rate is Σbursts ÷ Σtoi × 60, not per game.
-    _toi = _allsit_toi(scope_key)
-    e = e.merge(_toi, on="player_id", how="left") if not _toi.empty else e.assign(allsit_toi_min=np.nan)
-    e["_toi"] = pd.to_numeric(e["allsit_toi_min"], errors="coerce")
+    # Bursts per 60: join all-situations TOI per (player, SEASON) so bursts and
+    # TOI align row-by-row. A per-player pooled TOI (summed over the scope) would
+    # be duplicated across a player's season rows AND mis-align when EDGE season
+    # coverage differs from TOI coverage — both deflated the pooled rate.
+    _sit = load_situation_onice()
+    if not _sit.empty:
+        _sit = _sit[_sit["game_type"] == "regular"]
+        if seasons is not None:
+            _sit = _sit[_sit["season"].astype(str).isin([str(s) for s in seasons])]
+        _toi = (_sit.groupby(["player_id", "season"])["toi_min"].sum().reset_index()
+                    .rename(columns={"toi_min": "_toi"}))
+        _toi["season"] = _toi["season"].astype(str)
+        e = e.copy()
+        e["season"] = e["season"].astype(str)
+        e = e.merge(_toi, on=["player_id", "season"], how="left")
+    else:
+        e = e.assign(_toi=np.nan)
+    e["_toi"] = pd.to_numeric(e["_toi"], errors="coerce")
     g = e.groupby("team")
     out = pd.DataFrame({"Team": list(g.groups.keys())})
     out["EDGE OZ%"] = (g["_oz_time_pct_num"].sum() / g["_gp"].sum()).reindex(out["Team"]).values
@@ -5862,6 +5875,25 @@ def _team_trend(team: str, bucket_label: str, playoffs: bool = False) -> pd.Data
             zt["season"] = zt["window"].map(lambda w: int(_inv[w]))
             out = out.merge(zt[["season", "OZI", "DZI", "NZI", "TZI"]],
                             on="season", how="left")
+    # Per-season team EDGE (same aggregation the EDGE table/scatters use, one
+    # season at a time) so the drill-in can trend it year over year. OZ%/DZ% are
+    # fractions from _team_edge_frame → ×100 for readable percentages.
+    _erows = []
+    for _s in out["season"]:
+        ef = _team_edge_frame(str(int(_s)))
+        if ef.empty:
+            continue
+        er = ef[ef["Team"] == team]
+        if not len(er):
+            continue
+        e0 = er.iloc[0]
+        _erows.append({"season": int(_s),
+                       "EDGE OZ%": e0.get("EDGE OZ%", np.nan) * 100,
+                       "EDGE DZ%": e0.get("EDGE DZ%", np.nan) * 100,
+                       "EDGE Top Speed": e0.get("EDGE Top Speed", np.nan),
+                       "EDGE Bursts/60": e0.get("EDGE Bursts/60", np.nan)})
+    if _erows:
+        out = out.merge(pd.DataFrame(_erows), on="season", how="left")
     return out.sort_values("season").reset_index(drop=True)
 
 
@@ -5889,7 +5921,8 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
                     "GF/60", "GA/60", "PDO"],
              "Net Front Impact": ["NFI%"],
              "Quality Games": ["xG-QG%", "NFI-QG%"],
-             "Zone Impact": ["OZI", "DZI", "NZI", "TZI"]}
+             "Zone Impact": ["OZI", "DZI", "NZI", "TZI"],
+             "EDGE": ["EDGE OZ%", "EDGE DZ%", "EDGE Top Speed", "EDGE Bursts/60"]}
     st.session_state.setdefault(f"team_prof_fam_{team}", ["Quality Games"])
     _fsel = st.pills("**Display a Metric Family**", list(_fams),
                      selection_mode="multi",
@@ -5959,6 +5992,10 @@ def _render_team_profile(team: str, season_label: str, playoffs: bool) -> None:
             ("Zone Impact", lambda: _tchart(
                     "Zone Impact 0–100 (OZI, DZI, NZI, TZI) — 50 = average",
                     ["OZI", "DZI", "NZI", "TZI"], ydomain=[40, 60])),
+            ("EDGE", lambda: _tchart("EDGE Zone-Time % (OZ, DZ)",
+                    ["EDGE OZ%", "EDGE DZ%"])),
+            ("EDGE", lambda: _tchart("EDGE Top Speed (mph)", ["EDGE Top Speed"])),
+            ("EDGE", lambda: _tchart("EDGE Speed Bursts per 60", ["EDGE Bursts/60"])),
         ]
         for _fam, _fn in sorted(_yoy, key=lambda it: it[0] not in _fsel):
             _fn()
