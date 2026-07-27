@@ -3827,16 +3827,21 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
                     f"xG%</h4>", unsafe_allow_html=True)
         _nfi_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
                        year_label=_yl)
-    if {"EDGE DZ%", "EDGE OZ%"}.issubset(_team_frame.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
-                    f"O-Zone Time%</h4>", unsafe_allow_html=True)
-        _edge_zone_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
-                          year_label=_yl)
+    if {"TZI", "xG%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>TZI vs "
+                    f"xG%</h4>", unsafe_allow_html=True)
+        _tzi_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                       year_label=_yl)
     if {"DZ Start%", "OZ Start%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone "
                     f"vs O-Zone</h4>", unsafe_allow_html=True)
         _zone_start_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
                            year_label=_yl)
+    if {"EDGE DZ%", "EDGE OZ%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
+                    f"O-Zone Time%</h4>", unsafe_allow_html=True)
+        _edge_zone_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                          year_label=_yl)
     if {"EDGE OZ%", "DZ Start%", "NZ Start%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EZI: EDGE O-Zone "
                     f"Time vs Non-O-Zone Starts</h4>", unsafe_allow_html=True)
@@ -4489,6 +4494,20 @@ def _nfi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", hi
         "(light = easier, dark = harder).",
         team_scoped, color_col="OZ Start%",
         color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
+        domain_df=domain_df, year_label=year_label)
+
+
+def _tzi_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
+                    domain_df: pd.DataFrame = None, year_label: str = None) -> None:
+    import altair as alt
+    if not {"TZI", "xG%"}.issubset(df.columns):
+        return
+    _scatter_with_labels(
+        df, "xG%", "TZI", "xG%", "TZI (Transitional Zone Impact)",
+        f"tzi-vs-xg-pct{dl_suffix}",
+        "One point per player. TZI = Transitional Zone Impact (0–100, 50 = "
+        "average); it tracks xG share most closely of the four zone indices.",
+        team_scoped, highlight_name=highlight_name,
         domain_df=domain_df, year_label=year_label)
 
 
@@ -5151,15 +5170,20 @@ def render_players() -> None:
                     unsafe_allow_html=True)
         _nfi_xg_scatter(df, _team_scoped, year_label=scope_label)
 
-    if {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
-                    f"O-Zone Time%</h4>", unsafe_allow_html=True)
-        _edge_zone_scatter(df, _team_scoped, year_label=scope_label)
+    if {"TZI", "xG%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>TZI vs xG%</h4>",
+                    unsafe_allow_html=True)
+        _tzi_xg_scatter(df, _team_scoped, year_label=scope_label)
 
     if {"DZ Start%", "OZ Start%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Zone Starts: D-Zone vs "
                     f"O-Zone</h4>", unsafe_allow_html=True)
         _zone_start_scatter(df, _team_scoped, year_label=scope_label)
+
+    if {"EDGE DZ%", "EDGE OZ%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EDGE: D-Zone vs "
+                    f"O-Zone Time%</h4>", unsafe_allow_html=True)
+        _edge_zone_scatter(df, _team_scoped, year_label=scope_label)
 
     if {"EDGE OZ%", "DZ Start%", "NZ Start%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>EZI: EDGE O-Zone "
@@ -5804,6 +5828,23 @@ def render_teams() -> None:
            f"descending · Zone Impact (OZI/DZI/NZI/TZI, 0–100 index where 50 = the "
            f"average team) is TOI-weighted, shown for {zwin_label}{_zextra}.")
     st.caption(cap)
+
+    # Team-level TZI vs xGF% scatter (one dot per team). Kept OUTSIDE the
+    # protected landscape code, so it sits just above the landscape section
+    # (which ends with the EDGE scatters).
+    if {"TZI", "Sit xGF%"}.issubset(team.columns):
+        _tzt = (team[["Team", "TZI", "Sit xGF%"]]
+                .rename(columns={"Sit xGF%": "xGF%"}).dropna(subset=["TZI", "xGF%"]))
+        if not _tzt.empty:
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>TZI vs "
+                        f"xGF% (team)</h4>", unsafe_allow_html=True)
+            _scatter_with_labels(
+                _tzt, "xGF%", "TZI", "xGF% (follows the Situation filter)",
+                "TZI (Transitional Zone Impact)", "team-tzi-vs-xg",
+                "One point per team. TZI = Transitional Zone Impact (0–100, "
+                "50 = average team); it tracks team xG share most closely of "
+                "the four zone indices.",
+                team_scoped=True, name_col="Team", year_label=season_label)
 
     # League scatter landscape.
     _render_team_landscape(key, season_label, team)
