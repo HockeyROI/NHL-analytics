@@ -639,15 +639,14 @@ def _show_df(obj, **kwargs) -> None:
             return _ABBR_FULL.get(s) or _ABBR_FULL.get(s.split(" (")[0])
         cc.setdefault(cols[0], st.column_config.Column(
             pinned=True, width=_w, help=_abbr_help(cols[0])))
-        # Header hover-tooltips: spell out each abbreviation's full name. A few
-        # long headers (the CCG relatives) clip under content-sizing, so pin an
-        # explicit pixel width wide enough for the full label.
-        _WIDE = {"Rel-CCG/60": 110, "Rel-CCG": 88, "CCG/60": 80}
+        # Header hover-tooltips: spell out each abbreviation's full name. Columns
+        # size to content (width="content" below) — with the (league / team) rank
+        # bracket the cell text is wider than the header, so long headers like
+        # "Rel-CCG/60" no longer clip.
         for _c in cols[1:]:
             _full = _abbr_help(_c)
-            _wc = _WIDE.get(str(_c))
-            if (_full or _wc) and _c not in cc:
-                cc[_c] = st.column_config.Column(help=_full, width=_wc)
+            if _full and _c not in cc:
+                cc[_c] = st.column_config.Column(help=_full)
         kwargs["column_config"] = cc
     kwargs["width"] = "content"   # size to content (no clipping) rather than stretch
     return st.dataframe(obj, **kwargs)   # returns selection state when on_select set
