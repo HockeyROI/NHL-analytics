@@ -559,7 +559,8 @@ _ABBR_FULL = {
     "iG": "Individual Goals (total) — Situation filter",
     "CCG": "Chaos Created Goals (total) — count of the player's shots (on-goal / missed / blocked) that were followed by a TEAMMATE goal within 0-30s of the same continuous play (rebounds included). Follows the Situation filter.",
     "CCG/60": "Chaos Created Goals per 60 — CCG rate per 60 min of ice time. Follows the Situation filter. Higher = generates more downstream goals off their shots.",
-    "Rel-CCG": "Relative CCG — the player's CCG/60 minus their TEAMMATES' CCG/60 (leave-one-out team environment, same Situation/scope). Isolates individual signal from linemate quality; + = beats their own linemates. Approximate across trades / multi-team pooled scopes.",
+    "Rel-CCG": "Relative CCG (count) — the player's CCG total minus what a teammate-rate skater would produce in the same ice time (leave-one-out team environment, same Situation/scope). + = beats their own linemates. Approximate across trades / pooled scopes.",
+    "Rel-CCG/60": "Relative CCG per 60 — the player's CCG/60 minus their TEAMMATES' CCG/60 (leave-one-out team environment, same Situation/scope). Rate version of Rel-CCG; + = beats their own linemates.",
     "PP Value": "Power-play value: on-ice xGF/60 + CF/60 (higher = better) — set Situation to PP",
     "PK Value": "Penalty-kill value: on-ice xGA/60 + CA/60 (LOWER = better) — set Situation to PK",
     "RelCF%": "Relative Corsi For % — on-ice CF% minus the team's CF% with the player OFF (Situation filter; season-aggregate on/off, exact for one-team players, approximate across trades)",
@@ -638,11 +639,15 @@ def _show_df(obj, **kwargs) -> None:
             return _ABBR_FULL.get(s) or _ABBR_FULL.get(s.split(" (")[0])
         cc.setdefault(cols[0], st.column_config.Column(
             pinned=True, width=_w, help=_abbr_help(cols[0])))
-        # Header hover-tooltips: spell out each abbreviation's full name.
+        # Header hover-tooltips: spell out each abbreviation's full name. A few
+        # long headers (the CCG relatives) clip under content-sizing, so pin an
+        # explicit pixel width wide enough for the full label.
+        _WIDE = {"Rel-CCG/60": 110, "Rel-CCG": 88, "CCG/60": 80}
         for _c in cols[1:]:
             _full = _abbr_help(_c)
-            if _full and _c not in cc:
-                cc[_c] = st.column_config.Column(help=_full)
+            _wc = _WIDE.get(str(_c))
+            if (_full or _wc) and _c not in cc:
+                cc[_c] = st.column_config.Column(help=_full, width=_wc)
         kwargs["column_config"] = cc
     kwargs["width"] = "content"   # size to content (no clipping) rather than stretch
     return st.dataframe(obj, **kwargs)   # returns selection state when on_select set
@@ -929,12 +934,14 @@ def render_methodology() -> None:
             "A player's shot — on-goal, missed, <b>or</b> blocked — followed by a goal from a "
             "<b>teammate</b> within <b>0–30 seconds</b> of the same continuous play (never crossing a "
             "whistle/faceoff; immediate rebounds ARE included). It credits the shots that "
-            "<i>generate</i> downstream goals for others, not the shooter's own finish. Three columns: "
+            "<i>generate</i> downstream goals for others, not the shooter's own finish. Four columns: "
             "<b>CCG</b> (total count in the current scope + situation), <b>CCG/60</b> (per-60 rate), "
-            "and <b>Rel-CCG</b> = the player's CCG/60 minus their <b>teammates'</b> CCG/60 "
-            "(leave-one-out team environment, same scope/situation) — which isolates individual signal "
-            "from linemate quality (+ = beats their own linemates; approximate across trades / pooled "
-            "scopes). Follows the Situation filter; built from raw play-by-play. It measures a "
+            "and two team-relatives vs the player's <b>teammates'</b> rate (leave-one-out team "
+            "environment, same scope/situation) — <b>Rel-CCG</b> (count: created goals above/below what "
+            "a teammate-rate skater makes in the same ice time) and <b>Rel-CCG/60</b> (the rate "
+            "version). The relatives isolate individual signal from linemate quality (+ = beats their "
+            "own linemates; approximate across trades / pooled scopes; teams compare vs the league). "
+            "Follows the Situation filter; built from raw play-by-play. It measures a "
             "<b>net-front / point-shot creation</b> skill — high-volume shooters and shooting "
             "defensemen lead it — and by design captures only <b>shots</b> (not passing/playmaking); "
             "it is descriptive, not a total-value metric. The team columns are the same idea summed "
@@ -1486,8 +1493,13 @@ def _add_situation_rel(base: pd.DataFrame, scope_key: str, bucket_label: str,
         base = base.merge(tg, on="team", how="left")
         wo_ccg = base["_tccg"] - base["_sr_ccg"]
         wo_toi = base["_ttoi"] - base["sit_TOI"]
-        env = np.where(wo_toi > 0, 60.0 * wo_ccg / wo_toi, np.nan)
-        base["Sit Rel-CCG"] = np.where(base["sit_TOI"] > 0, base["Sit CCG/60"] - env,
+        env = np.where(wo_toi > 0, 60.0 * wo_ccg / wo_toi, np.nan)   # teammates' /60
+        base["Sit Rel-CCG/60"] = np.where(base["sit_TOI"] > 0,
+                                          base["Sit CCG/60"] - env, np.nan)
+        # count relative: actual CCG minus what a teammate-rate skater would
+        # produce in this player's ice time (env/60 * TOI).
+        _exp = env / 60.0 * base["sit_TOI"]
+        base["Sit Rel-CCG"] = np.where(base["sit_TOI"] > 0, base["_sr_ccg"] - _exp,
                                        np.nan)
         base = base.drop(columns=["_tccg", "_ttoi", "_sr_ccg"], errors="ignore")
 
@@ -1587,7 +1599,8 @@ def _team_situation_metrics(scope_key: str, bucket_label: str,
     out["Sit CCG/60"] = np.where(ok, tccg / toi * 60.0, np.nan)
     _lg_toi = toi[ok].sum()
     _lg = 60.0 * tccg[ok.to_numpy()].sum() / _lg_toi if _lg_toi > 0 else np.nan
-    out["Sit Rel-CCG"] = out["Sit CCG/60"] - _lg
+    out["Sit Rel-CCG/60"] = out["Sit CCG/60"] - _lg          # vs league /60
+    out["Sit Rel-CCG"] = np.where(ok, tccg - _lg / 60.0 * toi, np.nan)  # count vs league
     # PDO / PDOxG (Fenwick basis, matching _team_landscape_frame) so the team
     # Advanced Stats family mirrors the player side.
     _sh = np.where(g["FF"] > 0, g["GF"] / g["FF"] * 100.0, np.nan)
@@ -1817,9 +1830,10 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
 
 # Compact team Situation column set shown on the Teams tab (kept tight — the
 # team table shows every column at once, no family pills).
-TEAM_SIT_COLS = ["Sit TOI", "Sit CCG", "Sit CCG/60", "Sit Rel-CCG", "Sit PDO",
-                 "Sit PDOxG", "Sit CF%", "Sit xGF%", "Sit GF%", "Sit CF/60",
-                 "Sit CA/60", "Sit xGF/60", "Sit xGA/60", "Sit GF/60", "Sit GA/60"]
+TEAM_SIT_COLS = ["Sit TOI", "Sit CCG", "Sit CCG/60", "Sit Rel-CCG",
+                 "Sit Rel-CCG/60", "Sit PDO", "Sit PDOxG", "Sit CF%", "Sit xGF%",
+                 "Sit GF%", "Sit CF/60", "Sit CA/60", "Sit xGF/60", "Sit xGA/60",
+                 "Sit GF/60", "Sit GA/60"]
 
 # Display rename for the team table — drop the internal "Sit " prefix so the
 # columns read as plain metric names (the Situation filter already labels the
@@ -1829,7 +1843,7 @@ _TEAM_SIT_DISP = {
     "Sit CF/60": "CF/60", "Sit CA/60": "CA/60", "Sit xGF/60": "xGF/60",
     "Sit xGA/60": "xGA/60", "Sit GF/60": "GF/60", "Sit GA/60": "GA/60",
     "Sit CCG": "CCG", "Sit CCG/60": "CCG/60", "Sit Rel-CCG": "Rel-CCG",
-    "Sit PDO": "PDO", "Sit PDOxG": "PDOxG",
+    "Sit Rel-CCG/60": "Rel-CCG/60", "Sit PDO": "PDO", "Sit PDOxG": "PDOxG",
     "Sit PP xGF+CF/60": "PP Value", "Sit PK xGA+CA/60": "PK Value",
 }
 
@@ -1847,6 +1861,7 @@ _SIT_UNIFY = {
     "Sit iCF/60": "iCF/60", "Sit ixG/60": "ixG/60", "Sit iG/60": "iG/60",
     "Sit ixG": "ixG", "Sit iG": "iG",
     "Sit CCG": "CCG", "Sit CCG/60": "CCG/60", "Sit Rel-CCG": "Rel-CCG",
+    "Sit Rel-CCG/60": "Rel-CCG/60",
     "Sit RelCF%": "RelCF%", "Sit RelxGF%": "RelxGF%",
     "Sit PP xGF+CF/60": "PP Value", "Sit PK xGA+CA/60": "PK Value",
 }
@@ -2471,9 +2486,10 @@ def _ccg_season_rel() -> pd.DataFrame:
            .agg(_tc=("ccg", "sum"), _tt=("toi", "sum")).reset_index())
     m = m.merge(env, on=["season", "team"], how="left")
     _wo = m["_tt"] - m["toi"]
-    m["Rel-CCG"] = np.where(_wo > 0, m["CCG/60"] - 60.0 * (m["_tc"] - m["ccg"]) / _wo,
-                            np.nan)
-    return m[["player_id", "season", "CCG", "CCG/60", "Rel-CCG"]]
+    _envr = np.where(_wo > 0, 60.0 * (m["_tc"] - m["ccg"]) / _wo, np.nan)  # /60 env
+    m["Rel-CCG/60"] = np.where(_wo > 0, m["CCG/60"] - _envr, np.nan)
+    m["Rel-CCG"] = np.where(_wo > 0, m["ccg"] - _envr / 60.0 * m["toi"], np.nan)
+    return m[["player_id", "season", "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"]]
 
 
 def _player_trend(pid: int) -> pd.DataFrame:
@@ -2588,8 +2604,9 @@ def _player_trend(pid: int) -> pd.DataFrame:
     if not _ccg.empty:
         _ca = _ccg[_ccg["player_id"] == pid]
         if not _ca.empty:
-            trend = trend.merge(_ca[["season", "CCG", "CCG/60", "Rel-CCG"]],
-                                on="season", how="outer")
+            trend = trend.merge(
+                _ca[["season", "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"]],
+                on="season", how="outer")
 
     # NHL EDGE tracking per season (regular season only; see edge/README.md).
     edge_season = load_edge_player_season()
@@ -2885,7 +2902,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
                "xG-QG%", "RelxG-QG%", "xG-QG-F%", "RelxG-QG-F%",
                "xG-QG-A%", "RelxG-QG-A%"]
     xg_cols = ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO", "PDOxG"]
-    adv_cols = ["CCG", "CCG/60", "Rel-CCG"]
+    adv_cols = ["CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"]
     edge_cols = _EDGE_VALUE_DISP
     metric_cols = [c for c in qg_cols + adv_cols + xg_cols + share_cols + rate_cols + zone_cols + edge_cols
                    if c in trend.columns]
@@ -2926,7 +2943,8 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     _b["PDOxG"] = lambda v: f"{v:+.1f}"
     _b["CCG"] = lambda v: f"{v:,.0f}"
     _b["CCG/60"] = lambda v: f"{v:.2f}"
-    _b["Rel-CCG"] = lambda v: f"{v:+.2f}"
+    _b["Rel-CCG"] = lambda v: f"{v:+.1f}"
+    _b["Rel-CCG/60"] = lambda v: f"{v:+.2f}"
     for c in ("EDGE OZ%", "EDGE OZ% (EV)", "EDGE NZ%", "EDGE DZ%"):
         _b[c] = lambda v: f"{v * 100:.1f}%"
     _b["EDGE Top Speed"] = lambda v: f"{v:.1f} mph"
@@ -4320,8 +4338,9 @@ PLAYER_FAMILY_COLS = {
     # xG core — situation-driven (they follow the Situation filter). PDOxG stays
     # here (it's an xG-adjusted luck metric).
     "xG": ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDOxG"],
-    # CCG (Chaos Created Goals) — its own family: total count, per-60, team-relative.
-    "CCG": ["CCG", "CCG/60", "Rel-CCG"],
+    # CCG (Chaos Created Goals) — its own family: count, per-60, and both
+    # team-relative forms (count vs teammates, and per-60 vs teammates).
+    "CCG": ["CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"],
     # Advanced Stats — PDO plus the possession/individual suite (the tail of the
     # old xG family).
     "Advanced Stats": (["PDO"] + _SIT_PLAIN),
@@ -5111,7 +5130,7 @@ def render_players() -> None:
             "xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
             "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
             "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDOxG",
-            "CCG", "CCG/60", "Rel-CCG", "PDO",
+            "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60", "PDO",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI",
             *_EDGE_VALUE_DISP, *_SIT_PLAIN, *BOX_FAMILY_COLS]
@@ -5156,7 +5175,9 @@ def render_players() -> None:
     if "CCG/60" in disp.columns:
         fmt["CCG/60"] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
     if "Rel-CCG" in disp.columns:
-        fmt["Rel-CCG"] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
+        fmt["Rel-CCG"] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
+    if "Rel-CCG/60" in disp.columns:
+        fmt["Rel-CCG/60"] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
     for c in ("OZI", "DZI", "NZI", "TZI"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
@@ -5890,7 +5911,7 @@ def render_teams() -> None:
                           "NFI-QG-A%", "NFI-QG-S%"],
         "xG": ["CF%", "xGF%", "GF%", "CF/60", "CA/60", "xGF/60",
                             "xGA/60", "GF/60", "GA/60", "PDOxG", "Situation TOI"],
-        "CCG": ["CCG", "CCG/60", "Rel-CCG"],
+        "CCG": ["CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"],
         "Advanced Stats": ["PDO"],
         "Net Front Impact": ["NFI%", "Attack events", "Suppress events"],
         "Zone Impact": list(zcols),
@@ -5935,7 +5956,9 @@ def render_teams() -> None:
     if "CCG/60" in disp:
         fmt["CCG/60"] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
     if "Rel-CCG" in disp:
-        fmt["Rel-CCG"] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
+        fmt["Rel-CCG"] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
+    if "Rel-CCG/60" in disp:
+        fmt["Rel-CCG/60"] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
     if "PDO" in disp:
         fmt["PDO"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "PDOxG" in disp:

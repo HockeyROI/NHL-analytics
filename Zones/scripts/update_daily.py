@@ -176,8 +176,9 @@ def main():
     run("python3 corsi_reference.py")
     run("python3 compute_zone_and_overlap.py")
     run("python3 compute_pqr_roc_rol.py")
-    # CCG (Chaos Created Goals) — needs the raw PBP cache (present locally), so it
-    # refreshes here in the local flow, not in the parquet-only CI rebuild.
+    # CCG (Chaos Created Goals): append any new games' events to the committed
+    # event parquet (from the local raw PBP cache), then rebuild the CCG CSVs.
+    run("python3 build_ccg_events.py")
     run("python3 build_ccg_by_season.py")
 
     ts = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

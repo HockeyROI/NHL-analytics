@@ -451,11 +451,14 @@ It credits shots that *generate* downstream goals for others — it is explicitl
 
 ### Columns
 
-Three columns, all following the Situation filter (5v5 / PP / PK / All, pooled by ratio-of-sums across the scope's seasons, exactly like the on-ice suite):
+Four columns, all following the Situation filter (5v5 / PP / PK / All, pooled by ratio-of-sums across the scope's seasons, exactly like the on-ice suite):
 
 - **CCG** — total count of created goals in the current scope + situation.
 - **CCG/60** — `60 × CCG ÷ situation TOI` (the rate).
-- **Rel-CCG** — the player's `CCG/60` minus their **teammates'** `CCG/60` (leave-one-out team environment, same scope + situation): `CCG/60 − 60 × (teamCCG − CCG) ÷ (teamTOI − TOI)`. This isolates individual signal from linemate quality (positive = the player beats their own linemates at turning shots into teammate goals). Exact for one-team players; approximate across trades and multi-team pooled scopes. On the **Teams** tab, Rel-CCG is measured versus the **league** average instead.
+- **Rel-CCG** — count-based relative: the player's `CCG` minus what a teammate-rate skater would produce in the same ice time, `CCG − (teammateRate/60 × TOI)`, where `teammateRate = 60 × (teamCCG − CCG) ÷ (teamTOI − TOI)` (leave-one-out team environment, same scope + situation).
+- **Rel-CCG/60** — the rate version: `CCG/60 − teammateRate`.
+
+The two relatives isolate individual signal from linemate quality (positive = the player beats their own linemates at turning shots into teammate goals). Exact for one-team players; approximate across trades and multi-team pooled scopes. On the **Teams** tab, both relatives are measured versus the **league** average instead of teammates.
 
 ### What it measures (and does not)
 
@@ -463,7 +466,7 @@ CCG is a **net-front / point-shot creation** skill: high-volume shooters and sho
 
 ### Implementation
 
-Built from raw play-by-play by `Zones/scripts/build_ccg_by_season.py` → `Data/player_ccg_by_season.csv` and `Data/team_ccg_by_season.csv`, keyed by `(player_id/team, season, game_type, situation)` with the same `<own>v<opp>`-skater situation labels as `player_situation_onice.csv`. Raw PBP is required (not the shot-events CSV) because the "no crossing a whistle" rule needs faceoff/stoppage events. The underlying framework (origin locations, for/against, and the archetype line-pairing tests) is the "chaos origin" work in `Zones/scripts/chaos_origin.py` and `chaos_lines.py`.
+Because the "no crossing a whistle" rule needs faceoff/stoppage events (which the shot-events parquet lacks) and the raw PBP cache is gitignored/absent on CI runners, the minimal per-event stream CCG needs is distilled into a committed per-season parquet: `Zones/scripts/build_ccg_events.py` writes `Data/ccg_events_by_season/{season}.parquet` from raw PBP (incremental — only new games are appended), and `Zones/scripts/build_ccg_by_season.py` computes `Data/player_ccg_by_season.csv` and `Data/team_ccg_by_season.csv` from those parquets (identical results locally and in CI). Keyed by `(player_id/team, season, game_type, situation)` with the same `<own>v<opp>`-skater situation labels as `player_situation_onice.csv`. In the weekly CI, `update_current_season.py` fetches the week's new games' PBP onto the runner, `build_ccg_events.py` appends them to the parquet, and `build_ccg_by_season.py` rebuilds — so CCG auto-refreshes with no local step. The underlying framework (origin locations, for/against, and the archetype line-pairing tests) is the "chaos origin" work in `Zones/scripts/chaos_origin.py` and `chaos_lines.py`.
 
 ---
 
