@@ -557,6 +557,9 @@ _ABBR_FULL = {
     "iG/60": "Individual Goals per 60 — Situation filter",
     "ixG": "Individual Expected Goals (total) — Situation filter",
     "iG": "Individual Goals (total) — Situation filter",
+    "CCG": "Chaos Created Goals (total) — count of the player's shots (on-goal / missed / blocked) that were followed by a TEAMMATE goal within 0-30s of the same continuous play (rebounds included). Follows the Situation filter.",
+    "CCG/60": "Chaos Created Goals per 60 — CCG rate per 60 min of ice time. Follows the Situation filter. Higher = generates more downstream goals off their shots.",
+    "Rel-CCG": "Relative CCG — the player's CCG/60 minus their TEAMMATES' CCG/60 (leave-one-out team environment, same Situation/scope). Isolates individual signal from linemate quality; + = beats their own linemates. Approximate across trades / multi-team pooled scopes.",
     "PP Value": "Power-play value: on-ice xGF/60 + CF/60 (higher = better) — set Situation to PP",
     "PK Value": "Penalty-kill value: on-ice xGA/60 + CA/60 (LOWER = better) — set Situation to PK",
     "RelCF%": "Relative Corsi For % — on-ice CF% minus the team's CF% with the player OFF (Situation filter; season-aggregate on/off, exact for one-team players, approximate across trades)",
@@ -922,6 +925,22 @@ def render_methodology() -> None:
             "or alter OZI/DZI/NZI/TZI.",
         )
         + _meth_framework(
+            "CCG (Chaos Created Goals)",
+            "A player's shot — on-goal, missed, <b>or</b> blocked — followed by a goal from a "
+            "<b>teammate</b> within <b>0–30 seconds</b> of the same continuous play (never crossing a "
+            "whistle/faceoff; immediate rebounds ARE included). It credits the shots that "
+            "<i>generate</i> downstream goals for others, not the shooter's own finish. Three columns: "
+            "<b>CCG</b> (total count in the current scope + situation), <b>CCG/60</b> (per-60 rate), "
+            "and <b>Rel-CCG</b> = the player's CCG/60 minus their <b>teammates'</b> CCG/60 "
+            "(leave-one-out team environment, same scope/situation) — which isolates individual signal "
+            "from linemate quality (+ = beats their own linemates; approximate across trades / pooled "
+            "scopes). Follows the Situation filter; built from raw play-by-play. It measures a "
+            "<b>net-front / point-shot creation</b> skill — high-volume shooters and shooting "
+            "defensemen lead it — and by design captures only <b>shots</b> (not passing/playmaking); "
+            "it is descriptive, not a total-value metric. The team columns are the same idea summed "
+            "over the roster, with Rel-CCG measured vs the league average.",
+        )
+        + _meth_framework(
             "PDO",
             "Shooting% + save% luck proxy, 5v5 or all-situations (toggle-able): SH% = on-ice goals-for "
             "÷ on-ice shots-on-goal-for; SV% = 1 − (on-ice goals-against ÷ on-ice shots-on-goal-"
@@ -1281,6 +1300,27 @@ def load_situation_onice() -> pd.DataFrame:
     return pd.read_csv(fp, dtype={"season": str})
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_player_ccg() -> pd.DataFrame:
+    """Chaos Created Goals per (player_id, season, game_type, situation) — a
+    player's shot followed by a TEAMMATE goal within 0-30s (rebounds included).
+    Built by Zones/scripts/build_ccg_by_season.py. Same granular situation
+    labels as player_situation_onice.csv so it rolls into the same buckets."""
+    fp = REPO_ROOT / "Data" / "player_ccg_by_season.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    return pd.read_csv(fp, dtype={"season": str})
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_team_ccg() -> pd.DataFrame:
+    """Team-level Chaos Created Goals per (team, season, game_type, situation)."""
+    fp = REPO_ROOT / "Data" / "team_ccg_by_season.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    return pd.read_csv(fp, dtype={"season": str})
+
+
 def _situation_toggle_state() -> str:
     """Shared situation-scope toggle (set by the widget in render_players, read
     wherever the per-situation suite is built this run — same shared-session
@@ -1387,6 +1427,21 @@ def _situation_metrics(scope_key: str, bucket_label: str,
     for c in ("CF", "CA", "xGF", "xGA"):
         out[f"_sr_{c}"] = g[c].values
     out["_sr_toi"] = toi.values
+    # CCG (Chaos Created Goals) — individual: player's shot -> teammate goal in
+    # 0-30s. Same ratio-of-sums / situation-bucket flow (per 60 of situation TOI).
+    cc = load_player_ccg()
+    ccg = np.zeros(len(out))
+    if not cc.empty:
+        cc = cc[cc["game_type"] == ("playoff" if playoffs else "regular")]
+        if seasons is not None:
+            cc = cc[cc["season"].isin(seasons)]
+        if mats is not None:
+            cc = cc[cc["situation"].isin(mats)]
+        cser = cc.groupby("player_id")["ccg"].sum()
+        ccg = out["player_id"].map(cser).fillna(0.0).to_numpy(dtype=float)
+    out["Sit CCG"] = ccg           # total count (non-per-60)
+    out["Sit CCG/60"] = np.where(ok, ccg / toi * 60.0, np.nan)
+    out["_sr_ccg"] = ccg           # count, for the team-relative leave-one-out
     return out
 
 
@@ -1418,10 +1473,29 @@ def _add_situation_rel(base: pd.DataFrame, scope_key: str, bucket_label: str,
     Computed only where the without-player split is clean (single team,
     non-traded); traded players and multi-team pooled scopes -> NaN, since a
     single season-team total can't isolate the player's off-ice context there.
-    Mirrors the existing 5v5 RelNFI's on/off definition, per situation."""
+    Mirrors the existing 5v5 RelNFI's on/off definition, per situation.
+
+    Also computes Sit Rel-CCG = the player's CCG/60 minus their TEAMMATES'
+    CCG/60 (leave-one-out team environment, same scope+situation) — the same
+    team-relative that isolates individual signal from linemate quality on the
+    CCG leaderboard. Independent of the on/off CF/xGF rel below."""
+    if (not base.empty and "team" in base.columns and "Sit CCG/60" in base.columns
+            and "_sr_ccg" in base.columns and "sit_TOI" in base.columns):
+        tg = base.groupby("team").agg(_tccg=("_sr_ccg", "sum"),
+                                      _ttoi=("sit_TOI", "sum")).reset_index()
+        base = base.merge(tg, on="team", how="left")
+        wo_ccg = base["_tccg"] - base["_sr_ccg"]
+        wo_toi = base["_ttoi"] - base["sit_TOI"]
+        env = np.where(wo_toi > 0, 60.0 * wo_ccg / wo_toi, np.nan)
+        base["Sit Rel-CCG"] = np.where(base["sit_TOI"] > 0, base["Sit CCG/60"] - env,
+                                       np.nan)
+        base = base.drop(columns=["_tccg", "_ttoi", "_sr_ccg"], errors="ignore")
+
     need = [f"_sr_{c}" for c in ("CF", "CA", "xGF", "xGA")] + ["_sr_toi"]
     if base.empty or "team" not in base.columns or not all(c in base.columns for c in need):
-        return base
+        return base.drop(columns=[c for c in base.columns
+                                  if c.startswith("_sr_") or c.startswith("_tr_")],
+                         errors="ignore")
     tr = _team_situation_raw(scope_key, bucket_label, playoffs)
     if tr.empty:
         return base
@@ -1496,6 +1570,32 @@ def _team_situation_metrics(scope_key: str, bucket_label: str,
     out["Sit GF/60"], out["Sit GA/60"] = per60("GF"), per60("GA")
     out["Sit PP xGF+CF/60"] = out["Sit xGF/60"] + out["Sit CF/60"]
     out["Sit PK xGA+CA/60"] = out["Sit xGA/60"] + out["Sit CA/60"]
+    # CCG (Chaos Created Goals) — team's shots -> teammate goals in 0-30s, per 60
+    # of situation TOI. Rel-CCG here is vs the LEAGUE average (0-centered), the
+    # team analog of the player's team-relative.
+    tc = load_team_ccg()
+    tccg = np.zeros(len(out))
+    if not tc.empty:
+        tc = tc[tc["game_type"] == ("playoff" if playoffs else "regular")]
+        if seasons is not None:
+            tc = tc[tc["season"].isin(seasons)]
+        if mats is not None:
+            tc = tc[tc["situation"].isin(mats)]
+        tser = tc.groupby("team")["ccg"].sum()
+        tccg = out["Team"].map(tser).fillna(0.0).to_numpy(dtype=float)
+    out["Sit CCG"] = tccg          # team total count (non-per-60)
+    out["Sit CCG/60"] = np.where(ok, tccg / toi * 60.0, np.nan)
+    _lg_toi = toi[ok].sum()
+    _lg = 60.0 * tccg[ok.to_numpy()].sum() / _lg_toi if _lg_toi > 0 else np.nan
+    out["Sit Rel-CCG"] = out["Sit CCG/60"] - _lg
+    # PDO / PDOxG (Fenwick basis, matching _team_landscape_frame) so the team
+    # Advanced Stats family mirrors the player side.
+    _sh = np.where(g["FF"] > 0, g["GF"] / g["FF"] * 100.0, np.nan)
+    _sv = np.where(g["FA"] > 0, (1 - g["GA"] / g["FA"]) * 100.0, np.nan)
+    out["Sit PDO"] = _sh + _sv
+    _exp = (np.where(g["FF"] > 0, g["xGF"] / g["FF"] * 100.0, np.nan)
+            + np.where(g["FA"] > 0, (1 - g["xGA"] / g["FA"]) * 100.0, np.nan))
+    out["Sit PDOxG"] = out["Sit PDO"] - _exp
     return out
 
 
@@ -1717,9 +1817,9 @@ def _team_logo_scatter(df: pd.DataFrame, xcol: str, ycol: str, xtitle: str,
 
 # Compact team Situation column set shown on the Teams tab (kept tight — the
 # team table shows every column at once, no family pills).
-TEAM_SIT_COLS = ["Sit TOI", "Sit CF%", "Sit xGF%", "Sit GF%",
-                 "Sit CF/60", "Sit CA/60", "Sit xGF/60", "Sit xGA/60",
-                 "Sit GF/60", "Sit GA/60"]
+TEAM_SIT_COLS = ["Sit TOI", "Sit CCG", "Sit CCG/60", "Sit Rel-CCG", "Sit PDO",
+                 "Sit PDOxG", "Sit CF%", "Sit xGF%", "Sit GF%", "Sit CF/60",
+                 "Sit CA/60", "Sit xGF/60", "Sit xGA/60", "Sit GF/60", "Sit GA/60"]
 
 # Display rename for the team table — drop the internal "Sit " prefix so the
 # columns read as plain metric names (the Situation filter already labels the
@@ -1728,6 +1828,8 @@ _TEAM_SIT_DISP = {
     "Sit TOI": "Situation TOI", "Sit CF%": "CF%", "Sit xGF%": "xGF%", "Sit GF%": "GF%",
     "Sit CF/60": "CF/60", "Sit CA/60": "CA/60", "Sit xGF/60": "xGF/60",
     "Sit xGA/60": "xGA/60", "Sit GF/60": "GF/60", "Sit GA/60": "GA/60",
+    "Sit CCG": "CCG", "Sit CCG/60": "CCG/60", "Sit Rel-CCG": "Rel-CCG",
+    "Sit PDO": "PDO", "Sit PDOxG": "PDOxG",
     "Sit PP xGF+CF/60": "PP Value", "Sit PK xGA+CA/60": "PK Value",
 }
 
@@ -1744,6 +1846,7 @@ _SIT_UNIFY = {
     "Sit GF/60": "GF/60", "Sit GA/60": "GA/60", "Sit GF%": "GF%",
     "Sit iCF/60": "iCF/60", "Sit ixG/60": "ixG/60", "Sit iG/60": "iG/60",
     "Sit ixG": "ixG", "Sit iG": "iG",
+    "Sit CCG": "CCG", "Sit CCG/60": "CCG/60", "Sit Rel-CCG": "Rel-CCG",
     "Sit RelCF%": "RelCF%", "Sit RelxGF%": "RelxGF%",
     "Sit PP xGF+CF/60": "PP Value", "Sit PK xGA+CA/60": "PK Value",
 }
@@ -2343,6 +2446,36 @@ def load_zone_per_season(season: str | None = None) -> pd.DataFrame:
     return full
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def _ccg_season_rel() -> pd.DataFrame:
+    """Per (player_id, season) CCG/60 and team-relative Rel-CCG (all situations,
+    regular season) for the per-season trend (drill-in + Trade Analyzer). Raw =
+    60*ccg / all-situations TOI; Rel = raw minus the player's TEAMMATES' rate
+    (leave-one-out over that season's team). Team from the NFI per-season team."""
+    cc, oi = load_player_ccg(), load_situation_onice()
+    nfi = load_nfi_player()
+    if cc.empty or oi.empty or nfi.empty or "team" not in nfi.columns:
+        return pd.DataFrame()
+    ccg = (cc[cc["game_type"] == "regular"].groupby(["player_id", "season"])["ccg"]
+           .sum().reset_index())
+    toi = (oi[oi["game_type"] == "regular"].groupby(["player_id", "season"])["toi_min"]
+           .sum().reset_index().rename(columns={"toi_min": "toi"}))
+    tm = nfi[["player_id", "season", "team"]].copy()
+    tm["season"] = tm["season"].astype(str)
+    m = toi.merge(ccg, on=["player_id", "season"], how="left").fillna({"ccg": 0})
+    m = m.merge(tm, on=["player_id", "season"], how="left")
+    m = m[m["toi"] > 0].copy()
+    m["CCG"] = m["ccg"]                       # total count (non-per-60)
+    m["CCG/60"] = 60.0 * m["ccg"] / m["toi"]
+    env = (m.dropna(subset=["team"]).groupby(["season", "team"])
+           .agg(_tc=("ccg", "sum"), _tt=("toi", "sum")).reset_index())
+    m = m.merge(env, on=["season", "team"], how="left")
+    _wo = m["_tt"] - m["toi"]
+    m["Rel-CCG"] = np.where(_wo > 0, m["CCG/60"] - 60.0 * (m["_tc"] - m["ccg"]) / _wo,
+                            np.nan)
+    return m[["player_id", "season", "CCG", "CCG/60", "Rel-CCG"]]
+
+
 def _player_trend(pid: int) -> pd.DataFrame:
     """Per-season (2022-23..2025-26, excl 2021-22) metric trend for one
     player_id. CRITICAL: every source's season is normalized to an 8-digit
@@ -2449,6 +2582,14 @@ def _player_trend(pid: int) -> pd.DataFrame:
             trend = trend.merge(
                 pc[_pcols].rename(columns={"pdo": "PDO", "pdoxg": "PDOxG"}),
                 on="season", how="outer")
+
+    # CCG / Rel-CCG per season (all situations, regular) for the drill-in + Trade.
+    _ccg = _ccg_season_rel()
+    if not _ccg.empty:
+        _ca = _ccg[_ccg["player_id"] == pid]
+        if not _ca.empty:
+            trend = trend.merge(_ca[["season", "CCG", "CCG/60", "Rel-CCG"]],
+                                on="season", how="outer")
 
     # NHL EDGE tracking per season (regular season only; see edge/README.md).
     edge_season = load_edge_player_season()
@@ -2744,8 +2885,9 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
                "xG-QG%", "RelxG-QG%", "xG-QG-F%", "RelxG-QG-F%",
                "xG-QG-A%", "RelxG-QG-A%"]
     xg_cols = ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO", "PDOxG"]
+    adv_cols = ["CCG", "CCG/60", "Rel-CCG"]
     edge_cols = _EDGE_VALUE_DISP
-    metric_cols = [c for c in qg_cols + xg_cols + share_cols + rate_cols + zone_cols + edge_cols
+    metric_cols = [c for c in qg_cols + adv_cols + xg_cols + share_cols + rate_cols + zone_cols + edge_cols
                    if c in trend.columns]
     # families is None  -> show every metric (callers that don't filter, e.g.
     #                      the Trade Analyzer).
@@ -2782,6 +2924,9 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     _b["xG%"] = lambda v: f"{v:.1f}%"
     _b["PDO"] = lambda v: f"{v:.1f}"
     _b["PDOxG"] = lambda v: f"{v:+.1f}"
+    _b["CCG"] = lambda v: f"{v:,.0f}"
+    _b["CCG/60"] = lambda v: f"{v:.2f}"
+    _b["Rel-CCG"] = lambda v: f"{v:+.2f}"
     for c in ("EDGE OZ%", "EDGE OZ% (EV)", "EDGE NZ%", "EDGE DZ%"):
         _b[c] = lambda v: f"{v * 100:.1f}%"
     _b["EDGE Top Speed"] = lambda v: f"{v:.1f} mph"
@@ -4172,9 +4317,14 @@ PLAYER_FAMILY_COLS = {
                       "RelxG-QG-F%", "RelxG-QG-A%",
                       "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
                       "RelNFI-QG-A%", "RelNFI-QG-S%"],
-    # xG / possession — all situation-driven (they follow the Situation filter).
-    "xG": (["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%",
-            "PDO", "PDOxG"] + _SIT_PLAIN),
+    # xG core — situation-driven (they follow the Situation filter). PDOxG stays
+    # here (it's an xG-adjusted luck metric).
+    "xG": ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDOxG"],
+    # CCG (Chaos Created Goals) — its own family: total count, per-60, team-relative.
+    "CCG": ["CCG", "CCG/60", "Rel-CCG"],
+    # Advanced Stats — PDO plus the possession/individual suite (the tail of the
+    # old xG family).
+    "Advanced Stats": (["PDO"] + _SIT_PLAIN),
     "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
     "Zone Impact": ["DZ Start%", "NZ Start%", "OZ Start%",
@@ -4960,7 +5110,8 @@ def render_players() -> None:
     cols = ["Player", "Pos", "Team", "GP", "TOI", "TOI/GP",
             "xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
             "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
-            "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO", "PDOxG",
+            "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDOxG",
+            "CCG", "CCG/60", "Rel-CCG", "PDO",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI",
             *_EDGE_VALUE_DISP, *_SIT_PLAIN, *BOX_FAMILY_COLS]
@@ -5000,6 +5151,12 @@ def render_players() -> None:
         fmt["PDO"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "PDOxG" in disp.columns:
         fmt["PDOxG"] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
+    if "CCG" in disp.columns:
+        fmt["CCG"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
+    if "CCG/60" in disp.columns:
+        fmt["CCG/60"] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    if "Rel-CCG" in disp.columns:
+        fmt["Rel-CCG"] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
     for c in ("OZI", "DZI", "NZI", "TZI"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
@@ -5732,7 +5889,9 @@ def render_teams() -> None:
         "Quality Games": ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "NFI-QG%",
                           "NFI-QG-A%", "NFI-QG-S%"],
         "xG": ["CF%", "xGF%", "GF%", "CF/60", "CA/60", "xGF/60",
-                            "xGA/60", "GF/60", "GA/60", "Situation TOI"],
+                            "xGA/60", "GF/60", "GA/60", "PDOxG", "Situation TOI"],
+        "CCG": ["CCG", "CCG/60", "Rel-CCG"],
+        "Advanced Stats": ["PDO"],
         "Net Front Impact": ["NFI%", "Attack events", "Suppress events"],
         "Zone Impact": list(zcols),
         "EDGE": list(TEAM_EDGE_COLS),
@@ -5771,6 +5930,16 @@ def render_teams() -> None:
     for c in ("xGF/60", "xGA/60", "CF/60", "CA/60", "GF/60", "GA/60"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    if "CCG" in disp:
+        fmt["CCG"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
+    if "CCG/60" in disp:
+        fmt["CCG/60"] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    if "Rel-CCG" in disp:
+        fmt["Rel-CCG"] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
+    if "PDO" in disp:
+        fmt["PDO"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    if "PDOxG" in disp:
+        fmt["PDOxG"] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
     if "Situation TOI" in disp:
         fmt["Situation TOI"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     # Box Score counting stats + special-teams raw counts: integers.

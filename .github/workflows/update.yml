@@ -59,6 +59,14 @@ jobs:
       - name: Per-situation on-ice (teams)
         run: python NFI/scripts/build_situation_onice_team.py
 
+      # CCG (Chaos Created Goals) needs the raw PBP cache for the no-crossing-a-
+      # whistle rule, which is gitignored/absent on the runner — so this no-ops
+      # here (guarded to keep the committed CSVs) and truly refreshes in the
+      # local update_daily.py flow. Wired in so a runner that ever has raw PBP
+      # would rebuild it too.
+      - name: CCG (Chaos Created Goals) — no-op without raw PBP
+        run: python Zones/scripts/build_ccg_by_season.py
+
       # ---- 4. Commit whatever changed ---------------------------------------
       # Only the generated data files are staged, explicitly — never `git add .`.
       - name: Commit and push updated data
@@ -74,6 +82,8 @@ jobs:
           git add -A Data/player_situation_onice.csv 2>/dev/null || true
           git add -A Data/team_situation_onice.csv 2>/dev/null || true
           git add -A Data/box_score_skaters.csv 2>/dev/null || true
+          git add -A Data/player_ccg_by_season.csv 2>/dev/null || true
+          git add -A Data/team_ccg_by_season.csv 2>/dev/null || true
           find Zones -name "last_updated_*.txt" -exec git add {} \; 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Weekly data update $(date +'%Y-%m-%d')"
           git pull --rebase origin main || true

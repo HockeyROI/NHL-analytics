@@ -439,6 +439,34 @@ This v2 supersedes the earlier geometry-only logistic model (`NFI/scripts/build_
 
 ---
 
+## CCG: Chaos Created Goals
+
+Added 2026-07: a shot-based creation metric with its own metric family on the Player List, Teams tab, and Trade Analyzer.
+
+### Definition
+
+A **Chaos Created Goal** is a player's shot attempt — `event_type in {shot-on-goal, missed-shot, blocked-shot}` — that is followed by a goal from a **teammate** (a different skater on the same team) within **0–30 seconds** of game clock, in the **same continuous play**: the look-ahead stops at any whistle/faceoff/stoppage, so it never crosses a dead-puck boundary. **Immediate rebounds are included** (the 0–3s window is *not* excluded — a teammate banging in the rebound of your shot counts).
+
+It credits shots that *generate* downstream goals for others — it is explicitly **not** the shooter's own finish (goals the shooter scores off their own shot are excluded by the "teammate" requirement).
+
+### Columns
+
+Three columns, all following the Situation filter (5v5 / PP / PK / All, pooled by ratio-of-sums across the scope's seasons, exactly like the on-ice suite):
+
+- **CCG** — total count of created goals in the current scope + situation.
+- **CCG/60** — `60 × CCG ÷ situation TOI` (the rate).
+- **Rel-CCG** — the player's `CCG/60` minus their **teammates'** `CCG/60` (leave-one-out team environment, same scope + situation): `CCG/60 − 60 × (teamCCG − CCG) ÷ (teamTOI − TOI)`. This isolates individual signal from linemate quality (positive = the player beats their own linemates at turning shots into teammate goals). Exact for one-team players; approximate across trades and multi-team pooled scopes. On the **Teams** tab, Rel-CCG is measured versus the **league** average instead.
+
+### What it measures (and does not)
+
+CCG is a **net-front / point-shot creation** skill: high-volume shooters and shooting defensemen lead it, because it rewards throwing pucks at the net that turn into teammate goals. It captures **only shots** — the NHL play-by-play feed logs no passes, so pure playmaking (a set-up pass that isn't itself a shot) is invisible to it. Treat CCG as descriptive of one specific creation channel, **not** a total-value metric.
+
+### Implementation
+
+Built from raw play-by-play by `Zones/scripts/build_ccg_by_season.py` → `Data/player_ccg_by_season.csv` and `Data/team_ccg_by_season.csv`, keyed by `(player_id/team, season, game_type, situation)` with the same `<own>v<opp>`-skater situation labels as `player_situation_onice.csv`. Raw PBP is required (not the shot-events CSV) because the "no crossing a whistle" rule needs faceoff/stoppage events. The underlying framework (origin locations, for/against, and the archetype line-pairing tests) is the "chaos origin" work in `Zones/scripts/chaos_origin.py` and `chaos_lines.py`.
+
+---
+
 ## PDO
 
 Added 2026-07: a descriptive shooting%/save% luck proxy, shown as a raw column beside xG on the Player List (no relative or Quality-Games version; not used for ranking).
