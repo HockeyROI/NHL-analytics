@@ -2847,6 +2847,20 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
                 if len(pv) and pd.notna(pv.iloc[0]):
                     d[ssn] = _league_rank(sub[raw_c], pv.iloc[0])
             out[disp_c] = d
+    cc = _ccg_season_rel()   # per (player_id, season): CCG / CCG/60 / rel forms
+    if not cc.empty:
+        cc = cc.copy()
+        cc["season"] = cc["season"].astype(str)
+        for m in ("CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"):
+            if m not in cc.columns:
+                continue
+            d = {}
+            for ssn in PROFILE_SEASONS:
+                sub = _byid(cc[cc["season"] == ssn], ssn)
+                pv = sub.loc[sub["player_id"] == pid, m]
+                if len(pv) and pd.notna(pv.iloc[0]):
+                    d[ssn] = _league_rank(sub[m], pv.iloc[0])
+            out[m] = d
     return out
 
 
@@ -5235,6 +5249,7 @@ def render_players() -> None:
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
                     "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
                     "xG-QG-F%", "xG-QG-A%", "NFI-QG-A%", "NFI-QG-S%",
+                    "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60",
                     *_EDGE_VALUE_DISP, *BOX_FAMILY_COLS]
     # lower value = better (rank ascending): shots/xG against, and the box-score
     # stats where less is better — giveaways, getting hit, penalties, FO losses.
