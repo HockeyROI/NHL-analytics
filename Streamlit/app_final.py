@@ -17,6 +17,7 @@ ADJ = ZONES / "adjusted_rankings"
 VARS_DIR = ZONES / "zone_variations"
 NFI_ADJ = REPO_ROOT / "NFI" / "output" / "fully_adjusted"
 EDGE_DIR = REPO_ROOT / "edge" / "output"
+RATINGS_DIR = REPO_ROOT / "Elites" / "Output" / "player_ratings"
 
 
 # ---------------------------------------------------------------------------
@@ -476,6 +477,14 @@ def _sort_hint() -> None:
 # across the Players, Goalies, Teams and Referees tables. PDO is deliberately
 # just "Luck" — the whole point of the metric is that it's a luck proxy.
 _ABBR_FULL = {
+    # Player Ratings (EV 5v5)
+    "Rating": "Player Rating — EV 5v5 quality, 0–100 index (~50 = position-group "
+              "average). Forwards: 40% ice time + 30% individual xG/60 + 30% "
+              "primary points/60; Defensemen: 60% ice time + 40% primary points/60. "
+              "Percentiles within position; same-season for single years, pooled for "
+              "the multi-year views.",
+    "Rating Tier": "Elite (top 15% of the position) / Middle (next 55%) / Poor "
+                   "(bottom 30%), from the Player Rating.",
     # Zone Impact index (0–100, 50 = position-group average)
     "OZI": "Offensive Zone Impact — O-zone time after offensive-zone faceoffs (0–100, 50 = average)",
     "DZI": "Defensive Zone Impact — O-zone time after defensive-zone faceoffs (0–100, 50 = average)",
@@ -1173,6 +1182,47 @@ def load_zone_2yr() -> pd.DataFrame:
         return pd.DataFrame()
     z = pd.concat(frames, ignore_index=True)
     return z.drop_duplicates(subset=["player_name", "_pos_group"], keep="first")
+
+
+def _load_ratings_files(scope: str) -> pd.DataFrame:
+    """Player Ratings (EV 5v5) for one scope, name-keyed on (player_name,
+    _pos_group) like the zone loaders. `Rating` is a 0-100 index (~50 =
+    position-group average); `Rating Tier` is Elite/Middle/Poor. Built by
+    Elites/scripts/2026_08/build_player_ratings.py. scope in
+    {"pooled","2yr","2022-23",...,"2025-26"}."""
+    frames = []
+    for pos_file, grp in (("forwards", "F"), ("defense", "D")):
+        fp = RATINGS_DIR / f"{scope}_{pos_file}.csv"
+        if not fp.exists():
+            continue
+        d = pd.read_csv(fp)
+        keep = [c for c in ("player_name", "Rating", "Tier") if c in d.columns]
+        d = d[keep].rename(columns={"Tier": "Rating Tier"})
+        d = d.drop_duplicates("player_name", keep="first")
+        d["_pos_group"] = grp
+        frames.append(d)
+    if not frames:
+        return pd.DataFrame()
+    r = pd.concat(frames, ignore_index=True)
+    return r.drop_duplicates(subset=["player_name", "_pos_group"], keep="first")
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_ratings_pooled() -> pd.DataFrame:
+    """4-yr (2022-2026) pooled Player Ratings."""
+    return _load_ratings_files("pooled")
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_ratings_2yr() -> pd.DataFrame:
+    """2-yr (2024-2026) pooled Player Ratings."""
+    return _load_ratings_files("2yr")
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_ratings_per_season(season: str) -> pd.DataFrame:
+    """Single-season Player Ratings (files named '2024-25' etc.)."""
+    return _load_ratings_files(SEASON_DISPLAY.get(season, season))
 
 
 def _qg_pooled(qg: pd.DataFrame) -> pd.DataFrame:
@@ -4255,6 +4305,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         if not zone.empty and not base.empty:
             base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
             base = base.merge(zone, on=["player_name", "_pos_group"], how="left")
+        ratings = load_ratings_2yr() if key == "pooled_2yr" else load_ratings_pooled()
+        if not ratings.empty and not base.empty:
+            base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
+            base = base.merge(ratings, on=["player_name", "_pos_group"], how="left")
         zstart = _zone_start_rate(key)
         if not zstart.empty and not base.empty:
             base = base.merge(zstart, on="player_id", how="left")
@@ -4274,6 +4328,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         if not zone.empty and not base.empty:
             base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
             base = base.merge(zone, on=["player_name", "_pos_group"], how="left")
+        ratings = load_ratings_per_season(SEASON_KEY[season_label])
+        if not ratings.empty and not base.empty:
+            base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
+            base = base.merge(ratings, on=["player_name", "_pos_group"], how="left")
         zstart = _zone_start_rate(SEASON_KEY[season_label])
         if not zstart.empty and not base.empty:
             base = base.merge(zstart, on="player_id", how="left")
@@ -4343,6 +4401,10 @@ BOX_FAMILY_COLS = ["G", "A1", "A2", "A", "Pts", "PPP", "SHP",
 # (display names, post-rename). Identity columns (Player/Pos/Team/GP/TOI) always
 # show.
 PLAYER_FAMILY_COLS = {
+    # Player Ratings — EV (5v5) player quality: Rating is a 0-100 index (~50 =
+    # position-group average), Rating Tier is Elite / Middle / Poor. Built by
+    # Elites/scripts/2026_08/build_player_ratings.py (same-season / pooled basis).
+    "Player Ratings": ["Rating", "Rating Tier"],
     # Quality Games = the "-QG%" metrics only (share of games that were "quality").
     "Quality Games": ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
                       "RelxG-QG-F%", "RelxG-QG-A%",
@@ -5146,6 +5208,7 @@ def render_players() -> None:
             "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60", "PDO",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI",
+            "Rating", "Rating Tier",
             *_EDGE_VALUE_DISP, *_SIT_PLAIN, *BOX_FAMILY_COLS]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
@@ -5194,6 +5257,8 @@ def render_players() -> None:
     for c in ("OZI", "DZI", "NZI", "TZI"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    if "Rating" in disp.columns:
+        fmt["Rating"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     for c in ("OZ Start%", "DZ Start%", "NZ Start%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
@@ -5243,7 +5308,7 @@ def render_players() -> None:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
-                    "NFI-S/60", "OZI", "DZI", "NZI", "TZI",
+                    "NFI-S/60", "OZI", "DZI", "NZI", "TZI", "Rating",
                     "DZ Start%", "NZ Start%", "OZ Start%",
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
                     "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
