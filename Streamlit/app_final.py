@@ -3338,6 +3338,27 @@ def _player_zone_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
     return out
 
 
+# CCG bar metrics — the two per-60 rate forms (count metrics don't share a
+# y-axis with rates). Both plotted as diverging bars vs a 0 baseline: CCG/60 is
+# a magnitude (always ≥0, bar up); Rel-CCG/60 diverges (+ = beats linemates).
+_CCG_BAR_METRICS = ["CCG/60", "Rel-CCG/60"]
+
+
+def _player_ccg_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
+    """CCG/60 + Rel-CCG/60 (raw per-60, not rescaled) for one player at a season
+    label or the 2yr row — same shape as _player_zone_vals."""
+    if label == "2yr avg (24-26)":
+        _p2 = _players_2yr_frame()
+        _pr = _p2[_p2["player_id"] == int(pid)] if not _p2.empty else _p2
+        return {m: (float(_pr[m].iloc[0]) if len(_pr) and m in _pr.columns
+                    and pd.notna(_pr[m].iloc[0]) else np.nan)
+                for m in _CCG_BAR_METRICS}
+    _tr = trend[trend["Season"].astype(str) == str(label)]
+    return {m: (float(_tr[m].iloc[0]) if len(_tr) and m in _tr.columns
+                and pd.notna(_tr[m].iloc[0]) else np.nan)
+            for m in _CCG_BAR_METRICS}
+
+
 def _default_qg_year(season_label, seasons) -> str:
     """Row label to default the bar to, from the global Season filter."""
     key = SEASON_KEY.get(season_label) if season_label else None
@@ -3499,6 +3520,90 @@ def _qg_bar_chart_compare(players_vals: dict, label: str, metrics: list[str] = N
                  alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = _ch.mark_rule(strokeDash=[4, 4],
                          color=PALETTE["text_secondary"]).encode(y=alt.datum(50))
+    chart = alt.layer(bars, rule).properties(width=_w, height=300).facet(
+        column=alt.Column("Player:N", title=None,
+                          header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
+    if title:
+        chart = chart.properties(title=alt.TitleParams(
+            text=f"{title} — {label}", color=PALETTE["text"], fontSize=13))
+    _show_chart(chart, dl_name=dl_name,
+                brand_width=_w * _n + 24 * (_n - 1) + 55)
+
+
+def _ccg_bar_chart(vals: dict, label: str, caption: str = None,
+                   dl_prefix: str = "CCG-bars", ydomain: list = None,
+                   title: str = None) -> None:
+    """Diverging bar of CCG per-60 metrics vs a 0 baseline. CCG/60 is a magnitude
+    (bar up); Rel-CCG/60 diverges (+ = beats teammates). vals maps metric → per-60
+    value. Colour reuses the app's blue-above / orange-below scale, centred at 0."""
+    import altair as alt
+    rows = [{"Metric": m, "value": float(v), "base": 0.0,
+             "color": _bar_color(50 + v * 50)}
+            for m, v in vals.items() if pd.notna(v)]
+    if not rows:
+        st.caption("No CCG values for this selection.")
+        return
+    d = pd.DataFrame(rows)
+    _vv = [r["value"] for r in rows]
+    _lo, _hi = min(0.0, min(_vv)), max(0.0, max(_vv))
+    _pad = max(0.05, (_hi - _lo) * 0.15)
+    _dom = ydomain or [_lo - _pad, _hi + _pad]
+    st.caption(caption or (f"**{label}** — Chaos Created Goals per 60 vs a **0** "
+               "baseline. CCG/60 = rate; Rel-CCG/60 = vs teammates (bar up = beats "
+               "their linemates)."))
+    bars = alt.Chart(d).mark_bar(size=44, clip=True).encode(
+        x=alt.X("Metric:N", sort=[r["Metric"] for r in rows],
+                axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold",
+                              labelFontSize=12)),
+        y=alt.Y("base:Q", scale=alt.Scale(domain=_dom), title="per 60"),
+        y2="value:Q",
+        color=alt.Color("color:N", scale=None, legend=None),
+        tooltip=[alt.Tooltip("Metric:N"),
+                 alt.Tooltip("value:Q", format="+.3f", title="per 60")])
+    rule = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
+        strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
+    chart = bars + rule
+    if title:
+        chart = chart.properties(title=alt.TitleParams(
+            text=f"{title} — {label}", color=PALETTE["text"], fontSize=13))
+    _show_chart(chart, dl_name=f"{dl_prefix}-{label}")
+
+
+def _ccg_bar_chart_compare(players_vals: dict, label: str, caption: str = None,
+                           dl_name: str = "Trade-CCG-bars", title: str = None) -> None:
+    """Faceted CCG per-60 bars (one panel per player) vs a 0 baseline — the Trade
+    Analyzer analogue of _ccg_bar_chart."""
+    import altair as alt
+    rows, allv = [], []
+    for pname, vals in players_vals.items():
+        for m, v in vals.items():
+            if m in _CCG_BAR_METRICS and pd.notna(v):
+                rows.append({"Player": pname, "Metric": m, "value": float(v),
+                             "base": 0.0, "color": _bar_color(50 + v * 50)})
+                allv.append(float(v))
+    if not rows:
+        st.caption("No CCG values to compare for this selection.")
+        return
+    d = pd.DataFrame(rows)
+    _lo, _hi = min(0.0, min(allv)), max(0.0, max(allv))
+    _pad = max(0.05, (_hi - _lo) * 0.15)
+    _dom = [_lo - _pad, _hi + _pad]
+    st.caption(caption or (f"**{label}** — CCG per 60 vs a **0** baseline, one panel "
+               "per player (CCG/60 = rate; Rel-CCG/60 = vs teammates)."))
+    _n = max(1, len(players_vals))
+    _w = int(max(200, 1040 / _n))
+    _ch = alt.Chart(d)
+    bars = _ch.mark_bar(size=40).encode(
+        x=alt.X("Metric:N", sort=_CCG_BAR_METRICS,
+                axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold",
+                              labelFontSize=11, labelColor=PALETTE["text"])),
+        y=alt.Y("base:Q", scale=alt.Scale(domain=_dom), title="per 60"),
+        y2="value:Q",
+        color=alt.Color("color:N", scale=None, legend=None),
+        tooltip=[alt.Tooltip("Player:N"), alt.Tooltip("Metric:N"),
+                 alt.Tooltip("value:Q", format="+.3f", title="per 60")])
+    rule = _ch.mark_rule(strokeDash=[4, 4],
+                         color=PALETTE["text_secondary"]).encode(y=alt.datum(0))
     chart = alt.layer(bars, rule).properties(width=_w, height=300).facet(
         column=alt.Column("Player:N", title=None,
                           header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
@@ -3935,6 +4040,9 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             ("xG", lambda: _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
                    ["RelxG%", "RelxG-F%", "RelxG-A%"])),
             ("xG", lambda: _chart("PDOxG (5v5) — luck net of shot quality", ["PDOxG"])),
+            ("CCG", lambda: _chart(
+                   "Chaos Created Goals per 60 (CCG/60, Rel-CCG/60)",
+                   ["CCG/60", "Rel-CCG/60"])),
             ("Net Front Impact", lambda: _chart(
                    "RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
                    ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])),
@@ -3961,11 +4069,24 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         # download covers both) and the hard-locked Zone Impact bar — both on
         # the same fixed 30–75 y-axis. 50 = baseline; above = better/more
         # O-zone time, below = worse/less.
+        # CCG bars float to the top when the CCG family is the focused selection;
+        # otherwise they render right after the QG (NFI + xG) bars.
+        _ccg_vals = _player_ccg_vals(pid, trend, _yr)
+        _ccg_focus = ("CCG" in _show_fams
+                      and len(_show_fams) < len(PLAYER_FAMILY_COLS))
+
+        def _ccg_bars():
+            _ccg_bar_chart(_ccg_vals, _yr, dl_prefix="CCG-bars",
+                           title="Chaos Created Goals / 60")
+        if _ccg_focus:
+            _ccg_bars()
         _all_qg_vals = _player_qg_vals(pid, trend, _yr)
         _qg_paired_bar_chart(
             _all_qg_vals, _yr,
             caption="Quality Games % vs **50**.",
             dl_prefix="QG-bars")
+        if not _ccg_focus:
+            _ccg_bars()
         _zone_vals = _player_zone_vals(pid, trend, _yr)
         _qg_bar_chart(_zone_vals, _yr,
                      caption="Zone Impact index vs **50** (league average).",
@@ -7755,7 +7876,7 @@ def render_trade_analyzer() -> None:
     # than mixed together, matching the single-player drill-in's split.
     _seasons_all = [SEASON_DISPLAY.get(s, s) for s in PROFILE_SEASONS] + ["2yr avg (24-26)"]
     _cmp_yr = _default_qg_year(season_label, _seasons_all)
-    _trends, _pv, _zv = {}, {}, {}
+    _trends, _pv, _zv, _cv = {}, {}, {}, {}
     for pid in sel:
         _nm = plabel.get(int(pid), str(pid))
         _tr = _player_trend(int(pid))
@@ -7763,6 +7884,7 @@ def render_trade_analyzer() -> None:
             _trends[_nm] = _tr
             _pv[_nm] = _player_qg_vals(int(pid), _tr, _cmp_yr)
             _zv[_nm] = _player_zone_vals(int(pid), _tr, _cmp_yr)
+            _cv[_nm] = _player_ccg_vals(int(pid), _tr, _cmp_yr)
     if _pv:
         _set_dl_title(" vs ".join(_pv.keys()))
         # Same 12-metric Raw+Rel paired set (and Attack/Suppress/Overall order)
@@ -7778,6 +7900,13 @@ def render_trade_analyzer() -> None:
                     "**50% baseline** (Raw next to its Relative counterpart), one panel "
                     "per player.", dl_name="Trade-QG-bars-xG",
             title="xG Quality Games %")
+        # CCG bars — after the QG (NFI + xG) bars, faceted per player.
+        if any(any(pd.notna(v) for v in cv.values()) for cv in _cv.values()):
+            _ccg_bar_chart_compare(
+                _cv, _cmp_yr,
+                caption="**CCG** per 60 vs a **0** baseline (CCG/60 = rate; "
+                        "Rel-CCG/60 = vs teammates), one panel per player.",
+                dl_name="Trade-CCG-bars", title="Chaos Created Goals / 60")
         # Zone Impact bar (OZI/DZI/NZI/TZI, 0-100, 50 = position average) — same
         # metric the drill-in shows, faceted per player.
         if any(any(pd.notna(v) for v in zv.values()) for zv in _zv.values()):
