@@ -18,6 +18,7 @@ VARS_DIR = ZONES / "zone_variations"
 NFI_ADJ = REPO_ROOT / "NFI" / "output" / "fully_adjusted"
 EDGE_DIR = REPO_ROOT / "edge" / "output"
 RATINGS_DIR = REPO_ROOT / "Elites" / "Output" / "player_ratings"
+ELITE_CTX_DIR = REPO_ROOT / "Elites" / "Output" / "elite_context"
 
 
 # ---------------------------------------------------------------------------
@@ -485,6 +486,16 @@ _ABBR_FULL = {
               "the multi-year views.",
     "Rating Tier": "Elite (top 15% of the position) / Middle (next 55%) / Poor "
                    "(bottom 30%), from the Player Rating.",
+    # Elite Context (same-season quality of competition / support, 0–100 %)
+    "vs Elite F%": "Quality of competition — % of 5v5 ice vs an opposing FORWARD "
+                   "group with ≥1 elite forward and zero poor forwards (same-season tiers).",
+    "vs Elite D%": "Quality of competition — % of 5v5 ice vs an opposing DEFENSE "
+                   "pair with ≥1 elite defenseman and zero poor defensemen.",
+    "vs Elite%": "Full-strength exposure — % of 5v5 ice vs a matchup with ≥1 elite "
+                 "and zero poor among all five opponents (league average ~31%).",
+    "Elite Support%": "% of 5v5 ice with ≥1 elite TEAMMATE on the ice (excludes self).",
+    "xGF vs Elite%": "On-ice expected-goals share (xGF%) during the full-strength "
+                     "(vs Elite%) shifts — how the player did in the toughest matchups.",
     # Zone Impact index (0–100, 50 = position-group average)
     "OZI": "Offensive Zone Impact — O-zone time after offensive-zone faceoffs (0–100, 50 = average)",
     "DZI": "Defensive Zone Impact — O-zone time after defensive-zone faceoffs (0–100, 50 = average)",
@@ -833,6 +844,32 @@ def render_methodology() -> None:
             "(close net-front) and MNFI (mid / high-slot) zones while a player is on ice. "
             "<b>RelNFI%</b> measures net-front impact relative to a player's own team "
             "(on-ice vs off-ice), isolating individual contribution from team strength.",
+        )
+        + _meth_framework(
+            "Player Ratings",
+            "A single EV (5v5) player-quality score on a <b>0–100</b> scale (~50 = "
+            "position-group average), plus an Elite / Middle / Poor <b>Rating Tier</b> "
+            "(top 15% / next 55% / bottom 30% of the position). Position-specific by "
+            "design, from percentiles within position: <b>forwards</b> = 40% EV TOI/GP "
+            "+ 30% individual xG/60 + 30% primary points/60; <b>defensemen</b> = 60% EV "
+            "TOI/GP + 40% primary points/60 (a D's defensive value is hard to measure "
+            "individually, so deployment — the most reliable signal — carries more). "
+            "Component weights were chosen from a reliability study; chaos-xG, skating "
+            "speed, and relative xG were tested and left out for being too noisy or too "
+            "team-dependent. Single seasons use that season's stats; the 2yr / 4yr "
+            "scopes pool the window.",
+        )
+        + _meth_framework(
+            "Elite Context",
+            "Same-season quality of competition and support. Opponents and teammates "
+            "are labelled by that season's Rating Tier. Three exposure buckets — each "
+            "the share of 5v5 ice vs a unit with <b>≥1 elite and zero poor</b>: "
+            "<b>vs Elite F%</b> (opposing forwards), <b>vs Elite D%</b> (opposing "
+            "defense), and <b>vs Elite%</b> (all five opponents, full-strength; league "
+            "average ~31%). <b>Elite Support%</b> is the share of ice with ≥1 elite "
+            "teammate on (excludes self), and <b>xGF vs Elite%</b> is the on-ice "
+            "expected-goals share during the full-strength shifts — results in the "
+            "toughest matchups. Deployment and results are kept as separate columns.",
         )
         + _meth_framework(
             "Quality Games (QG)",
@@ -1223,6 +1260,50 @@ def load_ratings_2yr() -> pd.DataFrame:
 def load_ratings_per_season(season: str) -> pd.DataFrame:
     """Single-season Player Ratings (files named '2024-25' etc.)."""
     return _load_ratings_files(SEASON_DISPLAY.get(season, season))
+
+
+_CTX_REN = {"vsEliteF": "vs Elite F%", "vsEliteD": "vs Elite D%",
+            "vsElite": "vs Elite%", "EliteSupport": "Elite Support%",
+            "xGFvsElite": "xGF vs Elite%"}
+
+
+def _load_ctx_files(scope: str) -> pd.DataFrame:
+    """Elite Context (same-season quality-of-competition / support) for one scope,
+    name-keyed on (player_name, _pos_group) like the zone/ratings loaders. Built by
+    Elites/scripts/2026_08/build_elite_context.py. Three exposure buckets
+    (vs elite forwards / vs elite D / vs elite full-strength, all >=1 elite & 0 poor)
+    + Elite Support% (>=1 elite teammate) + xGF vs Elite% (on-ice xGF in the
+    full-strength shifts). Values are 0-100."""
+    frames = []
+    for pos_file, grp in (("forwards", "F"), ("defense", "D")):
+        fp = ELITE_CTX_DIR / f"{scope}_{pos_file}.csv"
+        if not fp.exists():
+            continue
+        d = pd.read_csv(fp)
+        keep = ["player_name"] + [c for c in _CTX_REN if c in d.columns]
+        d = d[keep].rename(columns=_CTX_REN)
+        d = d.drop_duplicates("player_name", keep="first")
+        d["_pos_group"] = grp
+        frames.append(d)
+    if not frames:
+        return pd.DataFrame()
+    c = pd.concat(frames, ignore_index=True)
+    return c.drop_duplicates(subset=["player_name", "_pos_group"], keep="first")
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_ctx_pooled() -> pd.DataFrame:
+    return _load_ctx_files("pooled")
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_ctx_2yr() -> pd.DataFrame:
+    return _load_ctx_files("2yr")
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_ctx_per_season(season: str) -> pd.DataFrame:
+    return _load_ctx_files(SEASON_DISPLAY.get(season, season))
 
 
 def _qg_pooled(qg: pd.DataFrame) -> pd.DataFrame:
@@ -4430,6 +4511,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         if not ratings.empty and not base.empty:
             base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
             base = base.merge(ratings, on=["player_name", "_pos_group"], how="left")
+        ctx = load_ctx_2yr() if key == "pooled_2yr" else load_ctx_pooled()
+        if not ctx.empty and not base.empty:
+            base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
+            base = base.merge(ctx, on=["player_name", "_pos_group"], how="left")
         zstart = _zone_start_rate(key)
         if not zstart.empty and not base.empty:
             base = base.merge(zstart, on="player_id", how="left")
@@ -4453,6 +4538,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         if not ratings.empty and not base.empty:
             base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
             base = base.merge(ratings, on=["player_name", "_pos_group"], how="left")
+        ctx = load_ctx_per_season(SEASON_KEY[season_label])
+        if not ctx.empty and not base.empty:
+            base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
+            base = base.merge(ctx, on=["player_name", "_pos_group"], how="left")
         zstart = _zone_start_rate(SEASON_KEY[season_label])
         if not zstart.empty and not base.empty:
             base = base.merge(zstart, on="player_id", how="left")
@@ -4526,6 +4615,11 @@ PLAYER_FAMILY_COLS = {
     # position-group average), Rating Tier is Elite / Middle / Poor. Built by
     # Elites/scripts/2026_08/build_player_ratings.py (same-season / pooled basis).
     "Player Ratings": ["Rating", "Rating Tier"],
+    # Elite Context — same-season quality of competition (3 exposure buckets, each
+    # >=1 elite & 0 poor) + elite teammate support + on-ice xGF vs elites. Built by
+    # Elites/scripts/2026_08/build_elite_context.py.
+    "Elite Context": ["vs Elite F%", "vs Elite D%", "vs Elite%",
+                      "Elite Support%", "xGF vs Elite%"],
     # Quality Games = the "-QG%" metrics only (share of games that were "quality").
     "Quality Games": ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
                       "RelxG-QG-F%", "RelxG-QG-A%",
@@ -5330,6 +5424,7 @@ def render_players() -> None:
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
             "DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI",
             "Rating", "Rating Tier",
+            "vs Elite F%", "vs Elite D%", "vs Elite%", "Elite Support%", "xGF vs Elite%",
             *_EDGE_VALUE_DISP, *_SIT_PLAIN, *BOX_FAMILY_COLS]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
@@ -5380,6 +5475,9 @@ def render_players() -> None:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "Rating" in disp.columns:
         fmt["Rating"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    for c in ("vs Elite F%", "vs Elite D%", "vs Elite%", "Elite Support%", "xGF vs Elite%"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
     for c in ("OZ Start%", "DZ Start%", "NZ Start%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
@@ -5430,6 +5528,7 @@ def render_players() -> None:
 
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
                     "NFI-S/60", "OZI", "DZI", "NZI", "TZI", "Rating",
+                    "vs Elite F%", "vs Elite D%", "vs Elite%", "Elite Support%", "xGF vs Elite%",
                     "DZ Start%", "NZ Start%", "OZ Start%",
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
                     "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
