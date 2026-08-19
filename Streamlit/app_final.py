@@ -3477,6 +3477,59 @@ def _ctx_bar_chart(vals: dict, label: str) -> None:
     _show_chart(ch, dl_name="Elite-Context-bars")
 
 
+def _ctx_scatter_frame(season_label: str) -> pd.DataFrame:
+    """Raw Elite Context rows (both positions) for the scope matching the season
+    filter — read straight from the files so the scatter has ixG60 + EliteSupport
+    regardless of the leaderboard merge."""
+    k = SEASON_KEY.get(season_label)
+    scope = {"pooled": "pooled", "pooled_2yr": "2yr"}.get(k) or SEASON_DISPLAY.get(k)
+    if not scope:
+        return pd.DataFrame()
+    frames = []
+    for pos_file, grp in (("forwards", "F"), ("defense", "D")):
+        fp = ELITE_CTX_DIR / f"{scope}_{pos_file}.csv"
+        if not fp.exists():
+            continue
+        d = pd.read_csv(fp)
+        d["pos_group"] = grp
+        frames.append(d)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def _ctx_scatter(season_label: str, pos_filter: str = "All") -> None:
+    """League landscape: vs Elite% (y) × individual xG/60 (x), coloured by elite
+    teammate support (darker = LESS support)."""
+    import altair as alt
+    d = _ctx_scatter_frame(season_label)
+    if d.empty or not {"vsElite", "ixG60", "EliteSupport"}.issubset(d.columns):
+        return
+    if pos_filter in ("F", "D"):
+        d = d[d["pos_group"] == pos_filter]
+    d = d.dropna(subset=["vsElite", "ixG60", "EliteSupport"])
+    if d.empty:
+        return
+    st.caption("**Elite Context landscape** — quality of competition (vs Elite%, y) "
+               "vs individual shot danger (ixG/60, x). **Darker = less elite teammate "
+               f"support.** Hover for names. {season_label}.")
+    ch = alt.Chart(d).mark_circle(size=95, opacity=0.88, stroke="#888",
+                                  strokeWidth=0.3).encode(
+        x=alt.X("ixG60:Q", title="Individual xG / 60",
+                scale=alt.Scale(zero=False, nice=True)),
+        y=alt.Y("vsElite:Q", title="vs Elite %  (full-strength exposure)",
+                scale=alt.Scale(zero=False, nice=True)),
+        color=alt.Color("EliteSupport:Q", title="Elite Support %",
+                        scale=alt.Scale(scheme="blues", reverse=True),
+                        legend=alt.Legend(orient="right")),
+        tooltip=[alt.Tooltip("player_name:N", title="Player"),
+                 alt.Tooltip("team:N", title="Team"),
+                 alt.Tooltip("pos:N", title="Pos"),
+                 alt.Tooltip("vsElite:Q", title="vs Elite%", format=".1f"),
+                 alt.Tooltip("EliteSupport:Q", title="Elite Support%", format=".1f"),
+                 alt.Tooltip("ixG60:Q", title="ixG/60", format=".2f")],
+    ).properties(height=420)
+    _show_chart(ch, dl_name="Elite-Context-scatter")
+
+
 # CCG bar metrics — the two per-60 rate forms (count metrics don't share a
 # y-axis with rates). Both plotted as diverging bars vs a 0 baseline: CCG/60 is
 # a magnitude (always ≥0, bar up); Rel-CCG/60 diverges (+ = beats linemates).
@@ -5458,6 +5511,11 @@ def render_players() -> None:
             unsafe_allow_html=True,
         )
         return
+
+    # Elite Context landscape scatter — shown above the table only when that
+    # family is explicitly selected (gated like the drill-in charts).
+    if display_fams and "Elite Context" in display_fams:
+        _ctx_scatter(season_label, pos)
 
     # Qualified players (≥ slider floor) lead, sorted by RelNFI%; sub-floor (UR)
     # players follow — so low-TOI noise can't dominate the top of the leaderboard.
@@ -8131,6 +8189,13 @@ def render_trade_analyzer() -> None:
             _trade_line_compare(_trends, ["OZ Start%", "DZ Start%"],
                 "D/O Zone Start% (faceoff-started 5v5 shifts) over time, per player.",
                 "Trade-ZoneStart")
+            # Elite Context
+            _trade_line_compare(_trends, ["vs Elite%", "vs Elite F%", "vs Elite D%"],
+                "Quality of competition — % of 5v5 ice vs elites over time, per player.",
+                "Trade-vsElite")
+            _trade_line_compare(_trends, ["Elite Support%", "xGF vs Elite%"],
+                "Elite teammate support & on-ice results over time, per player.",
+                "Trade-EliteSupport")
             # EDGE tracking
             _trade_line_compare(_trends, ["EDGE OZ%", "EDGE DZ%"],
                 "EDGE Zone-Time % (OZ, DZ) over time, per player.", "Trade-EDGE-zone")
