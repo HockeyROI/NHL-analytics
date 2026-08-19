@@ -351,7 +351,7 @@ Validation (2026-07-22): 5v5 league ΣxGF≈ΣxGA and ΣGF≈ΣGA to <0.2%; McDa
 
 ## Player Ratings
 
-A single even-strength (5v5) player-quality score on a **0–100** scale (~50 = position-group average), plus an Elite / Middle / Poor **Rating Tier** (top 15% / next 55% / bottom 30% of the position). Percentiles are computed **within position group**, among qualified players, per scope.
+The **Elite Rating** — a single even-strength (5v5) player-quality score on a **0–100** scale (~50 = position-group average), plus an Elite / Middle / Poor **Elite Rating Tier** (top 15% / next 55% / bottom 30% of the position). Percentiles are computed **within position group**, among qualified players, per scope.
 
 **Position-specific formula (by design):**
 - **Forwards:** `0.40 · pct(EV TOI/GP) + 0.30 · pct(5v5 ixG/60) + 0.30 · pct(5v5 primary points/60)`
@@ -359,7 +359,7 @@ A single even-strength (5v5) player-quality score on a **0–100** scale (~50 = 
 
 A forward's value is individually measurable (shot generation + production), so those carry weight. A defenseman's value — especially defense — is hard to measure individually, so deployment (EV TOI/GP, the most reliable signal) carries more, which also recovers the two-way credit that offense-only points miss. Component weights were set from a **reliability study** — window-to-window repeatability across two disjoint prior windows: EV TOI/GP ≈ 0.75, ixG/60 ≈ 0.66, primary points/60 ≈ 0.62. Metrics tested and **left out**: chaos-created xG (repeatability ≈ 0.49, partly redundant with ixG), relative on-ice xGF% (≈ 0.30, team-dependent), and skating speed (orthogonal to quality — it would demote slow elites).
 
-**Two bases.** The published **Rating** (and same-season Elite/Middle/Poor) uses the season's own stats; the 2yr / 4yr scopes pool the window. The Elites pipeline internally also computes a **prior-two-season** tier (anti-circular — never same-season) that feeds the Elite Context competition metrics; the app's Player Ratings family shows the descriptive same-season/pooled version.
+**Two bases.** The published **Elite Rating** (and same-season Elite/Middle/Poor) uses the season's own stats; the 2yr / 4yr scopes pool the window. The Elites pipeline internally also computes a **prior-two-season** tier (anti-circular — never same-season) that feeds the Elite Context competition metrics; the app's Player Ratings family shows the descriptive same-season/pooled version.
 
 Cuts: Elite = top 15%, Middle = next 55%, Poor = bottom 30%, within each position pool.
 
@@ -372,7 +372,7 @@ Cuts: Elite = top 15%, Middle = next 55%, Poor = bottom 30%, within each positio
 
 ## Elite Exposure (part of Player Ratings)
 
-Same-season **quality of competition** and **support**, shown with the Player Ratings family. Opponents and teammates are labelled by that season's Rating Tier (Elite = top 15%, Poor = bottom 30% of the position). Metrics are per player, kept as separate deployment and results columns (never blended).
+Same-season **quality of competition** and **support**, shown with the Player Ratings family. Opponents and teammates are labelled by that season's Elite Rating Tier (Elite = top 15%, Poor = bottom 30% of the position). Metrics are per player, kept as separate deployment and results columns (never blended).
 
 Three **exposure buckets** — a shift can belong to more than one — each the share of 5v5 ice vs a unit with **≥1 elite and zero poor**:
 - **Elite Exp F%** — opposing forwards (≥1 elite forward, 0 poor forwards).

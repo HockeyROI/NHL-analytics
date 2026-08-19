@@ -166,6 +166,8 @@ _CHART_COLORS = {
     # Elite Exposure trio (distinct colours per line/bar)
     "Elite Exp%": _CHART_PRIMARY, "Elite Support%": _CHART_SECOND,
     "Elite xGF%": _CHART_FOURTH,
+    # EV vs PP rating trajectory line
+    "Elite Rating": _CHART_PRIMARY, "PP Rating": _CHART_SECOND,
     "NFI-QG%": _CHART_PRIMARY, "xG-QG%": _CHART_SECOND,
     "RelNFI-QG%": _CHART_PRIMARY, "RelxG-QG%": _CHART_SECOND, "RelxG%": _CHART_PRIMARY,
     "NFI-GSAx/60": _CHART_PRIMARY, "QNFG%": _CHART_PRIMARY, "QG%": _CHART_SECOND,
@@ -483,12 +485,12 @@ def _sort_hint() -> None:
 # just "Luck" — the whole point of the metric is that it's a luck proxy.
 _ABBR_FULL = {
     # Player Ratings (EV 5v5)
-    "Rating": "Player Rating — EV 5v5 quality, 0–100 index (~50 = position-group "
+    "Elite Rating": "Player Rating — EV 5v5 quality, 0–100 index (~50 = position-group "
               "average). Forwards: 40% ice time + 30% individual xG/60 + 30% "
               "primary points/60; Defensemen: 60% ice time + 40% primary points/60. "
               "Percentiles within position; same-season for single years, pooled for "
               "the multi-year views.",
-    "Rating Tier": "Elite (top 15% of the position) / Middle (next 55%) / Poor "
+    "Elite Rating Tier": "Elite (top 15% of the position) / Middle (next 55%) / Poor "
                    "(bottom 30%), from the Player Rating.",
     "PP Rating": "Power-play rating — 0–100 (0.40·PP TOI/GP + 0.30·PP ixG/60 + "
                  "0.30·PP points/60, percentiles within position). Higher = better.",
@@ -865,8 +867,9 @@ def render_methodology() -> None:
         )
         + _meth_framework(
             "Player Ratings",
-            "A single EV (5v5) player-quality score on a <b>0–100</b> scale (~50 = "
-            "position-group average), plus an Elite / Middle / Poor <b>Rating Tier</b> "
+            "The <b>Elite Rating</b> — a single EV (5v5) player-quality score on a "
+            "<b>0–100</b> scale (~50 = position-group average), plus an Elite / Middle "
+            "/ Poor <b>Elite Rating Tier</b> "
             "(top 15% / next 55% / bottom 30% of the position). Position-specific by "
             "design, from percentiles within position: <b>forwards</b> = 40% EV TOI/GP "
             "+ 30% individual xG/60 + 30% primary points/60; <b>defensemen</b> = 60% EV "
@@ -1266,7 +1269,7 @@ def _load_ratings_files(scope: str) -> pd.DataFrame:
             continue
         d = pd.read_csv(fp)
         keep = [c for c in ("player_name", "Rating", "Tier") if c in d.columns]
-        d = d[keep].rename(columns={"Tier": "Rating Tier"})
+        d = d[keep].rename(columns={"Rating": "Elite Rating", "Tier": "Elite Rating Tier"})
         d = d.drop_duplicates("player_name", keep="first")
         d["_pos_group"] = grp
         frames.append(d)
@@ -2787,7 +2790,7 @@ def _player_trend(pid: int) -> pd.DataFrame:
     if not rat.empty:
         rr = rat[(rat["player_name"] == name) & (rat["_pos_group"] == pos_group)]
         if not rr.empty:
-            rcols = ["season"] + [c for c in ("Rating", "Rating Tier") if c in rr.columns]
+            rcols = ["season"] + [c for c in ("Elite Rating", "Elite Rating Tier") if c in rr.columns]
             trend = trend.merge(rr[rcols], on="season", how="outer")
 
     # Special-teams ratings (PP Rating + PK liability), name-keyed per season.
@@ -3180,13 +3183,13 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
                "xG-QG-A%", "RelxG-QG-A%"]
     xg_cols = ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO", "PDOxG"]
     adv_cols = ["CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"]
-    rating_cols = ["Rating", "Rating Tier", "PP Rating", "PP Tier",
-                   "PK Rating", "PK Flag"]        # Player Ratings, lead the table
+    rating_cols = ["Elite Rating", "Elite Rating Tier"]   # Player Ratings, lead
     ctx_cols = ["Elite Exp F%", "Elite Exp D%", "Elite Exp%", "Elite Support%",
                 "Elite xGF%", "Elite xG"]
+    pppk_cols = ["PP Rating", "PP Tier", "PK Rating", "PK Flag"]   # end of section
     edge_cols = _EDGE_VALUE_DISP
     metric_cols = [c for c in rating_cols + qg_cols + adv_cols + xg_cols + share_cols
-                   + rate_cols + zone_cols + ctx_cols + edge_cols
+                   + rate_cols + zone_cols + ctx_cols + pppk_cols + edge_cols
                    if c in trend.columns]
     # families is None  -> show every metric (callers that don't filter, e.g.
     #                      the Trade Analyzer).
@@ -3221,8 +3224,8 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     for c in ("Elite Exp F%", "Elite Exp D%", "Elite Exp%", "Elite Support%", "Elite xGF%"):
         _b[c] = lambda v: f"{v:.1f}%"
     _b["Elite xG"] = lambda v: f"{v:.2f}"
-    _b["Rating"] = lambda v: f"{v:.1f}"
-    _b["Rating Tier"] = lambda v: f"{v}"          # string label (Elite/Middle/Poor)
+    _b["Elite Rating"] = lambda v: f"{v:.1f}"
+    _b["Elite Rating Tier"] = lambda v: f"{v}"          # string label (Elite/Middle/Poor)
     _b["PP Rating"] = lambda v: f"{v:.1f}"
     _b["PP Tier"] = lambda v: f"{v}"
     _b["PK Rating"] = lambda v: f"{v:+.2f}"
@@ -3256,7 +3259,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
             v = r[c]
             if pd.isna(v):
                 row[c] = "—"
-            elif c in ("Rating", "Rating Tier", "PP Rating", "PP Tier",
+            elif c in ("Elite Rating", "Elite Rating Tier", "PP Rating", "PP Tier",
                        "PK Rating", "PK Flag"):    # value only, no rank annotation
                 row[c] = _b.get(c, lambda v: f"{v}")(v)
             else:
@@ -4429,7 +4432,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             # trajectory, then Elite Exposure, then PK liability CI.
             ("Player Ratings", lambda: _chart(
                    "Ratings over time (EV Rating, PP Rating) — 0–100",
-                   ["Rating", "PP Rating"], ydomain=[0, 100])),
+                   ["Elite Rating", "PP Rating"], ydomain=[0, 100])),
             ("Player Ratings", lambda: _chart(
                    "Elite Exposure over time (Elite Exp%, Elite Support%, Elite xGF%)",
                    ["Elite Exp%", "Elite Support%", "Elite xGF%"])),
@@ -4951,10 +4954,10 @@ PLAYER_FAMILY_COLS = {
     # (build_player_ratings.py). PLUS same-season Elite Exposure — quality of
     # competition (3 buckets, each >=1 elite & 0 poor) + elite teammate support +
     # on-ice xGF in exposure shifts (build_elite_context.py). Shown SECOND.
-    "Player Ratings": ["Rating", "Rating Tier",
-                       "PP Rating", "PP Tier", "PK Rating", "PK Flag",
+    "Player Ratings": ["Elite Rating", "Elite Rating Tier",
                        "Elite Exp F%", "Elite Exp D%",
-                       "Elite Exp%", "Elite Support%", "Elite xGF%", "Elite xG"],
+                       "Elite Exp%", "Elite Support%", "Elite xGF%", "Elite xG",
+                       "PP Rating", "PP Tier", "PK Rating", "PK Flag"],
     # xG core — situation-driven (they follow the Situation filter). PDOxG stays
     # here (it's an xG-adjusted luck metric).
     "xG": ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDOxG"],
@@ -5750,10 +5753,10 @@ def render_players() -> None:
             # Quality Games first, then Player Ratings (Rating + Elite Exposure).
             "xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
             "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
-            "Rating", "Rating Tier",
-            "PP Rating", "PP Tier", "PK Rating", "PK Flag",
+            "Elite Rating", "Elite Rating Tier",
             "Elite Exp F%", "Elite Exp D%", "Elite Exp%", "Elite Support%",
             "Elite xGF%", "Elite xG",
+            "PP Rating", "PP Tier", "PK Rating", "PK Flag",
             "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDOxG",
             "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60", "PDO",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
@@ -5806,8 +5809,8 @@ def render_players() -> None:
     for c in ("OZI", "DZI", "NZI", "TZI"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
-    if "Rating" in disp.columns:
-        fmt["Rating"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
+    if "Elite Rating" in disp.columns:
+        fmt["Elite Rating"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "PP Rating" in disp.columns:
         fmt["PP Rating"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "PK Rating" in disp.columns:      # plain signed number, no diverging colour
@@ -5866,7 +5869,7 @@ def render_players() -> None:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
-                    "NFI-S/60", "OZI", "DZI", "NZI", "TZI", "Rating", "PP Rating",
+                    "NFI-S/60", "OZI", "DZI", "NZI", "TZI", "Elite Rating", "PP Rating",
                     "Elite Exp F%", "Elite Exp D%", "Elite Exp%", "Elite Support%",
                     "Elite xGF%", "Elite xG",
                     "DZ Start%", "NZ Start%", "OZ Start%",
@@ -7292,7 +7295,7 @@ def _goalie_profile_table(gid: int, qg_scope_suffix: str = "", qg_starter: bool 
             v = r[c]
             if pd.isna(v):
                 row[c] = "—"
-            elif c in ("Rating", "Rating Tier", "PP Rating", "PP Tier",
+            elif c in ("Elite Rating", "Elite Rating Tier", "PP Rating", "PP Tier",
                        "PK Rating", "PK Flag"):    # value only, no rank annotation
                 row[c] = _b.get(c, lambda v: f"{v}")(v)
             else:
