@@ -3882,7 +3882,7 @@ def _qg_paired_bar_chart(vals: dict, label: str, caption: str, dl_prefix: str) -
 
 def _qg_bar_chart_compare(players_vals: dict, label: str, metrics: list[str] = None,
                           caption: str = None, dl_name: str = "Trade-QG-bars",
-                          title: str = None) -> None:
+                          title: str = None, ydomain: list = None) -> None:
     """Side-by-side small-multiple bar charts (one panel per player) of the QG
     metrics vs the 50% baseline. players_vals: {player_name: {metric: 0-100}}.
     metrics restricts to a subset (e.g. NFI-only or xG-only) so the NFI and xG
@@ -3901,7 +3901,7 @@ def _qg_bar_chart_compare(players_vals: dict, label: str, metrics: list[str] = N
         st.caption("No values to compare for this selection.")
         return
     d = pd.DataFrame(rows)
-    _dom = _qg_axis_domain(allv)
+    _dom = ydomain or _qg_axis_domain(allv)
     st.caption(caption or (f"**{label}** — Quality-Games % vs the **50% baseline**, "
                "one panel per player (bar up = above 50%; darker = further from 50%)."))
     # Width per panel so the panels together fill a wide layout (faceted charts
@@ -4502,7 +4502,8 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                                   "50, down = below; darker = further). Elite Rating = overall "
                                   "5v5 value, PP Rating = power-play value (both 0-100, 50 = "
                                   "positional average).",
-                          dl_prefix="Rating-bars", title="Player Ratings")
+                          dl_prefix="Rating-bars", title="Player Ratings",
+                          ydomain=[0, 100])   # full 0-100 (ratings spread wider than QG)
         _ccg_vals = _player_ccg_vals(pid, trend, _yr)
         _ccg_bar_chart(_ccg_vals, _yr, dl_prefix="CCG-bars",
                        title="Chaos Created Goals / 60")
@@ -8381,7 +8382,7 @@ def render_trade_analyzer() -> None:
                 caption="**Player Ratings** vs the **50 baseline** — Elite Rating (overall "
                         "5v5 value) and PP Rating (power-play value), both 0-100 with 50 = "
                         "positional average, one panel per player.",
-                dl_name="Trade-Rating-bars", title="Player Ratings")
+                dl_name="Trade-Rating-bars", title="Player Ratings", ydomain=[0, 100])
         # CCG bars — after the QG (NFI + xG) bars, faceted per player.
         if any(any(pd.notna(v) for v in cv.values()) for cv in _cv.values()):
             _ccg_bar_chart_compare(
