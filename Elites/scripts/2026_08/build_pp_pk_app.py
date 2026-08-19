@@ -20,7 +20,6 @@ a soft-deployment artifact). So NO tier / NO "best PK" ranking:
 """
 from __future__ import annotations
 
-import glob
 import os
 
 import numpy as np
@@ -37,8 +36,10 @@ SEASON_LABEL = {"20222023": "2022-23", "20232024": "2023-24",
 
 
 def _src(name):
-    hits = glob.glob(os.path.join(PROJECT, "*pecialteams", "Output", name))
-    return hits[0] if hits else None
+    # The folder is canonically SpecialTeams (matches every pk_/pp_ script).
+    # Absent on the CI runner -> return None so main() keeps the committed snapshot.
+    p = os.path.join(PROJECT, "SpecialTeams", "Output", name)
+    return p if os.path.exists(p) else None
 
 
 def tier(vals):
