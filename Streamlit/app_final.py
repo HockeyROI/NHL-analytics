@@ -4311,6 +4311,10 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         # data range so season-to-season movement is visible.
         _yoy_charts = [
             ("Quality Games", lambda: _qg_combined_line(trend)),
+            # Player Ratings / Elite Exposure — right after QG (matches column order).
+            ("Player Ratings", lambda: _chart(
+                   "Elite Exposure over time (Elite Exp%, Elite Support%, Elite xGF%)",
+                   ["Elite Exp%", "Elite Support%", "Elite xGF%"])),
             ("xG", lambda: _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])),
             ("xG", lambda: _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
                    ["RelxG%", "RelxG-F%", "RelxG-A%"])),
@@ -4327,9 +4331,6 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             ("Zone Impact", lambda: _chart(
                    "D/O Zone Start% (faceoff-started 5v5 shifts)",
                    ["OZ Start%", "DZ Start%"])),
-            ("Player Ratings", lambda: _chart(
-                   "Elite Exposure over time (Elite Exp%, Elite Support%, Elite xGF%)",
-                   ["Elite Exp%", "Elite Support%", "Elite xGF%"])),
             ("Net Front Impact", lambda: _chart(
                    "Raw net-front rate per 60 (NFI-A/60, NFI-S/60)",
                    ["NFI-A/60", "NFI-S/60"])),
@@ -4349,44 +4350,30 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         # O-zone time, below = worse/less.
         # CCG bars float to the top when the CCG family is the focused selection;
         # otherwise they render right after the QG (NFI + xG) bars.
-        _ccg_vals = _player_ccg_vals(pid, trend, _yr)
-        _ccg_focus = ("CCG" in _show_fams
-                      and len(_show_fams) < len(PLAYER_FAMILY_COLS))
-
-        def _ccg_bars():
-            _ccg_bar_chart(_ccg_vals, _yr, dl_prefix="CCG-bars",
-                           title="Chaos Created Goals / 60")
-        # Elite Exposure bar — ALWAYS shown (like the QG/Zone bars), floating to
-        # the top when Player Ratings is the focused pick. Shared 50-baseline
-        # diverging bar: up = above 50, down = below, darker = further.
+        # Fixed order, matching the column order above the charts:
+        # Quality Games -> Elite Exposure (Player Ratings) -> CCG -> Zone Impact.
+        _all_qg_vals = _player_qg_vals(pid, trend, _yr)
+        _qg_paired_bar_chart(
+            _all_qg_vals, _yr,
+            caption="Quality Games % vs **50**.",
+            dl_prefix="QG-bars")
+        # Elite Exposure — right after QG. Shared 50-baseline diverging bar.
         _ctx_vals = _player_ctx_vals(pid, trend, _yr)
-        _has_ctx = any(pd.notna(v) for v in _ctx_vals.values())
-
-        def _ctx_bars():
+        if any(pd.notna(v) for v in _ctx_vals.values()):
             _qg_bar_chart(_ctx_vals, _yr,
                           caption="**Elite Exposure** vs the **50 baseline** (bar up = "
                                   "above 50, down = below; darker = further). Elite Exp% = "
                                   "ice vs elites, Elite Support% = ice with an elite teammate, "
                                   "Elite xGF% = on-ice xG share in elite shifts (50 = even).",
                           dl_prefix="Elite-Exposure-bars", title="Elite Exposure")
-        if _has_ctx and _ctx_selected:
-            _ctx_bars()
-        if _ccg_focus:
-            _ccg_bars()
-        _all_qg_vals = _player_qg_vals(pid, trend, _yr)
-        _qg_paired_bar_chart(
-            _all_qg_vals, _yr,
-            caption="Quality Games % vs **50**.",
-            dl_prefix="QG-bars")
-        if not _ccg_focus:
-            _ccg_bars()
+        _ccg_vals = _player_ccg_vals(pid, trend, _yr)
+        _ccg_bar_chart(_ccg_vals, _yr, dl_prefix="CCG-bars",
+                       title="Chaos Created Goals / 60")
         _zone_vals = _player_zone_vals(pid, trend, _yr)
         _qg_bar_chart(_zone_vals, _yr,
                      caption="Zone Impact index vs **50** (league average).",
                      dl_prefix="Zone-bars", ydomain=_PROFILE_BAR_YDOM,
                      title="Zone Impact Index")
-        if _has_ctx and not _ctx_selected:      # default position: after the others
-            _ctx_bars()
         st.caption("↕ Click a different year (or the 2yr row) above to change the bars.")
 
     # Team scatters — shown regardless of which family pills are selected,
@@ -4454,6 +4441,10 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
                     f"NFI-QG%</h4>", unsafe_allow_html=True)
         _xgqg_nfiqg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
                             year_label=_yl)
+    # Elite Exposure — right after the Quality-Games team scatters (column order).
+    st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
+                f"{heading_prefix}Elite Exposure vs Individual xG</h4>", unsafe_allow_html=True)
+    _ctx_scatter(_yl, team=_my_team)
     if {"PDOxG", "xG%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                     f"xG%</h4>", unsafe_allow_html=True)
@@ -4492,11 +4483,6 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
     if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(_team_frame_allpos.columns):
         _edge_speed_scatter(_team_frame_allpos, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
                            year_label=_yl, league_df=_league_frame)
-    # Elite Exposure landscape for this player's team (Elite Exp% × individual xG,
-    # bubble shaded by elite teammate support).
-    st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
-                f"{heading_prefix}Elite Exposure vs Individual xG</h4>", unsafe_allow_html=True)
-    _ctx_scatter(_yl, team=_my_team)
 
 
 # ===========================================================================
@@ -5843,14 +5829,10 @@ def render_players() -> None:
     # Elite Exposure landscape (part of Player Ratings). Below all other scatters
     # by default; floats to the TOP of the scatter section when Player Ratings is
     # the selected family.
-    _pr_scatter_first = bool(display_fams) and "Player Ratings" in display_fams
-
     def _elite_exp_scatter():
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
                     f"Elite Exposure vs Individual xG</h4>", unsafe_allow_html=True)
         _ctx_scatter(season_label, pos, team_sel)   # team filter -> team-level view
-    if _pr_scatter_first:
-        _elite_exp_scatter()
 
     if {"PDOxG", "xG_QG_pct"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs xG-QG%</h4>",
@@ -5866,6 +5848,9 @@ def render_players() -> None:
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>xG-QG% vs NFI-QG%</h4>",
                     unsafe_allow_html=True)
         _xgqg_nfiqg_scatter(df, _team_scoped, year_label=scope_label)
+
+    # Elite Exposure — right after the Quality-Games scatters (matches column order).
+    _elite_exp_scatter()
 
     if {"PDOxG", "xG%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs xG%</h4>",
@@ -5904,9 +5889,6 @@ def render_players() -> None:
 
     if {"EDGE Top Speed", "EDGE Bursts 20+"}.issubset(df.columns):
         _edge_speed_scatter(df, _team_scoped)
-
-    if not _pr_scatter_first:          # default position: below all other scatters
-        _elite_exp_scatter()
 
     # Row click → drill into that player (collapse the list). Bump the table key
     # so the leaderboard re-renders without a stale selection when we come back.
@@ -8240,6 +8222,14 @@ def render_trade_analyzer() -> None:
                     "**50% baseline** (Raw next to its Relative counterpart), one panel "
                     "per player.", dl_name="Trade-QG-bars-xG",
             title="xG Quality Games %")
+        # Elite Exposure bar — right after QG (column order), one panel per player.
+        if any(any(pd.notna(v) for v in cv.values()) for cv in _ctxv.values()):
+            _qg_bar_chart_compare(
+                _ctxv, _cmp_yr, metrics=_CTX_BAR_METRICS,
+                caption="**Elite Exposure** vs the **50 baseline** — Elite Exp% (ice vs "
+                        "elites), Elite Support% (ice with an elite teammate), Elite xGF% "
+                        "(on-ice xG share in elite shifts, 50 = even), one panel per player.",
+                dl_name="Trade-Elite-Exposure-bars", title="Elite Exposure")
         # CCG bars — after the QG (NFI + xG) bars, faceted per player.
         if any(any(pd.notna(v) for v in cv.values()) for cv in _cv.values()):
             _ccg_bar_chart_compare(
@@ -8255,14 +8245,6 @@ def render_trade_analyzer() -> None:
                 caption="**Zone Impact** index (OZI/DZI/NZI/TZI) vs the "
                         "**50 baseline** (50 = league-average for the position), one panel "
                         "per player.", dl_name="Trade-Zone-bars", title="Zone Impact Index")
-        # Elite Exposure bar (Elite Exp% / Elite Support% / Elite xGF%), per player.
-        if any(any(pd.notna(v) for v in cv.values()) for cv in _ctxv.values()):
-            _qg_bar_chart_compare(
-                _ctxv, _cmp_yr, metrics=_CTX_BAR_METRICS,
-                caption="**Elite Exposure** vs the **50 baseline** — Elite Exp% (ice vs "
-                        "elites), Elite Support% (ice with an elite teammate), Elite xGF% "
-                        "(on-ice xG share in elite shifts, 50 = even), one panel per player.",
-                dl_name="Trade-Elite-Exposure-bars", title="Elite Exposure")
     # Year-over-year line graphs behind a toggle (off by default), mirroring the
     # player drill-in — lead with the bars + scatters, reveal the season-by-season
     # lines on demand. Same full metric set as the drill-in (Quality Games, xG,
