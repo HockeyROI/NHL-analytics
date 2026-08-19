@@ -1272,6 +1272,21 @@ def load_ratings_per_season(season: str) -> pd.DataFrame:
     return _load_ratings_files(SEASON_DISPLAY.get(season, season))
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_ratings_all_seasons() -> pd.DataFrame:
+    """Long per-season Player Ratings frame (season, player_name, _pos_group,
+    Rating, Rating Tier) across PROFILE_SEASONS — for the per-player drill-in."""
+    out = []
+    for ssn in PROFILE_SEASONS:
+        d = _load_ratings_files(SEASON_DISPLAY.get(ssn, ssn))
+        if d.empty:
+            continue
+        d = d.copy()
+        d["season"] = ssn
+        out.append(d)
+    return pd.concat(out, ignore_index=True) if out else pd.DataFrame()
+
+
 _CTX_REN = {"vsEliteF": "Elite Exp F%", "vsEliteD": "Elite Exp D%",
             "vsElite": "Elite Exp%", "EliteSupport": "Elite Support%",
             "xGFvsElite": "Elite xGF%", "ixG60": "Elite xG"}
@@ -2700,6 +2715,14 @@ def _player_trend(pid: int) -> pd.DataFrame:
                                   if c in zz.columns]
             trend = trend.merge(zz[zcols], on="season", how="outer")
 
+    # Player Ratings (Rating + Rating Tier), name-keyed per season.
+    rat = load_ratings_all_seasons()
+    if not rat.empty:
+        rr = rat[(rat["player_name"] == name) & (rat["_pos_group"] == pos_group)]
+        if not rr.empty:
+            rcols = ["season"] + [c for c in ("Rating", "Rating Tier") if c in rr.columns]
+            trend = trend.merge(rr[rcols], on="season", how="outer")
+
     # Elite Context (name-keyed, same as zone) per season.
     ctx = load_ctx_all_seasons()
     if not ctx.empty:
@@ -3081,11 +3104,12 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
                "xG-QG-A%", "RelxG-QG-A%"]
     xg_cols = ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDO", "PDOxG"]
     adv_cols = ["CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"]
+    rating_cols = ["Rating", "Rating Tier"]      # Player Ratings, lead the table
     ctx_cols = ["Elite Exp F%", "Elite Exp D%", "Elite Exp%", "Elite Support%",
                 "Elite xGF%", "Elite xG"]
     edge_cols = _EDGE_VALUE_DISP
-    metric_cols = [c for c in qg_cols + adv_cols + xg_cols + share_cols + rate_cols
-                   + zone_cols + ctx_cols + edge_cols
+    metric_cols = [c for c in rating_cols + qg_cols + adv_cols + xg_cols + share_cols
+                   + rate_cols + zone_cols + ctx_cols + edge_cols
                    if c in trend.columns]
     # families is None  -> show every metric (callers that don't filter, e.g.
     #                      the Trade Analyzer).
@@ -3120,6 +3144,8 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     for c in ("Elite Exp F%", "Elite Exp D%", "Elite Exp%", "Elite Support%", "Elite xGF%"):
         _b[c] = lambda v: f"{v:.1f}%"
     _b["Elite xG"] = lambda v: f"{v:.2f}"
+    _b["Rating"] = lambda v: f"{v:.1f}"
+    _b["Rating Tier"] = lambda v: f"{v}"          # string label (Elite/Middle/Poor)
     for c in ("xGF/60", "xGA/60"):
         _b[c] = lambda v: f"{v:.2f}"
     _b["xG%"] = lambda v: f"{v:.1f}%"
@@ -3149,6 +3175,8 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
             v = r[c]
             if pd.isna(v):
                 row[c] = "—"
+            elif c in ("Rating", "Rating Tier"):   # value only, no rank annotation
+                row[c] = _b.get(c, lambda v: f"{v}")(v)
             else:
                 txt = _b.get(c, lambda v: f"{v}")(v)
                 rk = ranks.get(c, {}).get(ssn)
@@ -3519,29 +3547,39 @@ def _ctx_scatter_frame(season_label: str) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None) -> None:
+def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
+                 only_pids: list = None) -> None:
     """Elite Exposure% (y) × individual xG/60 (x), coloured by elite teammate
-    support (darker = LESS support). League-wide by default; when a `team` is
-    given it switches to a team-level view (that team's players only, with
-    last-name labels), like the app's other scatters. Sized to match them."""
+    support (darker = LESS support). League-wide by default; a `team` switches to
+    a team-level view (that team's players, labelled); `only_pids` (Trade Analyzer)
+    plots just those players but with axes scaled to the whole league. Sized to
+    match the app's other scatters."""
     import altair as alt
-    d = _ctx_scatter_frame(season_label)
-    if d.empty or not {"vsElite", "ixG60", "EliteSupport"}.issubset(d.columns):
+    d_all = _ctx_scatter_frame(season_label)
+    if d_all.empty or not {"vsElite", "ixG60", "EliteSupport"}.issubset(d_all.columns):
         return
     if pos_filter in ("F", "D"):
-        d = d[d["pos_group"] == pos_filter]
+        d_all = d_all[d_all["pos_group"] == pos_filter]
     _team_view = bool(team) and team != "All"
-    if _team_view:
-        d = d[d["team"] == team]
+    _trade_view = only_pids is not None
+    if _trade_view:
+        d = d_all[d_all["player_id"].isin([int(p) for p in only_pids])]
+    elif _team_view:
+        d = d_all[d_all["team"] == team]
+    else:
+        d = d_all
     d = d.dropna(subset=["vsElite", "ixG60", "EliteSupport"])
     if d.empty:
         return
-    _scope = f"{team} · {season_label}" if _team_view else season_label
+    _scope = (f"{team} · {season_label}" if _team_view else season_label)
     st.caption("One point per player. y = **Elite Exposure %** (share of 5v5 ice vs a "
                "full-strength unit), x = individual shot danger (**ixG/60**). "
                f"**Darker = less elite teammate support.** {_scope}.")
-    _xdom = _tight_domain(d["ixG60"].dropna(), pad_frac=0.15, min_pad=1e-6)
-    _ydom = _tight_domain(d["vsElite"].dropna(), pad_frac=0.15, min_pad=1e-6)
+    # Trade view keeps league-scaled axes (like the other trade scatters); team /
+    # league views tighten to what's shown.
+    _ddom = d_all if _trade_view else d
+    _xdom = _tight_domain(_ddom["ixG60"].dropna(), pad_frac=0.15, min_pad=1e-6)
+    _ydom = _tight_domain(_ddom["vsElite"].dropna(), pad_frac=0.15, min_pad=1e-6)
     base = alt.Chart(d).encode(
         x=alt.X("ixG60:Q", title="Individual xG / 60", scale=alt.Scale(domain=_xdom, zero=False)),
         y=alt.Y("vsElite:Q", title="Elite Exposure %", scale=alt.Scale(domain=_ydom, zero=False)))
@@ -3556,7 +3594,7 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None) -
                  alt.Tooltip("EliteSupport:Q", title="Elite Support%", format=".1f"),
                  alt.Tooltip("ixG60:Q", title="ixG/60", format=".2f")])
     ch = pts
-    if _team_view:                       # few points -> label each with last name
+    if _team_view or _trade_view:        # few points -> label each with last name
         d = d.assign(_label=d["player_name"].astype(str).str.split().str[-1])
         labels = alt.Chart(d).mark_text(align="left", dx=6, dy=-6, fontSize=10,
                                         color=PALETTE["orange"]).encode(
@@ -4317,9 +4355,16 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         def _ccg_bars():
             _ccg_bar_chart(_ccg_vals, _yr, dl_prefix="CCG-bars",
                            title="Chaos Created Goals / 60")
-        # Elite Context bar — gated + floats to the top when its family is picked.
+        # Elite Exposure bar — gated + floats to the top when Player Ratings is
+        # picked. Uses the shared 50-baseline diverging bar (same look/colors as
+        # the QG/Zone bars): up = above 50, down = below, darker = further.
         if _ctx_selected:
-            _ctx_bar_chart(_player_ctx_vals(pid, trend, _yr), _yr)
+            _qg_bar_chart(_player_ctx_vals(pid, trend, _yr), _yr,
+                          caption="**Elite Exposure** vs the **50 baseline** (bar up = "
+                                  "above 50, down = below; darker = further). Elite Exp% = "
+                                  "ice vs elites, Elite Support% = ice with an elite teammate, "
+                                  "Elite xGF% = on-ice xG share in elite shifts (50 = even).",
+                          dl_prefix="Elite-Exposure-bars", title="Elite Exposure")
         if _ccg_focus:
             _ccg_bars()
         _all_qg_vals = _player_qg_vals(pid, trend, _yr)
@@ -7119,6 +7164,8 @@ def _goalie_profile_table(gid: int, qg_scope_suffix: str = "", qg_starter: bool 
             v = r[c]
             if pd.isna(v):
                 row[c] = "—"
+            elif c in ("Rating", "Rating Tier"):   # value only, no rank annotation
+                row[c] = _b.get(c, lambda v: f"{v}")(v)
             else:
                 txt = _b.get(c, lambda v: f"{v}")(v)
                 rk = ranks.get(c, {}).get(ssn)
@@ -8153,7 +8200,7 @@ def render_trade_analyzer() -> None:
     # than mixed together, matching the single-player drill-in's split.
     _seasons_all = [SEASON_DISPLAY.get(s, s) for s in PROFILE_SEASONS] + ["2yr avg (24-26)"]
     _cmp_yr = _default_qg_year(season_label, _seasons_all)
-    _trends, _pv, _zv, _cv = {}, {}, {}, {}
+    _trends, _pv, _zv, _cv, _ctxv = {}, {}, {}, {}, {}
     for pid in sel:
         _nm = plabel.get(int(pid), str(pid))
         _tr = _player_trend(int(pid))
@@ -8162,6 +8209,7 @@ def render_trade_analyzer() -> None:
             _pv[_nm] = _player_qg_vals(int(pid), _tr, _cmp_yr)
             _zv[_nm] = _player_zone_vals(int(pid), _tr, _cmp_yr)
             _cv[_nm] = _player_ccg_vals(int(pid), _tr, _cmp_yr)
+            _ctxv[_nm] = _player_ctx_vals(int(pid), _tr, _cmp_yr)
     if _pv:
         _set_dl_title(" vs ".join(_pv.keys()))
         # Same 12-metric Raw+Rel paired set (and Attack/Suppress/Overall order)
@@ -8192,6 +8240,14 @@ def render_trade_analyzer() -> None:
                 caption="**Zone Impact** index (OZI/DZI/NZI/TZI) vs the "
                         "**50 baseline** (50 = league-average for the position), one panel "
                         "per player.", dl_name="Trade-Zone-bars", title="Zone Impact Index")
+        # Elite Exposure bar (Elite Exp% / Elite Support% / Elite xGF%), per player.
+        if any(any(pd.notna(v) for v in cv.values()) for cv in _ctxv.values()):
+            _qg_bar_chart_compare(
+                _ctxv, _cmp_yr, metrics=_CTX_BAR_METRICS,
+                caption="**Elite Exposure** vs the **50 baseline** — Elite Exp% (ice vs "
+                        "elites), Elite Support% (ice with an elite teammate), Elite xGF% "
+                        "(on-ice xG share in elite shifts, 50 = even), one panel per player.",
+                dl_name="Trade-Elite-Exposure-bars", title="Elite Exposure")
     # Year-over-year line graphs behind a toggle (off by default), mirroring the
     # player drill-in — lead with the bars + scatters, reveal the season-by-season
     # lines on demand. Same full metric set as the drill-in (Quality Games, xG,
@@ -8278,6 +8334,10 @@ def render_trade_analyzer() -> None:
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
                         "xG%</h4>", unsafe_allow_html=True)
             _trade_rawrel_scatter(_sf, "NFI%", "NFI%", "Trade-NFI-vs-xG", _full)
+        # Elite Exposure landscape — selected players, league-scaled axes.
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Elite Exposure "
+                    "vs Individual xG</h4>", unsafe_allow_html=True)
+        _ctx_scatter(_tyl, only_pids=[int(p) for p in sel])
         if {"PDOxG", "NFI%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                         "NFI%</h4>", unsafe_allow_html=True)
