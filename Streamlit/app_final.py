@@ -3513,15 +3513,18 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All") -> None:
     st.caption("One point per player. y = **Elite Exposure %** (share of 5v5 ice vs a "
                "full-strength unit), x = individual shot danger (**ixG/60**). "
                f"**Darker = less elite teammate support.** {season_label}.")
-    # Low support -> deep navy, high support -> light blue (darker = less support).
-    ch = alt.Chart(d).mark_circle(size=90, opacity=0.9).encode(
-        x=alt.X("ixG60:Q", title="Individual xG / 60",
-                scale=alt.Scale(zero=False, nice=True)),
-        y=alt.Y("vsElite:Q", title="Elite Exposure %",
-                scale=alt.Scale(zero=False, nice=True)),
-        color=alt.Color("EliteSupport:Q", title="Elite Support %",
-                        scale=alt.Scale(range=["#0a2a5e", "#cfe0f5"]),
-                        legend=alt.Legend(orient="right")),
+    # Match the app's other colored scatters exactly: size-90 / opacity .75 marks,
+    # tight domains, brand navy→light range with NO legend (meaning is in the
+    # caption), full container width via _show_chart. Low support -> navy (dark),
+    # high support -> light blue, so darker = less support.
+    _xdom = _tight_domain(d["ixG60"].dropna(), pad_frac=0.15, min_pad=1e-6)
+    _ydom = _tight_domain(d["vsElite"].dropna(), pad_frac=0.15, min_pad=1e-6)
+    ch = alt.Chart(d).mark_circle(size=90, opacity=0.75).encode(
+        x=alt.X("ixG60:Q", title="Individual xG / 60", scale=alt.Scale(domain=_xdom, zero=False)),
+        y=alt.Y("vsElite:Q", title="Elite Exposure %", scale=alt.Scale(domain=_ydom, zero=False)),
+        color=alt.Color("EliteSupport:Q",
+                        scale=alt.Scale(range=[_BAR_BLUE_STRONG, _BAR_BLUE_LIGHT]),
+                        legend=None),
         tooltip=[alt.Tooltip("player_name:N", title="Player"),
                  alt.Tooltip("team:N", title="Team"),
                  alt.Tooltip("pos:N", title="Pos"),
