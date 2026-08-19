@@ -3645,17 +3645,16 @@ def _pk_line_chart(trend: pd.DataFrame) -> None:
     st.caption("**PK liability** — PK Rating (signed) per season. **Negative = "
                "liability**; the positive side is an unreliable deployment artifact, "
                "so it isn't graded.")
-    _v = d["PK Rating"]
-    _lo, _hi = min(_v.min(), 0.0), max(_v.max(), 0.0)
-    _pad = (_hi - _lo) * 0.1 or 1.0
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
     _c = _CHART_COLORS.get("PK Rating", _CHART_PRIMARY)
+    # Fixed -4..+4 axis (not auto-scaled per player) so the size of a season's
+    # swing is comparable across players; clip anything beyond the band.
     line = alt.Chart(d).mark_line(
-        point=alt.OverlayMarkDef(color=_c), strokeWidth=2.5, color=_c).encode(
+        point=alt.OverlayMarkDef(color=_c), strokeWidth=2.5, color=_c,
+        clip=True).encode(
         x=alt.X("Season:N", title=None),
-        y=alt.Y("PK Rating:Q", title="PK Rating",
-                scale=alt.Scale(domain=[_lo - _pad, _hi + _pad])),
+        y=alt.Y("PK Rating:Q", title=None, scale=alt.Scale(domain=[-4, 4])),
         tooltip=["Season:N", alt.Tooltip("PK Rating:Q", format="+.2f")])
     _show_chart(zero + line, dl_name="PK-liability")
 
