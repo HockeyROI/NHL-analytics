@@ -363,6 +363,11 @@ A forward's value is individually measurable (shot generation + production), so 
 
 Cuts: Elite = top 15%, Middle = next 55%, Poor = bottom 30%, within each position pool.
 
+### Special-teams ratings (part of Player Ratings)
+
+- **PP Rating** — the same forward formula applied to power-play ice: `0.40 · pct(PP TOI/GP) + 0.30 · pct(PP ixG/60) + 0.30 · pct(PP points/60)`, 0–100 within position, with its own **PP Tier** (Elite / Middle / Poor). Symmetric — higher is better.
+- **PK Rating** — a competition-adjusted signed rating (performance delta + competition delta) with a **Wilson confidence interval**. It is deliberately **asymmetric**: the positive (good) side is a soft-deployment artifact — offensive stars who take a few sheltered PK shifts float to the top — so it is **not graded or ranked**. Only the liability side is reliable. The **PK Flag** marks a **Confirmed Liability** (the entire CI is below zero) and a **Repeat Liability** (a confirmed liability in ≥2 seasons). The drill-in PK chart shows the rating with its CI, red where confirmed. There is intentionally **no "best penalty-killer" leaderboard.** Eligibility: team short-handed share ≥ 0.20 and GP ≥ 30.
+
 ---
 
 ## Elite Exposure (part of Player Ratings)
