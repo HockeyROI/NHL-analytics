@@ -3574,6 +3574,26 @@ def _player_qg_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
                 and pd.notna(_tr[m].iloc[0]) else np.nan) for m in _QG_BAR_METRICS}
 
 
+# Elite Rating + PP Rating (0-100, 50 = positional average) — already on a
+# 0-100 basis in the trend/leaderboard (no ×100 rescale, unlike the QG metrics).
+_RATING_BAR_METRICS = ["Elite Rating", "PP Rating"]
+
+
+def _player_rating_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
+    """Elite Rating + PP Rating for one player at a season label or the 2yr row.
+    PP Rating is per-season only, so it comes back NaN on the pooled 2yr row."""
+    if label == "2yr avg (24-26)":
+        _p2 = _players_2yr_frame()
+        _pr = _p2[_p2["player_id"] == int(pid)] if not _p2.empty else _p2
+        return {m: (float(_pr[m].iloc[0]) if len(_pr) and m in _pr.columns
+                    and pd.notna(_pr[m].iloc[0]) else np.nan)
+                for m in _RATING_BAR_METRICS}
+    _tr = trend[trend["Season"].astype(str) == str(label)]
+    return {m: (float(_tr[m].iloc[0]) if len(_tr) and m in _tr.columns
+                and pd.notna(_tr[m].iloc[0]) else np.nan)
+            for m in _RATING_BAR_METRICS}
+
+
 # The Zone-Impact-family index metrics for the hard-locked zone bar (0-100
 # scale, 50 = position-group average). OZI/DZI/NZI/TZI are already on a 0-100
 # basis (unlike the QG metrics, which are stored as 0-1 fractions), so they're
@@ -3630,8 +3650,9 @@ def _pk_line_chart(trend: pd.DataFrame) -> None:
     _pad = (_hi - _lo) * 0.1 or 1.0
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
-    line = alt.Chart(d).mark_line(point=True, strokeWidth=2.5,
-                                  color=_CHART_COLORS.get("PK Rating", _CHART_PRIMARY)).encode(
+    _c = _CHART_COLORS.get("PK Rating", _CHART_PRIMARY)
+    line = alt.Chart(d).mark_line(
+        point=alt.OverlayMarkDef(color=_c), strokeWidth=2.5, color=_c).encode(
         x=alt.X("Season:N", title=None),
         y=alt.Y("PK Rating:Q", title="PK Rating",
                 scale=alt.Scale(domain=[_lo - _pad, _hi + _pad])),
@@ -4465,14 +4486,23 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         # CCG bars float to the top when the CCG family is the focused selection;
         # otherwise they render right after the QG (NFI + xG) bars.
         # Fixed order, matching the column order above the charts:
-        # Quality Games -> Elite Exposure (Player Ratings) -> CCG -> Zone Impact.
+        # Quality Games -> Player Ratings (Elite + PP) -> CCG -> Zone Impact.
         _all_qg_vals = _player_qg_vals(pid, trend, _yr)
         _qg_paired_bar_chart(
             _all_qg_vals, _yr,
             caption="Quality Games % vs **50**.",
             dl_prefix="QG-bars")
-        # Elite Exposure + PK liability are year-over-year metrics — they live in
-        # the "Year over year" view, not in the current-year bars.
+        # Player Ratings — right after QG. Elite Rating + PP Rating on the shared
+        # 50-baseline diverging bar (both 0-100, 50 = positional average). Elite
+        # Exposure + PK liability stay year-over-year (in the YoY view only).
+        _rating_vals = _player_rating_vals(pid, trend, _yr)
+        if any(pd.notna(v) for v in _rating_vals.values()):
+            _qg_bar_chart(_rating_vals, _yr,
+                          caption="**Player Ratings** vs the **50 baseline** (bar up = above "
+                                  "50, down = below; darker = further). Elite Rating = overall "
+                                  "5v5 value, PP Rating = power-play value (both 0-100, 50 = "
+                                  "positional average).",
+                          dl_prefix="Rating-bars", title="Player Ratings")
         _ccg_vals = _player_ccg_vals(pid, trend, _yr)
         _ccg_bar_chart(_ccg_vals, _yr, dl_prefix="CCG-bars",
                        title="Chaos Created Goals / 60")
@@ -8317,7 +8347,7 @@ def render_trade_analyzer() -> None:
     # than mixed together, matching the single-player drill-in's split.
     _seasons_all = [SEASON_DISPLAY.get(s, s) for s in PROFILE_SEASONS] + ["2yr avg (24-26)"]
     _cmp_yr = _default_qg_year(season_label, _seasons_all)
-    _trends, _pv, _zv, _cv = {}, {}, {}, {}
+    _trends, _pv, _zv, _cv, _rtv = {}, {}, {}, {}, {}
     for pid in sel:
         _nm = plabel.get(int(pid), str(pid))
         _tr = _player_trend(int(pid))
@@ -8326,6 +8356,7 @@ def render_trade_analyzer() -> None:
             _pv[_nm] = _player_qg_vals(int(pid), _tr, _cmp_yr)
             _zv[_nm] = _player_zone_vals(int(pid), _tr, _cmp_yr)
             _cv[_nm] = _player_ccg_vals(int(pid), _tr, _cmp_yr)
+            _rtv[_nm] = _player_rating_vals(int(pid), _tr, _cmp_yr)
     if _pv:
         _set_dl_title(" vs ".join(_pv.keys()))
         # Same 12-metric Raw+Rel paired set (and Attack/Suppress/Overall order)
@@ -8341,8 +8372,16 @@ def render_trade_analyzer() -> None:
                     "**50% baseline** (Raw next to its Relative counterpart), one panel "
                     "per player.", dl_name="Trade-QG-bars-xG",
             title="xG Quality Games %")
-        # (Elite Exposure bar removed — Elite Exposure is a year-over-year metric,
-        # shown in the YoY line graphs / scatter, not as a current-year bar.)
+        # Player Ratings bar — right after QG (column order): Elite Rating + PP
+        # Rating on the 50-baseline diverging bar, one panel per player. (Elite
+        # Exposure + PK stay year-over-year, in the YoY line graphs / scatter.)
+        if any(any(pd.notna(v) for v in rv.values()) for rv in _rtv.values()):
+            _qg_bar_chart_compare(
+                _rtv, _cmp_yr, metrics=_RATING_BAR_METRICS,
+                caption="**Player Ratings** vs the **50 baseline** — Elite Rating (overall "
+                        "5v5 value) and PP Rating (power-play value), both 0-100 with 50 = "
+                        "positional average, one panel per player.",
+                dl_name="Trade-Rating-bars", title="Player Ratings")
         # CCG bars — after the QG (NFI + xG) bars, faceted per player.
         if any(any(pd.notna(v) for v in cv.values()) for cv in _cv.values()):
             _ccg_bar_chart_compare(
