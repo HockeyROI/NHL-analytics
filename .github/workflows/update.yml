@@ -71,6 +71,27 @@ jobs:
       - name: CCG rebuild from committed event parquets
         run: python Zones/scripts/build_ccg_by_season.py
 
+      # ---- 3b. Elites: Player Ratings + Elite Context -----------------------
+      # 5v5 scoring parquet (goals + PRIMARY ASSISTS — the shot parquet has no
+      # assists) is committed & CI-portable; this appends the games
+      # update_current_season just fetched into Zones/raw/pbp, exactly like CCG.
+      - name: Elites 5v5 scoring parquet (append new games)
+        run: python Elites/scripts/2026_08/build_elites_scoring.py
+
+      # ev_shifts.csv (~280MB) is rebuilt on the runner from the committed shift
+      # parquets and is NOT committed — only the small ratings/context CSVs are.
+      - name: Elites — rebuild EV shift intervals (runner-only)
+        run: python Elites/scripts/2026_08/shifts_ingest.py
+
+      - name: Elites tiers (prior-2yr + same-season)
+        run: python Elites/scripts/2026_08/tiers.py
+
+      - name: Player Ratings (0–100)
+        run: python Elites/scripts/2026_08/build_player_ratings.py
+
+      - name: Elite Context (quality of competition)
+        run: python Elites/scripts/2026_08/build_elite_context.py
+
       # ---- 4. Commit whatever changed ---------------------------------------
       # Only the generated data files are staged, explicitly — never `git add .`.
       - name: Commit and push updated data
@@ -89,6 +110,9 @@ jobs:
           git add -A Data/ccg_events_by_season/ 2>/dev/null || true
           git add -A Data/player_ccg_by_season.csv 2>/dev/null || true
           git add -A Data/team_ccg_by_season.csv 2>/dev/null || true
+          git add -A Data/elites_scoring_by_season/ 2>/dev/null || true
+          git add -A Elites/Output/player_ratings/ 2>/dev/null || true
+          git add -A Elites/Output/elite_context/ 2>/dev/null || true
           find Zones -name "last_updated_*.txt" -exec git add {} \; 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Weekly data update $(date +'%Y-%m-%d')"
           git pull --rebase origin main || true
