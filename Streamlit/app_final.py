@@ -1306,6 +1306,21 @@ def load_ctx_per_season(season: str) -> pd.DataFrame:
     return _load_ctx_files(SEASON_DISPLAY.get(season, season))
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_ctx_all_seasons() -> pd.DataFrame:
+    """Long per-season Elite Context frame (season, player_name, _pos_group + the
+    5 metric cols) across PROFILE_SEASONS, for the per-player trend / Trade line."""
+    out = []
+    for ssn in PROFILE_SEASONS:
+        d = _load_ctx_files(SEASON_DISPLAY.get(ssn, ssn))
+        if d.empty:
+            continue
+        d = d.copy()
+        d["season"] = ssn
+        out.append(d)
+    return pd.concat(out, ignore_index=True) if out else pd.DataFrame()
+
+
 def _qg_pooled(qg: pd.DataFrame) -> pd.DataFrame:
     """Career-pooled QG: rates = total quality games / total qualifying GP."""
     if qg.empty:
@@ -2675,6 +2690,15 @@ def _player_trend(pid: int) -> pd.DataFrame:
                                   if c in zz.columns]
             trend = trend.merge(zz[zcols], on="season", how="outer")
 
+    # Elite Context (name-keyed, same as zone) per season.
+    ctx = load_ctx_all_seasons()
+    if not ctx.empty:
+        cc2 = ctx[(ctx["player_name"] == name) & (ctx["_pos_group"] == pos_group)]
+        if not cc2.empty:
+            ccols = ["season"] + [c for c in ("vs Elite F%", "vs Elite D%", "vs Elite%",
+                     "Elite Support%", "xGF vs Elite%") if c in cc2.columns]
+            trend = trend.merge(cc2[ccols], on="season", how="outer")
+
     # Quality Games per season.
     qg = load_qg_player_season()
     if not qg.empty:
@@ -3419,6 +3443,40 @@ def _player_zone_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
     return out
 
 
+_CTX_BAR_METRICS = ["vs Elite F%", "vs Elite D%", "vs Elite%",
+                    "Elite Support%", "xGF vs Elite%"]
+
+
+def _player_ctx_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
+    """Elite Context %s (0-100) for one player at a season label (read straight
+    from the per-season trend). NaN for the pooled '2yr' row (not in the trend)."""
+    _tr = trend[trend["Season"].astype(str) == str(label)]
+    return {m: (float(_tr[m].iloc[0]) if len(_tr) and m in _tr.columns
+                and pd.notna(_tr[m].iloc[0]) else np.nan)
+            for m in _CTX_BAR_METRICS}
+
+
+def _ctx_bar_chart(vals: dict, label: str) -> None:
+    """Plain 0-100 bar of the Elite Context metrics for one season. vs Elite% is
+    quality of competition; Elite Support% is elite-teammate help; xGF vs Elite%
+    is results in those matchups."""
+    import altair as alt
+    rows = [{"Metric": m, "value": v} for m, v in vals.items() if pd.notna(v)]
+    if not rows:
+        return
+    d = pd.DataFrame(rows)
+    st.caption(f"Elite Context — {label} (% of 5v5 ice; xGF vs Elite% is a share)")
+    ch = alt.Chart(d).mark_bar().encode(
+        x=alt.X("value:Q", title=None, scale=alt.Scale(domain=[0, 100])),
+        y=alt.Y("Metric:N", sort=_CTX_BAR_METRICS, title=None),
+        color=alt.Color("Metric:N", sort=_CTX_BAR_METRICS, legend=None,
+                        scale=alt.Scale(range=[_CHART_COLORS.get(m, PALETTE["blue"])
+                                               for m in _CTX_BAR_METRICS])),
+        tooltip=["Metric:N", alt.Tooltip("value:Q", format=".1f")],
+    ).properties(height=170)
+    _show_chart(ch, dl_name="Elite-Context-bars")
+
+
 # CCG bar metrics — the two per-60 rate forms (count metrics don't share a
 # y-axis with rates). Both plotted as diverging bars vs a 0 baseline: CCG/60 is
 # a magnitude (always ≥0, bar up); Rel-CCG/60 diverges (+ = beats linemates).
@@ -4021,6 +4079,10 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         st.info("No per-season data available for this player.")
         return
     _show_fams = set(families) if families else set(PLAYER_FAMILY_COLS)
+    # Elite Context charts are gated: shown only when that family is explicitly
+    # picked (not on the default all-families view), and then they float first.
+    _ctx_selected = ("Elite Context" in _show_fams
+                     and len(_show_fams) < len(PLAYER_FAMILY_COLS))
     cohort = "all skaters"
     nfi = load_nfi_player()
     _prow_any = nfi[nfi["player_id"] == int(pid)] if not nfi.empty else nfi
@@ -4133,6 +4195,13 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             ("Zone Impact", lambda: _chart(
                    "D/O Zone Start% (faceoff-started 5v5 shifts)",
                    ["OZ Start%", "DZ Start%"])),
+            ("Elite Context", lambda: _chart(
+                   "Quality of competition — % of ice vs elites "
+                   "(vs Elite%, vs Elite F%, vs Elite D%)",
+                   ["vs Elite%", "vs Elite F%", "vs Elite D%"])),
+            ("Elite Context", lambda: _chart(
+                   "Elite teammate support & results (Elite Support%, xGF vs Elite%)",
+                   ["Elite Support%", "xGF vs Elite%"])),
             ("Net Front Impact", lambda: _chart(
                    "Raw net-front rate per 60 (NFI-A/60, NFI-S/60)",
                    ["NFI-A/60", "NFI-S/60"])),
@@ -4144,6 +4213,8 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             ("EDGE", lambda: _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])),
         ]
         for _fam, _fn in sorted(_yoy_charts, key=lambda item: item[0] not in _show_fams):
+            if _fam == "Elite Context" and not _ctx_selected:
+                continue          # gated: only when its family is explicitly picked
             _fn()
     elif view_mode == "Show current year data":
         # Current-year bars: the combined NFI+xG Quality-Games panel (one
@@ -4159,6 +4230,9 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         def _ccg_bars():
             _ccg_bar_chart(_ccg_vals, _yr, dl_prefix="CCG-bars",
                            title="Chaos Created Goals / 60")
+        # Elite Context bar — gated + floats to the top when its family is picked.
+        if _ctx_selected:
+            _ctx_bar_chart(_player_ctx_vals(pid, trend, _yr), _yr)
         if _ccg_focus:
             _ccg_bars()
         _all_qg_vals = _player_qg_vals(pid, trend, _yr)
