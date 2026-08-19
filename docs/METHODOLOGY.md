@@ -365,18 +365,18 @@ Cuts: Elite = top 15%, Middle = next 55%, Poor = bottom 30%, within each positio
 
 ---
 
-## Elite Context
+## Elite Exposure (part of Player Ratings)
 
-Same-season **quality of competition** and **support**. Opponents and teammates are labelled by that season's Rating Tier (Elite = top 15%, Poor = bottom 30% of the position). Metrics are per player, kept as separate deployment and results columns (never blended).
+Same-season **quality of competition** and **support**, shown with the Player Ratings family. Opponents and teammates are labelled by that season's Rating Tier (Elite = top 15%, Poor = bottom 30% of the position). Metrics are per player, kept as separate deployment and results columns (never blended).
 
 Three **exposure buckets** — a shift can belong to more than one — each the share of 5v5 ice vs a unit with **≥1 elite and zero poor**:
-- **vs Elite F%** — opposing forwards (≥1 elite forward, 0 poor forwards).
-- **vs Elite D%** — opposing defensemen (≥1 elite D, 0 poor D).
-- **vs Elite%** — all five opponents (full-strength; league average ~31%).
+- **Elite Exp F%** — opposing forwards (≥1 elite forward, 0 poor forwards).
+- **Elite Exp D%** — opposing defensemen (≥1 elite D, 0 poor D).
+- **Elite Exp%** — all five opponents (full-strength; league average ~31%).
 
 Plus:
 - **Elite Support%** — share of 5v5 ice with ≥1 elite **teammate** on the ice (excludes the player himself).
-- **xGF vs Elite%** — the player's on-ice expected-goals share (xGF%) during the full-strength (vs Elite%) shifts — how they did in the toughest matchups.
+- **Elite xGF%** — the player's on-ice expected-goals share (xGF%) during the full-strength (Elite Exp%) shifts — how they did in the toughest matchups.
 
 Exposure is computed by segmenting every game into constant-personnel 5v5 intervals (`shifts_ingest.py`), classifying the opposing / teammate five by same-season tier, and accruing interval time (and, for xGF vs Elite%, the interval's 5v5 fenwick xG for/against). Available for single seasons 2022-23…2025-26 and the 2yr / 4yr pools.
 
