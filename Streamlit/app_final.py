@@ -3612,77 +3612,33 @@ def _player_zone_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
     return out
 
 
-# The three headline Elite-Exposure bars (F/D buckets stay in the table only).
-_CTX_BAR_METRICS = ["Elite Exposure%", "Elite Support%", "Elite xGF%"]
-
-
 _PK_RED = "#C0392B"
 
 
-def _pk_ci_chart(trend: pd.DataFrame) -> None:
-    """Penalty-kill liability: PK Rating with its Wilson CI per season. Red where
-    the whole interval is below 0 (a confirmed liability). PK is asymmetric — the
-    positive side is a deployment artifact, so it is shown but not graded."""
+def _pk_line_chart(trend: pd.DataFrame) -> None:
+    """Penalty-kill liability over time: PK Rating (signed) per season as a plain
+    line vs a 0 baseline. Negative = liability. PK is asymmetric — the positive
+    side is a deployment artifact, so it is shown but not graded."""
     import altair as alt
-    if not {"PK Rating", "PK ci_low", "PK ci_high"}.issubset(trend.columns):
+    if "PK Rating" not in trend.columns:
         return
-    d = trend[["Season", "PK Rating", "PK ci_low", "PK ci_high"]].dropna(
-        subset=["PK Rating"]).copy()
+    d = trend[["Season", "PK Rating"]].dropna(subset=["PK Rating"]).copy()
     if d.empty:
         return
-    st.caption("**PK liability** — PK Rating with its Wilson confidence interval per "
-               "season. **Red = confirmed liability** (whole interval below 0). The "
-               "positive side is an unreliable deployment artifact, so it isn't graded.")
-    _liab = "datum['PK ci_high'] < 0"
-    _col = alt.condition(_liab, alt.value(_PK_RED), alt.value(PALETTE["text_secondary"]))
+    st.caption("**PK liability** — PK Rating (signed) per season. **Negative = "
+               "liability**; the positive side is an unreliable deployment artifact, "
+               "so it isn't graded.")
+    _v = d["PK Rating"]
+    _lo, _hi = min(_v.min(), 0.0), max(_v.max(), 0.0)
+    _pad = (_hi - _lo) * 0.1 or 1.0
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
-    err = alt.Chart(d).mark_rule(size=3).encode(
-        x=alt.X("Season:N", title=None), y=alt.Y("PK ci_low:Q", title="PK Rating (± CI)"),
-        y2="PK ci_high:Q", color=_col)
-    pts = alt.Chart(d).mark_circle(size=100).encode(
-        x="Season:N", y="PK Rating:Q", color=_col,
-        tooltip=["Season:N", alt.Tooltip("PK Rating:Q", format="+.2f"),
-                 alt.Tooltip("PK ci_low:Q", format="+.2f"),
-                 alt.Tooltip("PK ci_high:Q", format="+.2f")])
-    _show_chart(zero + err + pts, dl_name="PK-liability-CI")
-
-
-def _player_ctx_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
-    """Elite Exposure %s (0-100) for one player at a season label (read straight
-    from the per-season trend). NaN for the pooled '2yr' row (not in the trend)."""
-    _tr = trend[trend["Season"].astype(str) == str(label)]
-    return {m: (float(_tr[m].iloc[0]) if len(_tr) and m in _tr.columns
-                and pd.notna(_tr[m].iloc[0]) else np.nan)
-            for m in _CTX_BAR_METRICS}
-
-
-def _ctx_bar_chart(vals: dict, label: str) -> None:
-    """Vertical 0-100 bar of the Elite Exposure metrics for one season, matching
-    the app's other player bars (mark_bar size-30, bold x labels, per-metric
-    colour, _show_chart). Elite Exposure% = quality of competition, Elite Support% =
-    elite-teammate help, Elite xGF% = results in those matchups."""
-    import altair as alt
-    rows = [{"Metric": m, "value": float(v), "color": _CHART_COLORS.get(m, PALETTE["blue"])}
-            for m, v in vals.items() if pd.notna(v)]
-    if not rows:
-        return
-    d = pd.DataFrame(rows)
-    st.caption(f"**Elite Exposure** — {label}. Share of 5v5 ice: **Elite Exposure%** (vs a "
-               "full-strength unit) and **Elite Support%** (≥1 elite teammate); "
-               "**Elite xGF%** is on-ice xG share in those elite shifts (50 = even).")
-    bars = alt.Chart(d).mark_bar(size=30, clip=True).encode(
-        x=alt.X("Metric:N", sort=_CTX_BAR_METRICS,
-                axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold",
-                              labelFontSize=12)),
-        y=alt.Y("value:Q", scale=alt.Scale(domain=[0, 100]), title="%"),
-        color=alt.Color("color:N", scale=None, legend=None),
-        tooltip=[alt.Tooltip("Metric:N"), alt.Tooltip("value:Q", format=".1f", title="%")])
-    rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
-        strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
-    _show_chart((bars + rule).properties(title=alt.TitleParams(
-        text=f"Elite Exposure — {label}", color=PALETTE["text"], fontSize=13)),
-        dl_name="Elite-Exposure-bars")
+    line = alt.Chart(d).mark_line(point=True, strokeWidth=2.5, color=_PK_RED).encode(
+        x=alt.X("Season:N", title=None),
+        y=alt.Y("PK Rating:Q", title="PK Rating",
+                scale=alt.Scale(domain=[_lo - _pad, _hi + _pad])),
+        tooltip=["Season:N", alt.Tooltip("PK Rating:Q", format="+.2f")])
+    _show_chart(zero + line, dl_name="PK-liability")
 
 
 def _ctx_scatter_frame(season_label: str) -> pd.DataFrame:
@@ -3744,9 +3700,7 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
         color=alt.Color("EliteSupport:Q",
                         scale=alt.Scale(scheme="blues", reverse=True,
                                         domain=[0, 100]),
-                        legend=alt.Legend(orient="bottom", direction="horizontal",
-                                          gradientLength=220,
-                                          title="Elite Support %  (darker = less support)")),
+                        legend=None),   # caption already says darker = less support
         tooltip=[alt.Tooltip("player_name:N", title="Player"),
                  alt.Tooltip("team:N", title="Team"),
                  alt.Tooltip("pos:N", title="Pos"),
@@ -4476,7 +4430,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             ("Player Ratings", lambda: _chart(
                    "Elite Exposure over time (Elite Exposure%, Elite Support%, Elite xGF%)",
                    ["Elite Exposure%", "Elite Support%", "Elite xGF%"])),
-            ("Player Ratings", lambda: _pk_ci_chart(trend)),
+            ("Player Ratings", lambda: _pk_line_chart(trend)),
             ("xG", lambda: _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])),
             ("xG", lambda: _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
                    ["RelxG%", "RelxG-F%", "RelxG-A%"])),
@@ -4519,16 +4473,8 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             _all_qg_vals, _yr,
             caption="Quality Games % vs **50**.",
             dl_prefix="QG-bars")
-        # Elite Exposure — right after QG. Shared 50-baseline diverging bar.
-        _ctx_vals = _player_ctx_vals(pid, trend, _yr)
-        if any(pd.notna(v) for v in _ctx_vals.values()):
-            _qg_bar_chart(_ctx_vals, _yr,
-                          caption="**Elite Exposure** vs the **50 baseline** (bar up = "
-                                  "above 50, down = below; darker = further). Elite Exposure% = "
-                                  "ice vs elites, Elite Support% = ice with an elite teammate, "
-                                  "Elite xGF% = on-ice xG share in elite shifts (50 = even).",
-                          dl_prefix="Elite-Exposure-bars", title="Elite Exposure")
-        _pk_ci_chart(trend)          # PK liability CI (all seasons), after exposure
+        # Elite Exposure + PK liability are year-over-year metrics — they live in
+        # the "Year over year" view, not in the current-year bars.
         _ccg_vals = _player_ccg_vals(pid, trend, _yr)
         _ccg_bar_chart(_ccg_vals, _yr, dl_prefix="CCG-bars",
                        title="Chaos Created Goals / 60")
@@ -8372,7 +8318,7 @@ def render_trade_analyzer() -> None:
     # than mixed together, matching the single-player drill-in's split.
     _seasons_all = [SEASON_DISPLAY.get(s, s) for s in PROFILE_SEASONS] + ["2yr avg (24-26)"]
     _cmp_yr = _default_qg_year(season_label, _seasons_all)
-    _trends, _pv, _zv, _cv, _ctxv = {}, {}, {}, {}, {}
+    _trends, _pv, _zv, _cv = {}, {}, {}, {}
     for pid in sel:
         _nm = plabel.get(int(pid), str(pid))
         _tr = _player_trend(int(pid))
@@ -8381,7 +8327,6 @@ def render_trade_analyzer() -> None:
             _pv[_nm] = _player_qg_vals(int(pid), _tr, _cmp_yr)
             _zv[_nm] = _player_zone_vals(int(pid), _tr, _cmp_yr)
             _cv[_nm] = _player_ccg_vals(int(pid), _tr, _cmp_yr)
-            _ctxv[_nm] = _player_ctx_vals(int(pid), _tr, _cmp_yr)
     if _pv:
         _set_dl_title(" vs ".join(_pv.keys()))
         # Same 12-metric Raw+Rel paired set (and Attack/Suppress/Overall order)
@@ -8397,14 +8342,8 @@ def render_trade_analyzer() -> None:
                     "**50% baseline** (Raw next to its Relative counterpart), one panel "
                     "per player.", dl_name="Trade-QG-bars-xG",
             title="xG Quality Games %")
-        # Elite Exposure bar — right after QG (column order), one panel per player.
-        if any(any(pd.notna(v) for v in cv.values()) for cv in _ctxv.values()):
-            _qg_bar_chart_compare(
-                _ctxv, _cmp_yr, metrics=_CTX_BAR_METRICS,
-                caption="**Elite Exposure** vs the **50 baseline** — Elite Exposure% (ice vs "
-                        "elites), Elite Support% (ice with an elite teammate), Elite xGF% "
-                        "(on-ice xG share in elite shifts, 50 = even), one panel per player.",
-                dl_name="Trade-Elite-Exposure-bars", title="Elite Exposure")
+        # (Elite Exposure bar removed — Elite Exposure is a year-over-year metric,
+        # shown in the YoY line graphs / scatter, not as a current-year bar.)
         # CCG bars — after the QG (NFI + xG) bars, faceted per player.
         if any(any(pd.notna(v) for v in cv.values()) for cv in _cv.values()):
             _ccg_bar_chart_compare(
