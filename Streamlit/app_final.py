@@ -3612,9 +3612,6 @@ def _player_zone_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
     return out
 
 
-_PK_RED = "#C0392B"
-
-
 def _pk_line_chart(trend: pd.DataFrame) -> None:
     """Penalty-kill liability over time: PK Rating (signed) per season as a plain
     line vs a 0 baseline. Negative = liability. PK is asymmetric — the positive
@@ -3633,7 +3630,8 @@ def _pk_line_chart(trend: pd.DataFrame) -> None:
     _pad = (_hi - _lo) * 0.1 or 1.0
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
-    line = alt.Chart(d).mark_line(point=True, strokeWidth=2.5, color=_PK_RED).encode(
+    line = alt.Chart(d).mark_line(point=True, strokeWidth=2.5,
+                                  color=_CHART_COLORS.get("PK Rating", _CHART_PRIMARY)).encode(
         x=alt.X("Season:N", title=None),
         y=alt.Y("PK Rating:Q", title="PK Rating",
                 scale=alt.Scale(domain=[_lo - _pad, _hi + _pad])),
@@ -5591,8 +5589,9 @@ def render_players() -> None:
     # Metric-family toggles first, then the Team filter. Families start with none
     # selected (only the identity columns show); click a family to display it.
     fcol, tcol, gcol = st.columns([2.4, 0.85, 0.85])
-    # Quality Games shows by default; the user can toggle other families on/off.
-    st.session_state.setdefault("players_display_seg", ["Quality Games"])
+    # No family selected by default (only the identity columns show); the user
+    # taps a family to display its columns.
+    st.session_state.setdefault("players_display_seg", [])
     with fcol:
         # Pills (not segmented_control): they wrap onto multiple lines and are more
         # reliable to tap on mobile than a connected button group.
