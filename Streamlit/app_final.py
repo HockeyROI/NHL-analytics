@@ -3076,6 +3076,37 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
                 if len(pv) and pd.notna(pv.iloc[0]):
                     d[ssn] = _league_rank(sub[src], pv.iloc[0])
             out[disp_c] = d
+    # Player Ratings family (Elite Rating, Elite Exposure, PP Rating) — name-keyed
+    # and ranked within position like Zone Impact. PK Rating is intentionally NOT
+    # ranked (asymmetric: the good side is a deployment artifact — see methodology).
+    if pos_group is not None:
+        _prow = nfi[nfi["player_id"] == pid]
+        _nm = _prow["player_name"].iloc[0] if len(_prow) else None
+        if _nm:
+            for _loader, _mets in (
+                    (load_ratings_all_seasons, ["Elite Rating"]),
+                    (load_ctx_all_seasons, ["Elite Exp F%", "Elite Exp D%", "Elite Exp%",
+                                            "Elite Support%", "Elite xGF%", "Elite xG"]),
+                    (load_pppk_all_seasons, ["PP Rating"])):
+                _fr = _loader()
+                if _fr.empty:
+                    continue
+                for m in _mets:
+                    if m not in _fr.columns:
+                        continue
+                    d = {}
+                    for ssn in PROFILE_SEASONS:
+                        sub = _fr[_fr["season"] == ssn]
+                        if restrict:
+                            sub = sub[sub["_pos_group"] == pos_group]
+                        if team:
+                            sub = sub[sub["player_name"].isin(team_names.get(ssn, set()))]
+                        pv = sub.loc[(sub["player_name"] == _nm)
+                                     & (sub["_pos_group"] == pos_group), m]
+                        if len(pv) and pd.notna(pv.iloc[0]):
+                            d[ssn] = _league_rank(sub[m], pv.iloc[0])
+                    out[m] = d
+
     pdo = load_pdo_counts(_pdo_toggle_state())
     if not pdo.empty:
         pdo = pdo.copy()
@@ -3259,8 +3290,8 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
             v = r[c]
             if pd.isna(v):
                 row[c] = "—"
-            elif c in ("Elite Rating", "Elite Rating Tier", "PP Rating", "PP Tier",
-                       "PK Rating", "PK Flag"):    # value only, no rank annotation
+            elif c in ("Elite Rating Tier", "PP Tier", "PK Rating", "PK Flag"):
+                # string labels + PK (asymmetric) — value only, no rank annotation
                 row[c] = _b.get(c, lambda v: f"{v}")(v)
             else:
                 txt = _b.get(c, lambda v: f"{v}")(v)
@@ -4431,7 +4462,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             # Player Ratings — right after QG (matches column order): EV + PP rating
             # trajectory, then Elite Exposure, then PK liability CI.
             ("Player Ratings", lambda: _chart(
-                   "Ratings over time (EV Rating, PP Rating) — 0–100",
+                   "Ratings over time (Elite Rating, PP Rating) — 0–100",
                    ["Elite Rating", "PP Rating"], ydomain=[0, 100])),
             ("Player Ratings", lambda: _chart(
                    "Elite Exposure over time (Elite Exp%, Elite Support%, Elite xGF%)",
@@ -7295,8 +7326,8 @@ def _goalie_profile_table(gid: int, qg_scope_suffix: str = "", qg_starter: bool 
             v = r[c]
             if pd.isna(v):
                 row[c] = "—"
-            elif c in ("Elite Rating", "Elite Rating Tier", "PP Rating", "PP Tier",
-                       "PK Rating", "PK Flag"):    # value only, no rank annotation
+            elif c in ("Elite Rating Tier", "PP Tier", "PK Rating", "PK Flag"):
+                # string labels + PK (asymmetric) — value only, no rank annotation
                 row[c] = _b.get(c, lambda v: f"{v}")(v)
             else:
                 txt = _b.get(c, lambda v: f"{v}")(v)
