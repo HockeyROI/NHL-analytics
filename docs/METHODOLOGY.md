@@ -382,7 +382,7 @@ Three **exposure buckets** — a shift can belong to more than one — each the 
 Plus:
 - **Elite Support%** — share of 5v5 ice with ≥1 elite **teammate** on the ice (excludes the player himself).
 - **Elite xGF%** — the player's on-ice expected-goals share (xGF%) during the full-strength (Elite Exposure%) shifts — how they did in the toughest matchups.
-- **Elite ixG** — the player's own individual expected goals per 60 (5v5): the shot danger he generates himself (the scatter's x-axis). Distinct from Elite xGF%, which is the on-ice *team* share in elite matchups.
+- **Elite ixG** — the player's own individual expected goals per 60 (5v5): the shot danger he generates himself. Distinct from Elite xGF%, which is the on-ice *team* share in elite matchups (and is the Elite Exposure scatter's x-axis: Elite Exposure% vs Elite xGF%, 50 = even).
 
 Exposure is computed by segmenting every game into constant-personnel 5v5 intervals (`shifts_ingest.py`), classifying the opposing / teammate five by same-season tier, and accruing interval time (and, for xGF vs Elite%, the interval's 5v5 fenwick xG for/against). Available for single seasons 2022-23…2025-26 and the 2yr / 4yr pools.
 

@@ -3680,14 +3680,15 @@ def _ctx_scatter_frame(season_label: str) -> pd.DataFrame:
 
 def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
                  only_pids: list = None) -> None:
-    """Elite Exposure% (y) × individual xG/60 (x), coloured by elite teammate
-    support (darker = LESS support). League-wide by default; a `team` switches to
-    a team-level view (that team's players, labelled); `only_pids` (Trade Analyzer)
-    plots just those players but with axes scaled to the whole league. Sized to
-    match the app's other scatters."""
+    """Elite Exposure% (y) × Elite xGF% (x, on-ice xG share in elite shifts;
+    50 = even, so right of the dashed line = winning those minutes), coloured by
+    elite teammate support (darker = LESS support). League-wide by default; a
+    `team` switches to a team-level view (that team's players, labelled);
+    `only_pids` (Trade Analyzer) plots just those players but with axes scaled to
+    the whole league. Sized to match the app's other scatters."""
     import altair as alt
     d_all = _ctx_scatter_frame(season_label)
-    if d_all.empty or not {"vsElite", "ixG60", "EliteSupport"}.issubset(d_all.columns):
+    if d_all.empty or not {"vsElite", "xGFvsElite", "EliteSupport"}.issubset(d_all.columns):
         return
     if pos_filter in ("F", "D"):
         d_all = d_all[d_all["pos_group"] == pos_filter]
@@ -3699,20 +3700,21 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
         d = d_all[d_all["team"] == team]
     else:
         d = d_all
-    d = d.dropna(subset=["vsElite", "ixG60", "EliteSupport"])
+    d = d.dropna(subset=["vsElite", "xGFvsElite", "EliteSupport"])
     if d.empty:
         return
     _scope = (f"{team} · {season_label}" if _team_view else season_label)
     st.caption("One point per player. y = **Elite Exposure %** (share of 5v5 ice vs a "
-               "full-strength unit), x = individual shot danger (**ixG/60**). "
+               "full-strength unit), x = **Elite xGF%** (on-ice xG share in those elite "
+               "shifts; **50 = even**, right of the dashed line = winning them). "
                f"**Darker = less elite teammate support.** {_scope}.")
     # Trade view keeps league-scaled axes (like the other trade scatters); team /
     # league views tighten to what's shown.
     _ddom = d_all if _trade_view else d
-    _xdom = _tight_domain(_ddom["ixG60"].dropna(), pad_frac=0.15, min_pad=1e-6)
+    _xdom = _tight_domain(_ddom["xGFvsElite"].dropna(), pad_frac=0.15, min_pad=1e-6)
     _ydom = _tight_domain(_ddom["vsElite"].dropna(), pad_frac=0.15, min_pad=1e-6)
     base = alt.Chart(d).encode(
-        x=alt.X("ixG60:Q", title="Individual xG / 60", scale=alt.Scale(domain=_xdom, zero=False)),
+        x=alt.X("xGFvsElite:Q", title="Elite xGF%", scale=alt.Scale(domain=_xdom, zero=False)),
         y=alt.Y("vsElite:Q", title="Elite Exposure %", scale=alt.Scale(domain=_ydom, zero=False)))
     pts = base.mark_circle(size=90, opacity=0.75).encode(
         color=alt.Color("EliteSupport:Q",
@@ -3723,17 +3725,22 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
                  alt.Tooltip("team:N", title="Team"),
                  alt.Tooltip("pos:N", title="Pos"),
                  alt.Tooltip("vsElite:Q", title="Elite Exposure%", format=".1f"),
-                 alt.Tooltip("EliteSupport:Q", title="Elite Support%", format=".1f"),
-                 alt.Tooltip("ixG60:Q", title="ixG/60", format=".2f")])
+                 alt.Tooltip("xGFvsElite:Q", title="Elite xGF%", format=".1f"),
+                 alt.Tooltip("EliteSupport:Q", title="Elite Support%", format=".1f")])
+    # 50 = even xG share in elite minutes (winning to the right); only drawn when
+    # it falls inside the tightened x-domain so it never blows the axis out.
     ch = pts
+    if _xdom[0] <= 50.0 <= _xdom[1]:
+        ch = pts + alt.Chart(pd.DataFrame({"x": [50.0]})).mark_rule(
+            strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(x="x:Q")
     if _team_view or _trade_view:        # few points -> label each with last name
         d = d.assign(_label=d["player_name"].astype(str).str.split().str[-1])
         labels = alt.Chart(d).mark_text(align="left", dx=6, dy=-6, fontSize=10,
                                         color=PALETTE["orange"]).encode(
-            x=alt.X("ixG60:Q", scale=alt.Scale(domain=_xdom, zero=False)),
+            x=alt.X("xGFvsElite:Q", scale=alt.Scale(domain=_xdom, zero=False)),
             y=alt.Y("vsElite:Q", scale=alt.Scale(domain=_ydom, zero=False)),
             text="_label:N")
-        ch = pts + labels
+        ch = ch + labels
     _show_chart(ch, dl_name="Elite-Exposure-scatter", keep_tooltip=True)
 
 
