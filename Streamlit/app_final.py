@@ -3679,7 +3679,7 @@ def _ctx_scatter_frame(season_label: str) -> pd.DataFrame:
 
 
 def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
-                 only_pids: list = None) -> None:
+                 only_pids: list = None, eligible_ids: set = None) -> None:
     """Elite Exposure% (y) × Elite xGF% (x, on-ice xG share in elite shifts;
     50 = even, so right of the dashed line = winning those minutes), coloured by
     elite teammate support (darker = LESS support). League-wide by default; a
@@ -3692,6 +3692,12 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
         return
     if pos_filter in ("F", "D"):
         d_all = d_all[d_all["pos_group"] == pos_filter]
+    # Respect the leaderboard's Min ES TOI / Min GP sliders: the caller passes the
+    # already-filtered cohort's player_ids so the scatter shows the same set of
+    # players as the table above it (the ctx file has GP but no ES-TOI, so we
+    # can't re-derive the TOI floor here — hence filtering by id).
+    if eligible_ids is not None:
+        d_all = d_all[d_all["player_id"].isin(eligible_ids)]
     _team_view = bool(team) and team != "All"
     _trade_view = only_pids is not None
     if _trade_view:
@@ -4592,7 +4598,7 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
                          year_label=_yl)
     # Elite Exposure — right after the Quality-Games team scatters (column order).
     st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
-                f"{heading_prefix}Elite Exposure vs Individual xG</h4>", unsafe_allow_html=True)
+                f"{heading_prefix}Elite Exposure vs Elite xGF%</h4>", unsafe_allow_html=True)
     _ctx_scatter(_yl, team=_my_team)
     if {"PDOxG", "xG%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
@@ -6021,8 +6027,10 @@ def render_players() -> None:
     # the selected family.
     def _elite_exp_scatter():
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
-                    f"Elite Exposure vs Individual xG</h4>", unsafe_allow_html=True)
-        _ctx_scatter(season_label, pos, team_sel)   # team filter -> team-level view
+                    f"Elite Exposure vs Elite xGF%</h4>", unsafe_allow_html=True)
+        # Pass the slider-filtered cohort's ids so the scatter matches the table.
+        _ids = set(df["player_id"].dropna().astype(int)) if "player_id" in df.columns else None
+        _ctx_scatter(season_label, pos, team_sel, eligible_ids=_ids)   # team filter -> team-level view
 
     if {"PDOxG", "xG_QG_pct"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs xG-QG%</h4>",
