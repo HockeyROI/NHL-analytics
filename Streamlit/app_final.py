@@ -3734,7 +3734,7 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
             y=alt.Y("vsElite:Q", scale=alt.Scale(domain=_ydom, zero=False)),
             text="_label:N")
         ch = pts + labels
-    _show_chart(ch, dl_name="Elite-Exposure-scatter")
+    _show_chart(ch, dl_name="Elite-Exposure-scatter", keep_tooltip=True)
 
 
 # CCG bar metrics — the two per-60 rate forms (count metrics don't share a
@@ -4578,6 +4578,11 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
                     f"NFI-QG%</h4>", unsafe_allow_html=True)
         _xgqg_nfiqg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
                             year_label=_yl)
+    if {"xG_QG_pct", "xG%"}.issubset(_team_frame.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>xG-QG% vs "
+                    f"xG%</h4>", unsafe_allow_html=True)
+        _xgqg_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
+                         year_label=_yl)
     # Elite Exposure — right after the Quality-Games team scatters (column order).
     st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
                 f"{heading_prefix}Elite Exposure vs Individual xG</h4>", unsafe_allow_html=True)
@@ -5125,11 +5130,11 @@ def _scatter_with_labels(df: pd.DataFrame, x_col: str, y_col: str, x_title: str,
         _title_text = f"{y_title} vs {x_title} — {year_label}"
         chart = chart.properties(title=alt.TitleParams(
             text=_title_text, color=PALETTE["text"], fontSize=13))
-    # League-wide (not team_scoped) scatters have no visible name label — hover
-    # is the ONLY way to identify a point — so keep the tooltip there. Team-
-    # scoped scatters already show a name label on every dot, so they stay
-    # tooltip-free like other charts.
-    _show_chart(chart, dl_name=dl_name, keep_tooltip=not team_scoped)
+    # Keep the hover tooltip on BOTH league and team-scoped scatters: league
+    # dots have no visible label (hover is the only ID), and on team-scoped
+    # scatters the printed last-name label is handy but hover adds the full
+    # data values (name + both metrics + color metric) per the user's request.
+    _show_chart(chart, dl_name=dl_name, keep_tooltip=True)
 
 
 def _pdo_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
@@ -5376,6 +5381,30 @@ def _xgqg_nfiqg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = ""
         f"nfiqg-vs-xgqg-pct{dl_suffix}",
         "One point per player — how often each clears the xG vs net-front-impact "
         "quality-game floor. Color = **OZ Start%** (light = easier, dark = harder).",
+        team_scoped, extra_layer=alt.layer(rule_v, rule_h), color_col="OZ Start%",
+        color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
+        domain_df=domain_df, year_label=year_label)
+
+
+def _xgqg_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", highlight_name: str = None,
+                     domain_df: pd.DataFrame = None, year_label: str = None) -> None:
+    """xG-QG% (game-to-game consistency: share of games clearing the xG floor)
+    vs xG% (overall on-ice xG share). Do high-share players also clear the bar
+    game to game? Crosshair: x=50 (even xG share), y=0.5 (clears floor half the
+    games)."""
+    import altair as alt
+    if not {"xG_QG_pct", "xG%"}.issubset(df.columns):
+        return
+    rule_v = alt.Chart(pd.DataFrame({"x": [50.0]})).mark_rule(
+        color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(x="x:Q")
+    rule_h = alt.Chart(pd.DataFrame({"y": [0.5]})).mark_rule(
+        color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
+    _scatter_with_labels(
+        df, "xG%", "xG_QG_pct", "xG%", "xG-QG%",
+        f"xgqg-vs-xg-pct{dl_suffix}",
+        "One point per player. y = **xG-QG%** (share of games clearing the xG "
+        "quality-game floor), x = **xG%** (overall on-ice xG share; 50 = even). "
+        "Color = **OZ Start%** (light = easier, dark = harder).",
         team_scoped, extra_layer=alt.layer(rule_v, rule_h), color_col="OZ Start%",
         color_title="OZ Start% (light = easier, dark = harder)", highlight_name=highlight_name,
         domain_df=domain_df, year_label=year_label)
@@ -5997,6 +6026,11 @@ def render_players() -> None:
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>xG-QG% vs NFI-QG%</h4>",
                     unsafe_allow_html=True)
         _xgqg_nfiqg_scatter(df, _team_scoped, year_label=scope_label)
+
+    if {"xG_QG_pct", "xG%"}.issubset(df.columns):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>xG-QG% vs xG%</h4>",
+                    unsafe_allow_html=True)
+        _xgqg_xg_scatter(df, _team_scoped, year_label=scope_label)
 
     # Elite Exposure — right after the Quality-Games scatters (matches column order).
     _elite_exp_scatter()
