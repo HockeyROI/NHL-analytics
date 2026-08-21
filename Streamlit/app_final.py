@@ -5393,14 +5393,19 @@ def _xgqg_xg_scatter(df: pd.DataFrame, team_scoped: bool, dl_suffix: str = "", h
     game to game? Crosshair: x=50 (even xG share), y=0.5 (clears floor half the
     games)."""
     import altair as alt
-    if not {"xG_QG_pct", "xG%"}.issubset(df.columns):
+    # The leaderboard frame renames xG_QG_pct -> the display "xG-QG%"; the team /
+    # drill-in frames keep the raw name. Accept whichever is present so the chart
+    # renders on both surfaces. (Values are the same 0-1 fraction either way.)
+    _yc = "xG_QG_pct" if "xG_QG_pct" in df.columns else (
+          "xG-QG%" if "xG-QG%" in df.columns else None)
+    if _yc is None or "xG%" not in df.columns:
         return
     rule_v = alt.Chart(pd.DataFrame({"x": [50.0]})).mark_rule(
         color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(x="x:Q")
     rule_h = alt.Chart(pd.DataFrame({"y": [0.5]})).mark_rule(
         color=PALETTE["text_secondary"], strokeDash=[4, 4]).encode(y="y:Q")
     _scatter_with_labels(
-        df, "xG%", "xG_QG_pct", "xG%", "xG-QG%",
+        df, "xG%", _yc, "xG%", "xG-QG%",
         f"xgqg-vs-xg-pct{dl_suffix}",
         "One point per player. y = **xG-QG%** (share of games clearing the xG "
         "quality-game floor), x = **xG%** (overall on-ice xG share; 50 = even). "
@@ -6027,7 +6032,7 @@ def render_players() -> None:
                     unsafe_allow_html=True)
         _xgqg_nfiqg_scatter(df, _team_scoped, year_label=scope_label)
 
-    if {"xG_QG_pct", "xG%"}.issubset(df.columns):
+    if "xG%" in df.columns and ("xG_QG_pct" in df.columns or "xG-QG%" in df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>xG-QG% vs xG%</h4>",
                     unsafe_allow_html=True)
         _xgqg_xg_scatter(df, _team_scoped, year_label=scope_label)
