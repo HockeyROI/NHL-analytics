@@ -3692,6 +3692,11 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
         return
     if pos_filter in ("F", "D"):
         d_all = d_all[d_all["pos_group"] == pos_filter]
+    # League-average Elite Exposure% for the horizontal reference line — computed
+    # over the WHOLE (position-filtered) season population, before the slider /
+    # team filter, so it stays the league mean rather than the shown cohort's.
+    _league_exp = (float(d_all["vsElite"].dropna().mean())
+                   if d_all["vsElite"].notna().any() else None)
     # Respect the leaderboard's Min ES TOI / Min GP sliders: the caller passes the
     # already-filtered cohort's player_ids so the scatter shows the same set of
     # players as the table above it (the ctx file has GP but no ES-TOI, so we
@@ -3710,15 +3715,20 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
     if d.empty:
         return
     _scope = (f"{team} · {season_label}" if _team_view else season_label)
+    _avg_txt = (f" Horizontal dashed line = **league-average exposure "
+                f"({_league_exp:.0f}%)**." if _league_exp is not None else "")
     st.caption("One point per player. y = **Elite Exposure %** (share of 5v5 ice vs a "
                "full-strength unit), x = **Elite xGF%** (on-ice xG share in those elite "
-               "shifts; **50 = even**, right of the dashed line = winning them). "
-               f"**Darker = less elite teammate support.** {_scope}.")
+               "shifts; **50 = even**, right of the dashed line = winning them)."
+               f"{_avg_txt} **Darker = less elite teammate support.** {_scope}.")
     # Trade view keeps league-scaled axes (like the other trade scatters); team /
     # league views tighten to what's shown.
     _ddom = d_all if _trade_view else d
     _xdom = _tight_domain(_ddom["xGFvsElite"].dropna(), pad_frac=0.15, min_pad=1e-6)
     _ydom = _tight_domain(_ddom["vsElite"].dropna(), pad_frac=0.15, min_pad=1e-6)
+    # Keep the league-average line inside the y-axis so it always shows.
+    if _league_exp is not None:
+        _ydom = [min(_ydom[0], _league_exp), max(_ydom[1], _league_exp)]
     base = alt.Chart(d).encode(
         x=alt.X("xGFvsElite:Q", title="Elite xGF%", scale=alt.Scale(domain=_xdom, zero=False)),
         y=alt.Y("vsElite:Q", title="Elite Exposure %", scale=alt.Scale(domain=_ydom, zero=False)))
@@ -3737,8 +3747,13 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
     # it falls inside the tightened x-domain so it never blows the axis out.
     ch = pts
     if _xdom[0] <= 50.0 <= _xdom[1]:
-        ch = pts + alt.Chart(pd.DataFrame({"x": [50.0]})).mark_rule(
+        ch = ch + alt.Chart(pd.DataFrame({"x": [50.0]})).mark_rule(
             strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(x="x:Q")
+    # Horizontal dashed line at league-average Elite Exposure% (y-domain was
+    # extended above so it's always in view).
+    if _league_exp is not None:
+        ch = ch + alt.Chart(pd.DataFrame({"y": [_league_exp]})).mark_rule(
+            strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
     if _team_view or _trade_view:        # few points -> label each with last name
         d = d.assign(_label=d["player_name"].astype(str).str.split().str[-1])
         labels = alt.Chart(d).mark_text(align="left", dx=6, dy=-6, fontSize=10,
