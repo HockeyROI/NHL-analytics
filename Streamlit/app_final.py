@@ -4430,10 +4430,11 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         _nm = _highlight_name or f"Player {pid}"
         if _ppos:
             _nm = f"{_nm} ({_ppos})"
-        # _yr = the trend-table row the user clicked (falling back to the global
-        # Season filter's year). The map follows that, so clicking a season in
-        # the profile moves the shot chart with the rest of the page.
-        _render_shot_chart("player", int(pid), _nm, _pteam, _yr or season_label,
+        # When the user clicked a trend-table row, show that year's shots.
+        # Otherwise honour the global Season filter (pooled → all seasons).
+        _shot_yr = (_yr if (_sel and 0 <= _sel[0] < len(_seasons))
+                    else season_label)
+        _render_shot_chart("player", int(pid), _nm, _pteam, _shot_yr,
                            playoffs=False)
 
     def _chart(title: str, cols: list[str], ydomain=None) -> None:
@@ -7626,7 +7627,9 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
     _gname = str(_grow["goalie_name"].iloc[0]) if len(_grow) else f"Goalie {gid}"
     _gteam = (str(_grow["team"].iloc[0]) if len(_grow) and "team" in _grow.columns
               and pd.notna(_grow["team"].iloc[0]) else None)
-    _render_shot_chart("goalie", int(gid), _gname, _gteam, _gyr or season_label,
+    _shot_yr = (_gyr if (_gsel and 0 <= _gsel[0] < len(_gseasons))
+                else season_label)
+    _render_shot_chart("goalie", int(gid), _gname, _gteam, _shot_yr,
                        playoffs=False)
 
     # CHOICE: 3 small multiples. NFI-GSAx/60 is a per-60 rate (~±0.3); NFI SV%
@@ -7798,7 +7801,7 @@ def render_goalies() -> None:
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Goalie List</h2>",
         unsafe_allow_html=True,
     )
-    season_label, game_type = render_scoped_filters("goalies")
+    season_label, game_type = render_scoped_filters("goalies", show_situation=True)
     if _block_ref_only(season_label):
         return
     _set_dl_title(None)                    # only drill-in charts get a name
@@ -7817,8 +7820,12 @@ def render_goalies() -> None:
                    "Each playoff game is graded against **that season's regular-season "
                    "starter baseline**.")
     else:
+        _sit = _situation_toggle_state()
+        _sit_note = (f" Shot map filtered to **{_sit}**." if _sit != "All situations" else
+                     " Shot map shows **all situations**.")
         st.caption("**sQS%** covers **all situations**; "
-                   "**QNFG% and QG% are 5v5-only**.")
+                   "**QNFG% and QG% are 5v5-only**. "
+                   "Leaderboard metrics stay at their native scope." + _sit_note)
 
     # State the sQS% starter baseline save% for the open season(s).
     _bl = load_qg_starter_baseline(qg_scope_suffix)
@@ -9119,10 +9126,14 @@ def render_scoped_filters(scope: str, show_situation: bool = False) -> tuple[str
                              horizontal=True, key=_gt_key, on_change=_sync_gt)
     if show_situation:
         with cols[2]:
+            _sit_help = ("Filters shot maps and the 'Sit' metric columns "
+                         "(PP=5v4+5v3+4v3, PK=4v5+3v5+3v4). NFI/QG/Zone stay 5v5."
+                         if scope != "goalies" else
+                         "Filters the goalie shot map by situation "
+                         "(PP=5v4+5v3+4v3, PK=4v5+3v5+3v4). "
+                         "Leaderboard metrics stay at their native scope.")
             st.selectbox("Situation", list(SITUATION_BUCKETS), key=_sit_key,
-                         on_change=_sync_sit,
-                         help="Applies to the 'Sit' metric columns / Situation-splits "
-                              "(PP=5v4+5v3+4v3, PK=4v5+3v5+3v4). NFI/QG/Zone stay 5v5.")
+                         on_change=_sync_sit, help=_sit_help)
     if game_type == "Playoffs":
         st.caption("Playoffs pool all seasons (2022-23 → 2024-25); the Season filter "
                    "is locked to the pooled view. Season & game type apply to all tabs.")
