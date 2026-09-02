@@ -868,11 +868,20 @@ def render_methodology() -> None:
     )
     st.markdown(
         _meth_framework(
-            "NFI — Net-Front Impact",
-            "Fenwick shot share (shots + misses + goals, blocks excluded) in the CNFI "
-            "(close net-front) and MNFI (mid / high-slot) zones while a player is on ice. "
-            "<b>RelNFI%</b> measures net-front impact relative to a player's own team "
-            "(on-ice vs off-ice), isolating individual contribution from team strength.",
+            "Quality Games (QG)",
+            "Per-game consistency — the share of a player's 5v5 regulation games where their "
+            "on-ice danger share beat the position median, on two bases: our xG "
+            "(<b>xG-QG%</b>) and NFI (<b>NFI-QG%</b>), with a half-credit rule for exact-median "
+            "ties. <b>Relative QG</b> (<b>RelNFI-QG%</b>, <b>RelxG-QG%</b>) runs the same per-game "
+            "median test on the player's <i>team-relative</i> danger share (on-ice vs off-ice), so "
+            "it credits beating the bar after isolating individual contribution from team strength "
+            "— the QG analog of RelNFI%. <b>Offense / Defense split</b> grades each game's offense "
+            "and defense separately: the share of games where the player's on-ice offense rate per "
+            "60 beat the league position-median, and where the on-ice defense rate per 60 was below "
+            "it. xG uses For/Against labels (<b>xG-QG-F%</b>, <b>xG-QG-A%</b>); NFI uses "
+            "Attack/Suppress to match the NFI family (<b>NFI-QG-A%</b> = attack/offense, "
+            "<b>NFI-QG-S%</b> = suppress/defense). Higher is better on all four; available at team "
+            "level too.",
         )
         + _meth_framework(
             "Player Ratings",
@@ -916,20 +925,60 @@ def render_methodology() -> None:
             "results are kept as separate columns.",
         )
         + _meth_framework(
-            "Quality Games (QG)",
-            "Per-game consistency — the share of a player's 5v5 regulation games where their "
-            "on-ice danger share beat the position median, on two bases: our xG "
-            "(<b>xG-QG%</b>) and NFI (<b>NFI-QG%</b>), with a half-credit rule for exact-median "
-            "ties. <b>Relative QG</b> (<b>RelNFI-QG%</b>, <b>RelxG-QG%</b>) runs the same per-game "
-            "median test on the player's <i>team-relative</i> danger share (on-ice vs off-ice), so "
-            "it credits beating the bar after isolating individual contribution from team strength "
-            "— the QG analog of RelNFI%. <b>Offense / Defense split</b> grades each game's offense "
-            "and defense separately: the share of games where the player's on-ice offense rate per "
-            "60 beat the league position-median, and where the on-ice defense rate per 60 was below "
-            "it. xG uses For/Against labels (<b>xG-QG-F%</b>, <b>xG-QG-A%</b>); NFI uses "
-            "Attack/Suppress to match the NFI family (<b>NFI-QG-A%</b> = attack/offense, "
-            "<b>NFI-QG-S%</b> = suppress/defense). Higher is better on all four; available at team "
-            "level too.",
+            "Expected Goals (xG) — our own model",
+            "The xG behind <b>PDOxG</b> and the on-ice <b>xGF/xGA</b> (incl. the per-situation "
+            "engine) is HockeyROI's own — a Fenwick-based gradient-boosted model "
+            "(<code>xG/build_xg.py</code>) trained on shot geometry (distance / angle), shot type, "
+            "and pre-shot context read from the <b>full play-by-play</b>: rebound, <b>rush</b>, time "
+            "&amp; distance since the last event of any kind (faceoff / hit / turnover / shot), the "
+            "last event's type and zone, plus running score &amp; strength state and home/away. "
+            "Held-out <b>AUC 0.779</b>, tightly calibrated, and its player-season xG totals correlate "
+            "<b>0.99</b> with the public benchmark it was validated against. "
+            "<i>(This one model now powers everything — the Quality-Games xG, on-ice xGF/xGA, "
+            "GSAx and PDOxG all read it; no third-party xG anywhere.)</i>",
+        )
+        + _meth_framework(
+            "xG — Expected Goals",
+            "On-ice expected goals, split into For and Against. <b>xGF/60</b> and "
+            "<b>xGA/60</b> are the raw on-ice expected goals for / against per 60 while the player "
+            "is on the ice. <b>RelxG%</b> is the season-level <i>relative</i> xG rate (on-ice − "
+            "off-ice per 60) — the xG counterpart to RelNFI% — and <b>RelxG-F%</b> / <b>RelxG-A%</b> "
+            "split that relative rate into its For and Against halves. All are built from HockeyROI's "
+            "own per-event xG (<code>xG/build_xg.py</code>) with our own qualifying filter. "
+            "(Split out of Quality Games: QG is the per-game consistency %; xG is the "
+            "underlying rate.)",
+        )
+        + _meth_framework(
+            "PDOxG",
+            "PDO's luck signal net of shot quality. Standard PDO treats every on-ice shot as a "
+            "coin-flip against league-average conversion, but a player who generates (or concedes) "
+            "better chances will run a high (or low) PDO by shot quality alone — not luck. PDOxG "
+            "replaces the league-average baseline with an <b>expected</b> one from my SOG-conditional "
+            "xG model (shot distance/angle/type): PDOxG = (SH% − xSH%) + (SV% − xSV%), where xSH% = "
+            "on-ice xGF ÷ SOG-for and xSV% = 1 − (on-ice xGA ÷ SOG-against). <b>Centered on 0</b> — "
+            "positive = finishing/goaltending beyond what shot quality predicts (still likely luck, "
+            "but the shot-quality portion is removed); negative = the reverse. Same 5v5/all-"
+            "situations toggle and ≥200-min floor as PDO. Descriptive, not a ranking. Note it does "
+            "<b>not</b> adjust for the finishing talent of linemates or the goalie behind you — that "
+            "would be a further, teammate-relative step.",
+        )
+        + _meth_framework(
+            "CCG (Chaos Created Goals)",
+            "A player's shot — on-goal, missed, <b>or</b> blocked — followed by a goal from a "
+            "<b>teammate</b> within <b>0–30 seconds</b> of the same continuous play (never crossing a "
+            "whistle/faceoff; immediate rebounds ARE included). It credits the shots that "
+            "<i>generate</i> downstream goals for others, not the shooter's own finish. Four columns: "
+            "<b>CCG</b> (total count in the current scope + situation), <b>CCG/60</b> (per-60 rate), "
+            "and two team-relatives vs the player's <b>teammates'</b> rate (leave-one-out team "
+            "environment, same scope/situation) — <b>Rel-CCG</b> (count: created goals above/below what "
+            "a teammate-rate skater makes in the same ice time) and <b>Rel-CCG/60</b> (the rate "
+            "version). The relatives isolate individual signal from linemate quality (+ = beats their "
+            "own linemates; approximate across trades / pooled scopes; teams compare vs the league). "
+            "Follows the Situation filter; built from raw play-by-play. It measures a "
+            "<b>net-front / point-shot creation</b> skill — high-volume shooters and shooting "
+            "defensemen lead it — and by design captures only <b>shots</b> (not passing/playmaking); "
+            "it is descriptive, not a total-value metric. The team columns are the same idea summed "
+            "over the roster, with Rel-CCG measured vs the league average.",
         )
         + _meth_framework(
             "Situations (all game states)",
@@ -956,48 +1005,20 @@ def render_methodology() -> None:
             "players on the per-60 rates and shares, not raw totals.",
         )
         + _meth_framework(
-            "Expected Goals (xG) — our own model",
-            "The xG behind <b>PDOxG</b> and the on-ice <b>xGF/xGA</b> (incl. the per-situation "
-            "engine) is HockeyROI's own — a Fenwick-based gradient-boosted model "
-            "(<code>xG/build_xg.py</code>) trained on shot geometry (distance / angle), shot type, "
-            "and pre-shot context read from the <b>full play-by-play</b>: rebound, <b>rush</b>, time "
-            "&amp; distance since the last event of any kind (faceoff / hit / turnover / shot), the "
-            "last event's type and zone, plus running score &amp; strength state and home/away. "
-            "Held-out <b>AUC 0.779</b>, tightly calibrated, and its player-season xG totals correlate "
-            "<b>0.99</b> with the public benchmark it was validated against. "
-            "<i>(This one model now powers everything — the Quality-Games xG, on-ice xGF/xGA, "
-            "GSAx and PDOxG all read it; no third-party xG anywhere.)</i>",
+            "PDO",
+            "Shooting% + save% luck proxy, 5v5 or all-situations (toggle-able): SH% = on-ice goals-for "
+            "÷ on-ice shots-on-goal-for; SV% = 1 − (on-ice goals-against ÷ on-ice shots-on-goal-"
+            "against); <b>PDO</b> = (SH% + SV%) × 100. Shots-on-goal based (not Fenwick/Corsi) — the "
+            "conventional definition. Centers on ~100 league-wide; well above/below is usually "
+            "unsustainable shooting or save luck rather than skill. A raw descriptive column shown "
+            "beside xG — no relative or Quality-Games version, and it isn't used for ranking.",
         )
         + _meth_framework(
-            "xG — Expected Goals",
-            "On-ice expected goals, split into For and Against. <b>xGF/60</b> and "
-            "<b>xGA/60</b> are the raw on-ice expected goals for / against per 60 while the player "
-            "is on the ice. <b>RelxG%</b> is the season-level <i>relative</i> xG rate (on-ice − "
-            "off-ice per 60) — the xG counterpart to RelNFI% — and <b>RelxG-F%</b> / <b>RelxG-A%</b> "
-            "split that relative rate into its For and Against halves. All are built from HockeyROI's "
-            "own per-event xG (<code>xG/build_xg.py</code>) with our own qualifying filter. "
-            "(Split out of Quality Games: QG is the per-game consistency %; xG is the "
-            "underlying rate.)",
-        )
-        + _meth_framework(
-            "Teams",
-            "Team-level CNFI+MNFI share, plus a roster-talent-vs-on-ice-result “two ways” "
-            "comparison that flags teams whose talent and results diverge.",
-        )
-        + _meth_framework(
-            "Goalies",
-            "Two families. GSAx-based: <b>NFI-GSAx</b> (net-front goals saved above expected), "
-            "<b>QNFG%</b> (consistency of beating expected on net-front shots), and "
-            "<b>QG</b> (share of games with all-shot GSAx ≥ 0 — goals-saved-above-expected, "
-            "as a game rate; formerly GQG). <b>NFI SV%</b> is the one raw-save% exception in that "
-            "family — an unadjusted save% on NFI-GSAx's own net-front shot set, a sanity check, "
-            "not a replacement. Save%-based: <b>sQS%</b> — the little <b>s</b> is <b>Starter</b>. "
-            "sQS% = share of games where per-game save% (all-situations shots on goal) cleared that season's "
-            "starter-tier baseline — the volume-weighted save% of that season's top-32-GP "
-            "(starter) or next-32-GP (backup) goalies. A traditional Quality Start, but against a "
-            "population-specific bar recomputed every season instead of one fixed league-average "
-            "line. Toggle above switches baseline/scope; the leaderboard always shows the "
-            "currently-selected one. Qualifying floors differ by metric, so the cohorts differ.",
+            "NFI — Net-Front Impact",
+            "Fenwick shot share (shots + misses + goals, blocks excluded) in the CNFI "
+            "(close net-front) and MNFI (mid / high-slot) zones while a player is on ice. "
+            "<b>RelNFI%</b> measures net-front impact relative to a player's own team "
+            "(on-ice vs off-ice), isolating individual contribution from team strength.",
         )
         + _meth_framework(
             "Zone Impact",
@@ -1017,47 +1038,6 @@ def render_methodology() -> None:
             "faceoff-started shifts that began in each zone (my own play-by-play data). It's a "
             "presentation layer showing deployment context, not a new metric — it doesn't feed into "
             "or alter OZI/DZI/NZI/TZI.",
-        )
-        + _meth_framework(
-            "CCG (Chaos Created Goals)",
-            "A player's shot — on-goal, missed, <b>or</b> blocked — followed by a goal from a "
-            "<b>teammate</b> within <b>0–30 seconds</b> of the same continuous play (never crossing a "
-            "whistle/faceoff; immediate rebounds ARE included). It credits the shots that "
-            "<i>generate</i> downstream goals for others, not the shooter's own finish. Four columns: "
-            "<b>CCG</b> (total count in the current scope + situation), <b>CCG/60</b> (per-60 rate), "
-            "and two team-relatives vs the player's <b>teammates'</b> rate (leave-one-out team "
-            "environment, same scope/situation) — <b>Rel-CCG</b> (count: created goals above/below what "
-            "a teammate-rate skater makes in the same ice time) and <b>Rel-CCG/60</b> (the rate "
-            "version). The relatives isolate individual signal from linemate quality (+ = beats their "
-            "own linemates; approximate across trades / pooled scopes; teams compare vs the league). "
-            "Follows the Situation filter; built from raw play-by-play. It measures a "
-            "<b>net-front / point-shot creation</b> skill — high-volume shooters and shooting "
-            "defensemen lead it — and by design captures only <b>shots</b> (not passing/playmaking); "
-            "it is descriptive, not a total-value metric. The team columns are the same idea summed "
-            "over the roster, with Rel-CCG measured vs the league average.",
-        )
-        + _meth_framework(
-            "PDO",
-            "Shooting% + save% luck proxy, 5v5 or all-situations (toggle-able): SH% = on-ice goals-for "
-            "÷ on-ice shots-on-goal-for; SV% = 1 − (on-ice goals-against ÷ on-ice shots-on-goal-"
-            "against); <b>PDO</b> = (SH% + SV%) × 100. Shots-on-goal based (not Fenwick/Corsi) — the "
-            "conventional definition. Centers on ~100 league-wide; well above/below is usually "
-            "unsustainable shooting or save luck rather than skill. A raw descriptive column shown "
-            "beside xG — no relative or Quality-Games version, and it isn't used for ranking.",
-        )
-        + _meth_framework(
-            "PDOxG",
-            "PDO's luck signal net of shot quality. Standard PDO treats every on-ice shot as a "
-            "coin-flip against league-average conversion, but a player who generates (or concedes) "
-            "better chances will run a high (or low) PDO by shot quality alone — not luck. PDOxG "
-            "replaces the league-average baseline with an <b>expected</b> one from my SOG-conditional "
-            "xG model (shot distance/angle/type): PDOxG = (SH% − xSH%) + (SV% − xSV%), where xSH% = "
-            "on-ice xGF ÷ SOG-for and xSV% = 1 − (on-ice xGA ÷ SOG-against). <b>Centered on 0</b> — "
-            "positive = finishing/goaltending beyond what shot quality predicts (still likely luck, "
-            "but the shot-quality portion is removed); negative = the reverse. Same 5v5/all-"
-            "situations toggle and ≥200-min floor as PDO. Descriptive, not a ranking. Note it does "
-            "<b>not</b> adjust for the finishing talent of linemates or the goalie behind you — that "
-            "would be a further, teammate-relative step.",
         )
         + _meth_framework(
             "NHL EDGE",
@@ -1091,6 +1071,26 @@ def render_methodology() -> None:
             "is exactly uncorrelated with Start% by construction, then recentred onto the same "
             "0–100/50-average scale as OZI/DZI/NZI/TZI. Regular season only (no playoff zone-start "
             "data).",
+        )
+        + _meth_framework(
+            "Teams",
+            "Team-level CNFI+MNFI share, plus a roster-talent-vs-on-ice-result “two ways” "
+            "comparison that flags teams whose talent and results diverge.",
+        )
+        + _meth_framework(
+            "Goalies",
+            "Two families. GSAx-based: <b>NFI-GSAx</b> (net-front goals saved above expected), "
+            "<b>QNFG%</b> (consistency of beating expected on net-front shots), and "
+            "<b>QG</b> (share of games with all-shot GSAx ≥ 0 — goals-saved-above-expected, "
+            "as a game rate; formerly GQG). <b>NFI SV%</b> is the one raw-save% exception in that "
+            "family — an unadjusted save% on NFI-GSAx's own net-front shot set, a sanity check, "
+            "not a replacement. Save%-based: <b>sQS%</b> — the little <b>s</b> is <b>Starter</b>. "
+            "sQS% = share of games where per-game save% (all-situations shots on goal) cleared that season's "
+            "starter-tier baseline — the volume-weighted save% of that season's top-32-GP "
+            "(starter) or next-32-GP (backup) goalies. A traditional Quality Start, but against a "
+            "population-specific bar recomputed every season instead of one fixed league-average "
+            "line. Toggle above switches baseline/scope; the leaderboard always shows the "
+            "currently-selected one. Qualifying floors differ by metric, so the cohorts differ.",
         )
         + _meth_framework(
             "Referees",
