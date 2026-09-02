@@ -1411,6 +1411,44 @@ def load_pppk_all_seasons() -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def load_pppk_pooled(scope_key: str) -> pd.DataFrame:
+    """Pooled PP/PK for the multi-season leaderboard scopes (no pooled source
+    files exist — PP/PK is built per-season — so aggregate the per-season files):
+    PP/PK Rating = mean across the scope's seasons; PP Tier recomputed within the
+    pooled position group; PK Flag = Repeat Liability if flagged in >=2 seasons,
+    else Confirmed if flagged in >=1, else blank. Name-keyed on (player_name,
+    _pos_group), matching the ratings/ctx pooled merges."""
+    allp = load_pppk_all_seasons()
+    if allp.empty:
+        return pd.DataFrame()
+    seasons = (POOLED_2YR_SEASONS if scope_key == "pooled_2yr" else PROFILE_SEASONS)
+    allp = allp[allp["season"].astype(str).isin(seasons)]
+    if allp.empty:
+        return pd.DataFrame()
+    g = allp.groupby(["player_name", "_pos_group"], dropna=False)
+    out = g.agg(**{"PP Rating": ("PP Rating", "mean"),
+                   "PK Rating": ("PK Rating", "mean")}).reset_index()
+    out["PP Rating"] = out["PP Rating"].round(1)
+    out["PK Rating"] = out["PK Rating"].round(2)
+    _liab = allp["PK Flag"].isin(["Confirmed Liability", "Repeat Liability"])
+    _n = (allp[_liab].groupby(["player_name", "_pos_group"]).size()
+          .rename("_nflag").reset_index())
+    out = out.merge(_n, on=["player_name", "_pos_group"], how="left")
+    out["PK Flag"] = np.where(out["_nflag"].fillna(0) >= 2, "Repeat Liability",
+                              np.where(out["_nflag"].fillna(0) >= 1,
+                                       "Confirmed Liability", ""))
+    # PP Tier: top 15% / next 55% / bottom 30% within the pooled position group.
+    out["PP Tier"] = "Middle"
+    for _grp, _idx in out.groupby("_pos_group").groups.items():
+        _p = out.loc[_idx, "PP Rating"].rank(pct=True)
+        out.loc[_idx[_p >= 0.85], "PP Tier"] = "Elite"
+        out.loc[_idx[_p <= 0.30], "PP Tier"] = "Poor"
+    out.loc[out["PP Rating"].isna(), "PP Tier"] = ""
+    return out[["player_name", "_pos_group", "PP Rating", "PP Tier",
+                "PK Rating", "PK Flag"]]
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_ctx_all_seasons() -> pd.DataFrame:
     """Long per-season Elite Context frame (season, player_name, _pos_group + the
     5 metric cols) across PROFILE_SEASONS, for the per-player trend / Trade line."""
@@ -2811,6 +2849,29 @@ def _player_trend(pid: int) -> pd.DataFrame:
                      "PK ci_low", "PK ci_high", "PK Flag") if c in pk.columns]
             trend = trend.merge(pk[pcols], on="season", how="outer")
 
+    # Advanced Stats — the per-situation possession/individual suite (CF/60, FF%,
+    # GF%, ixG, RelCF%, …). The leaderboard has these (via _build_players_frame's
+    # situation merge) but the drill-in trend didn't, so they only showed at team
+    # level. Reuse the same builder per season (it renames Sit->plain and adds the
+    # rel/xG-unify columns) so the drill-in matches the leaderboard. It follows the
+    # Situation toggle just like the leaderboard; underlying data is cached (~0.1s).
+    _sit_rows = []
+    for _sk in PROFILE_SEASONS:
+        _bf, _ = _build_players_frame(SEASON_DISPLAY.get(_sk, _sk))
+        if _bf.empty:
+            continue
+        _r = _bf[_bf["player_id"] == pid]
+        if _r.empty:
+            continue
+        _row = {"season": _sk}
+        for _c in _SIT_PLAIN:
+            if _c in _r.columns and pd.notna(_r[_c].iloc[0]):
+                _row[_c] = _r[_c].iloc[0]
+        if len(_row) > 1:
+            _sit_rows.append(_row)
+    if _sit_rows:
+        trend = trend.merge(pd.DataFrame(_sit_rows), on="season", how="outer")
+
     # Elite Context (name-keyed, same as zone) per season.
     ctx = load_ctx_all_seasons()
     if not ctx.empty:
@@ -3227,9 +3288,10 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     ctx_cols = ["Elite Exposure%", "Elite Exposure F%", "Elite Exposure D%", "Elite Support%",
                 "Elite xGF%", "Elite ixG"]
     pppk_cols = ["PP Rating", "PP Tier", "PK Rating", "PK Flag"]   # end of section
+    sit_cols = list(_SIT_PLAIN)          # Advanced Stats (situation possession suite)
     edge_cols = _EDGE_VALUE_DISP
     metric_cols = [c for c in rating_cols + qg_cols + adv_cols + xg_cols + share_cols
-                   + rate_cols + zone_cols + ctx_cols + pppk_cols + edge_cols
+                   + rate_cols + zone_cols + ctx_cols + pppk_cols + sit_cols + edge_cols
                    if c in trend.columns]
     # families is None  -> show every metric (callers that don't filter, e.g.
     #                      the Trade Analyzer).
@@ -4891,6 +4953,13 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
         if not ctx.empty and not base.empty:
             base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
             base = base.merge(ctx, on=["player_name", "_pos_group"], how="left")
+        # PP/PK has no pooled source file (per-season only), so aggregate the
+        # per-season ratings on the fly — otherwise pooled/2yr leaderboards showed
+        # no PP/PK while the drill-in (per-season trend) did.
+        pppk_pool = load_pppk_pooled(key)
+        if not pppk_pool.empty and not base.empty:
+            base["_pos_group"] = np.where(base["position"] == "D", "D", "F")
+            base = base.merge(pppk_pool, on=["player_name", "_pos_group"], how="left")
         zstart = _zone_start_rate(key)
         if not zstart.empty and not base.empty:
             base = base.merge(zstart, on="player_id", how="left")
