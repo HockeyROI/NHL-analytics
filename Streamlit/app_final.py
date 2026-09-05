@@ -1205,6 +1205,32 @@ def load_player_season_team_order() -> dict:
     return out
 
 
+def _override_current_team(df: pd.DataFrame, season_label: str) -> pd.DataFrame:
+    """Set each player's `team` to their CURRENT (most recent) team that season —
+    the last team in the chronological order map — so charts and tooltips show a
+    traded player on the team they finished on, not the one they started on. The
+    NFI source `team` is frequently the FIRST team a traded player played, which
+    made them plot under the wrong team (and drop out of their real team's view).
+    Single-season scopes only ('current team' isn't well-defined when pooling);
+    no-op if there's no player_id/team column or no order map."""
+    key = SEASON_KEY.get(season_label)
+    if (not key or key in ("pooled", "pooled_2yr", "ref_pooled")
+            or "player_id" not in df.columns or "team" not in df.columns):
+        return df
+    order = load_player_season_team_order()
+    if not order:
+        return df
+    df = df.copy()
+
+    def _cur(r):
+        pid = r.get("player_id")
+        o = order.get((int(pid), key)) if pd.notna(pid) else None
+        return o[-1] if o else r.get("team")
+
+    df["team"] = df.apply(_cur, axis=1)
+    return df
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_team_rosters() -> dict:
     """{(season:str, team): set(player_id)} — who suited up for each team each
@@ -3737,7 +3763,10 @@ def _ctx_scatter_frame(season_label: str) -> pd.DataFrame:
         d = pd.read_csv(fp)
         d["pos_group"] = grp
         frames.append(d)
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if not frames:
+        return pd.DataFrame()
+    out = pd.concat(frames, ignore_index=True)
+    return _override_current_team(out, season_label)   # traded -> current team
 
 
 def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
@@ -4622,7 +4651,7 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
     if "Team" in trend.columns:
         for _t in trend["Team"].dropna().iloc[::-1]:   # most recent season first
             if isinstance(_t, str) and _t:
-                _my_team = _t.split(" / ")[0]           # traded mid-season: first team listed
+                _my_team = _t.split(" / ")[-1]          # traded mid-season: CURRENT (last) team
                 break
     if not _my_team:
         return
@@ -5045,6 +5074,10 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     _box = _box_score_scope(key, playoffs=False)
     if not _box.empty and not base.empty:
         base = base.merge(_box, on="player_id", how="left")
+    # Show traded players on their CURRENT team (single-season scopes); no-op for
+    # pooled. The leaderboard later re-labels the display team as "OLD / NEW", but
+    # charts read this single-team column, so it must be the current team.
+    base = _override_current_team(base, season_label)
     return base, is_pooled
 
 
@@ -5750,7 +5783,9 @@ def render_players() -> None:
 
     # Metric-family toggles first, then the Team filter. Families start with none
     # selected (only the identity columns show); click a family to display it.
-    fcol, tcol, gcol = st.columns([2.4, 0.85, 0.85])
+    # Narrow the pills column so the metric-family pills wrap onto ~2 rows (easier
+    # to tap) instead of one cramped row; the sliders get the extra width.
+    fcol, tcol, gcol = st.columns([1.5, 1.0, 1.0])
     # No family selected by default (only the identity columns show); the user
     # taps a family to display its columns.
     st.session_state.setdefault("players_display_seg", [])
