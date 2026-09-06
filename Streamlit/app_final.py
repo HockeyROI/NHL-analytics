@@ -1214,18 +1214,33 @@ def _override_current_team(df: pd.DataFrame, season_label: str) -> pd.DataFrame:
     Single-season scopes only ('current team' isn't well-defined when pooling);
     no-op if there's no player_id/team column or no order map."""
     key = SEASON_KEY.get(season_label)
-    if (not key or key in ("pooled", "pooled_2yr", "ref_pooled")
+    if (not key or key == "ref_pooled"
             or "player_id" not in df.columns or "team" not in df.columns):
         return df
     order = load_player_season_team_order()
     if not order:
         return df
     df = df.copy()
+    if key in ("pooled", "pooled_2yr"):
+        # Pooled: the player's MOST RECENT team in the window (the last team of the
+        # latest season they appear in) — a single dot already carries their full
+        # multi-season totals; just label it with where they are now.
+        _seasons = sorted(POOLED_2YR_SEASONS if key == "pooled_2yr" else PROFILE_SEASONS)
 
-    def _cur(r):
-        pid = r.get("player_id")
-        o = order.get((int(pid), key)) if pd.notna(pid) else None
-        return o[-1] if o else r.get("team")
+        def _cur(r):
+            pid = r.get("player_id")
+            if pd.isna(pid):
+                return r.get("team")
+            for s in reversed(_seasons):
+                o = order.get((int(pid), s))
+                if o:
+                    return o[-1]
+            return r.get("team")
+    else:
+        def _cur(r):
+            pid = r.get("player_id")
+            o = order.get((int(pid), key)) if pd.notna(pid) else None
+            return o[-1] if o else r.get("team")
 
     df["team"] = df.apply(_cur, axis=1)
     return df
