@@ -3785,7 +3785,8 @@ def _ctx_scatter_frame(season_label: str) -> pd.DataFrame:
 
 
 def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
-                 only_pids: list = None, eligible_ids: set = None) -> None:
+                 only_pids: list = None, eligible_ids: set = None,
+                 highlight_name: str = None) -> None:
     """Elite Exposure% (y) × Elite xGF% (x, on-ice xG share in elite shifts;
     50 = even, so right of the dashed line = winning those minutes), coloured by
     elite teammate support (darker = LESS support). League-wide by default; a
@@ -3860,14 +3861,27 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
     if _league_exp is not None:
         ch = ch + alt.Chart(pd.DataFrame({"y": [_league_exp]})).mark_rule(
             strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
-    if _team_view or _trade_view:        # few points -> label each with last name
+    _hl_on = bool(highlight_name) and (d["player_name"] == highlight_name).any()
+    if _team_view or _trade_view or _hl_on:   # few points / a highlight -> label
         d = d.assign(_label=d["player_name"].astype(str).str.split().str[-1])
-        labels = alt.Chart(d).mark_text(align="left", dx=6, dy=-6, fontSize=10,
-                                        color=PALETTE["orange"]).encode(
-            x=alt.X("xGFvsElite:Q", scale=alt.Scale(domain=_xdom, zero=False)),
-            y=alt.Y("vsElite:Q", scale=alt.Scale(domain=_ydom, zero=False)),
-            text="_label:N")
-        ch = ch + labels
+        _encx = alt.X("xGFvsElite:Q", scale=alt.Scale(domain=_xdom, zero=False))
+        _ency = alt.Y("vsElite:Q", scale=alt.Scale(domain=_ydom, zero=False))
+        # In a league view we don't label everyone (unreadable) — only the
+        # highlighted player. In team/trade views label everyone, and if one is
+        # highlighted render just them bold + a ring, like the other scatters.
+        _rest = d[d["player_name"] != highlight_name] if _hl_on else d
+        if _team_view or _trade_view:
+            ch = ch + alt.Chart(_rest).mark_text(align="left", dx=6, dy=-6, fontSize=10,
+                                                 color=PALETTE["orange"]).encode(
+                x=_encx, y=_ency, text="_label:N")
+        if _hl_on:
+            _hl = d[d["player_name"] == highlight_name]
+            ch = (ch
+                  + alt.Chart(_hl).mark_point(size=170, filled=False, strokeWidth=2.5,
+                                              color=PALETTE["orange"]).encode(x=_encx, y=_ency)
+                  + alt.Chart(_hl).mark_text(align="left", dx=7, dy=-7, fontSize=13,
+                                             fontWeight="bold", color=PALETTE["orange"]).encode(
+                        x=_encx, y=_ency, text="_label:N"))
     _show_chart(ch, dl_name="Elite-Exposure-scatter", keep_tooltip=True)
 
 
@@ -4721,7 +4735,7 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
     # Elite Exposure — right after the Quality-Games team scatters (column order).
     st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
                 f"{heading_prefix}Elite Exposure vs Elite xGF%</h4>", unsafe_allow_html=True)
-    _ctx_scatter(_yl, team=_my_team)
+    _ctx_scatter(_yl, team=_my_team, highlight_name=highlight_name)
     if {"PDOxG", "xG%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                     f"xG%</h4>", unsafe_allow_html=True)
@@ -6167,6 +6181,13 @@ def render_players() -> None:
         _ids = set(df["player_id"].dropna().astype(int)) if "player_id" in df.columns else None
         _ctx_scatter(season_label, pos, team_sel, eligible_ids=_ids)   # team filter -> team-level view
 
+    # Elite Exposure is the Player Ratings family scatter: it floats to the TOP of
+    # the scatter section when Player Ratings is the selected family, otherwise it
+    # sits in family order right after the Quality Games scatters.
+    _pr_first = "Player Ratings" in display_fams
+    if _pr_first:
+        _elite_exp_scatter()
+
     if {"PDOxG", "xG_QG_pct"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs xG-QG%</h4>",
                     unsafe_allow_html=True)
@@ -6187,8 +6208,10 @@ def render_players() -> None:
                     unsafe_allow_html=True)
         _xgqg_xg_scatter(df, _team_scoped, year_label=scope_label)
 
-    # Elite Exposure — right after the Quality-Games scatters (matches column order).
-    _elite_exp_scatter()
+    # Elite Exposure — right after the Quality-Games scatters (family order),
+    # unless it already floated to the top above.
+    if not _pr_first:
+        _elite_exp_scatter()
 
     if {"PDOxG", "xG%"}.issubset(df.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs xG%</h4>",
