@@ -3464,104 +3464,6 @@ _QG_BAR_METRICS = ["NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
                    "xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%",
                    "RelxG-QG-F%", "RelxG-QG-A%"]
 
-# Per-metric position-peer percentile ticks drawn on top of the 50% baseline —
-# lets a reader see at a glance what "top-25% among F/D on this metric" and
-# "top-10%" look like on the same axis. Position-peer because F and D have
-# genuinely different QG distributions (D is compressed around 50 for absolute
-# metrics, wider on relative). Ticks are per-metric because a single horizontal
-# line would misrepresent metrics with different spreads (Rel- families vs
-# absolute; A/S/F splits vs Overall).
-_QG_PTILES = (0.75, 0.90)
-_QG_PTILE_MIN_PEERS = 20    # too few peers → skip that metric's ticks (noisy)
-_QG_PTILE_TOI_FLOOR = 400   # single-season stability floor (matches leaderboard defaults)
-
-
-# Metrics whose leaderboard values are stored as fractions (0-1) and need ×100
-# to reach the chart's 0-100 scale. The Ratings columns are ALREADY 0-100 in the
-# frame, so they don't get the ×100.
-_QG_PTILE_FRACTION_METRICS = set(_QG_BAR_METRICS)
-
-# Some Overall-QG metrics live under their underscored source names in the
-# leaderboard frame (they're renamed later, only in the display path). Map
-# display-name → alternate source column so the percentile helper can find them.
-_QG_PTILE_ALIAS = {
-    "NFI-QG%": "NFI_QG_pct", "xG-QG%": "xG_QG_pct",
-    "RelNFI-QG%": "RelNFI_QG_pct", "RelxG-QG%": "RelxG_QG_pct",
-}
-
-
-@st.cache_data(show_spinner=False)
-def _qg_position_percentiles(season_label: str, position: str,
-                             playoffs: bool = False) -> dict:
-    """{metric: {'p75': v, 'p90': v}} on the 0-100 chart scale, computed from
-    position-peer distributions in _build_players_frame. Position: 'F' or 'D'.
-    Covers the 12 QG metrics plus the Player Ratings (Elite Rating, PP Rating)
-    when present. Skips a metric when fewer than _QG_PTILE_MIN_PEERS peers
-    qualify."""
-    if position not in ("F", "D"):
-        return {}
-    if season_label not in SEASON_KEY:
-        return {}
-    try:
-        base, _ = _build_players_frame(season_label, playoffs=playoffs)
-    except Exception:
-        return {}
-    if base is None or base.empty or "position" not in base.columns:
-        return {}
-    _pg = np.where(base["position"].astype(str) == "D", "D", "F")
-    peers = base[_pg == position].copy()
-    if "toi_min" in peers.columns:
-        peers = peers[peers["toi_min"].fillna(0) >= _QG_PTILE_TOI_FLOOR]
-    out = {}
-    for m in list(_QG_BAR_METRICS) + ["Elite Rating", "PP Rating"]:
-        _src = m if m in peers.columns else _QG_PTILE_ALIAS.get(m)
-        if _src is None or _src not in peers.columns:
-            continue
-        s = pd.to_numeric(peers[_src], errors="coerce").dropna()
-        if len(s) < _QG_PTILE_MIN_PEERS:
-            continue
-        _scale = 100.0 if m in _QG_PTILE_FRACTION_METRICS else 1.0
-        out[m] = {"p75": float(s.quantile(_QG_PTILES[0])) * _scale,
-                  "p90": float(s.quantile(_QG_PTILES[1])) * _scale}
-    return out
-
-
-def _qg_ptile_tick_layers(vals: dict, position: str, ptile_season: str,
-                          playoffs: bool = False,
-                          x_field: str = "Metric:N",
-                          x_sort: list = None):
-    """Return (p75_ticks, p90_ticks) altair layers, or (None, None) when the
-    percentile data isn't available. Ticks are per-metric — drawn at each bar's
-    x position at that metric's 75th and 90th percentile among position peers."""
-    import altair as alt
-    if not position or not ptile_season:
-        return None, None
-    _pt = _qg_position_percentiles(ptile_season, position, playoffs=playoffs)
-    if not _pt:
-        return None, None
-    _sort = x_sort or list(vals.keys())
-    p75_rows, p90_rows = [], []
-    for m in _sort:
-        if m in _pt and m in vals:
-            p75_rows.append({"Metric": m, "y": _pt[m]["p75"],
-                             "tier": f"Top 25% among {position}"})
-            p90_rows.append({"Metric": m, "y": _pt[m]["p90"],
-                             "tier": f"Top 10% among {position}"})
-    if not p75_rows:
-        return None, None
-    _tick_common = dict(orient="horizontal", thickness=2, size=30)
-    _p75 = alt.Chart(pd.DataFrame(p75_rows)).mark_tick(
-        color=PALETTE["text_secondary"], **_tick_common
-    ).encode(
-        x=alt.X(x_field, sort=_sort), y="y:Q",
-        tooltip=["Metric:N", "tier:N", alt.Tooltip("y:Q", format=".1f", title="%")])
-    _p90 = alt.Chart(pd.DataFrame(p90_rows)).mark_tick(
-        color=PALETTE["text"], **_tick_common
-    ).encode(
-        x=alt.X(x_field, sort=_sort), y="y:Q",
-        tooltip=["Metric:N", "tier:N", alt.Tooltip("y:Q", format=".1f", title="%")])
-    return _p75, _p90
-
 # The two paired-bar panels: (concept label, raw QG metric, relative QG metric).
 # Each concept renders a Raw+Rel pair grouped together, spaced from the next
 # concept. NFI panel and xG panel go side by side.
@@ -4023,17 +3925,13 @@ _PROFILE_BAR_YDOM = [30, 75]
 
 def _qg_bar_chart(vals: dict, label: str, caption: str = None,
                   dl_prefix: str = "QG-bars", ydomain: list = None,
-                  title: str = None,
-                  position: str = None, ptile_season: str = None,
-                  playoffs: bool = False) -> None:
+                  title: str = None) -> None:
     """Diverging bar of metric %s vs a 50% baseline (50% = league-median: bar up
     when above, down when below). vals maps display-metric → value on a 0-100
     scale. caption overrides the default (player NFI%+QG) caption; dl_prefix names
     the download file. ydomain fixes the y-axis range (defaults to auto-fit).
     title: chart description (e.g. "Zone Impact Index") — the filtered year/scope
-    (label) is appended automatically so the baked-in chart image is self-labeled.
-    position ('F'/'D') + ptile_season: draw per-metric top-25%/top-10% ticks
-    among position peers; skipped when either is None or peers are too few."""
+    (label) is appended automatically so the baked-in chart image is self-labeled."""
     import altair as alt
     rows = [{"Metric": m, "value": float(v), "base": 50.0, "color": _bar_color(v)}
             for m, v in vals.items() if pd.notna(v)]
@@ -4062,20 +3960,13 @@ def _qg_bar_chart(vals: dict, label: str, caption: str = None,
     rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
     chart = bars + rule
-    _p75, _p90 = _qg_ptile_tick_layers(vals, position, ptile_season,
-                                        playoffs=playoffs,
-                                        x_sort=[r["Metric"] for r in rows])
-    if _p75 is not None:
-        chart = chart + _p75 + _p90
     if title:
         chart = chart.properties(title=alt.TitleParams(
             text=f"{title} — {label}", color=PALETTE["text"], fontSize=13))
     _show_chart(chart, dl_name=f"{dl_prefix}-{label}")
 
 
-def _qg_panel_chart(panels: list[tuple], vals: dict, title: str, embed_brand: bool = False,
-                    position: str = None, ptile_season: str = None,
-                    playoffs: bool = False):
+def _qg_panel_chart(panels: list[tuple], vals: dict, title: str, embed_brand: bool = False):
     """Build (not render) one panel's diverging-bar Altair chart: each concept's
     Raw bar sits directly next to its Rel bar, groups spaced apart via blank
     spacer categories on the x-axis. Every bar keeps its OWN x-axis tick label
@@ -4113,10 +4004,6 @@ def _qg_panel_chart(panels: list[tuple], vals: dict, title: str, embed_brand: bo
     rule = alt.Chart(pd.DataFrame({"y": [50.0]})).mark_rule(
         strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
     layers = bars + rule
-    _p75, _p90 = _qg_ptile_tick_layers(vals, position, ptile_season,
-                                        playoffs=playoffs, x_sort=order)
-    if _p75 is not None:
-        layers = layers + _p75 + _p90
     if embed_brand:
         layers = layers + _brand_layer(6)
     # Widened so the two panels together spread toward the page's full content
@@ -4126,37 +4013,28 @@ def _qg_panel_chart(panels: list[tuple], vals: dict, title: str, embed_brand: bo
         title=alt.TitleParams(text=title, color=PALETTE["text"], fontSize=13))
 
 
-def _qg_paired_bar_chart(vals: dict, label: str, caption: str, dl_prefix: str,
-                         position: str = None, ptile_season: str = None,
-                         playoffs: bool = False) -> None:
+def _qg_paired_bar_chart(vals: dict, label: str, caption: str, dl_prefix: str) -> None:
     """Two SEPARATE Quality-Games bar charts — NFI and xG — each its
     own downloadable image so either can be posted on its own without the other
     crowding it. Each shows Raw+Rel bars paired per concept, spaced between
     concepts, on the same fixed y-axis; the brand wordmark is embedded in each
-    chart's own bottom-right corner. position + ptile_season: draw per-metric
-    top-25%/top-10% ticks among position peers (same as _qg_bar_chart)."""
+    chart's own bottom-right corner."""
     st.caption(caption)
     for fam, title in (("NFI", "NFI Quality Games %"),
                        ("xG", "xG Quality Games %")):
         ch = _qg_panel_chart(_QG_PAIR_PANELS[fam], vals, f"{title} — {label}",
-                             embed_brand=True,
-                             position=position, ptile_season=ptile_season,
-                             playoffs=playoffs)
+                             embed_brand=True)
         _show_chart(ch, dl_name=f"{dl_prefix}-{fam}-{label}", brand_embedded=True)
 
 
 def _qg_bar_chart_compare(players_vals: dict, label: str, metrics: list[str] = None,
                           caption: str = None, dl_name: str = "Trade-QG-bars",
-                          title: str = None, ydomain: list = None,
-                          player_positions: dict = None, ptile_season: str = None,
-                          playoffs: bool = False) -> None:
+                          title: str = None, ydomain: list = None) -> None:
     """Side-by-side small-multiple bar charts (one panel per player) of the QG
     metrics vs the 50% baseline. players_vals: {player_name: {metric: 0-100}}.
     metrics restricts to a subset (e.g. NFI-only or xG-only) so the NFI and xG
     families render as two separate charts instead of mixed in one. title: chart
-    description — the filtered year/scope (label) is appended automatically.
-    player_positions ({name: 'F'/'D'}) + ptile_season: draws per-metric top-25%/
-    top-10% ticks in each player's panel using that player's position peers."""
+    description — the filtered year/scope (label) is appended automatically."""
     import altair as alt
     _metrics = metrics or _QG_BAR_METRICS
     rows, allv = [], []
@@ -4189,38 +4067,7 @@ def _qg_bar_chart_compare(players_vals: dict, label: str, metrics: list[str] = N
                  alt.Tooltip("value:Q", format=".1f", title="%")])
     rule = _ch.mark_rule(strokeDash=[4, 4],
                          color=PALETTE["text_secondary"]).encode(y=alt.datum(50))
-    _layers = [bars, rule]
-    # Per-metric percentile ticks — computed per player from that player's
-    # position peers, then combined into one long frame with the Player column
-    # so faceting places each row of ticks in the correct panel.
-    if player_positions and ptile_season:
-        _tick75, _tick90 = [], []
-        for pname, pos in player_positions.items():
-            if pos not in ("F", "D"):
-                continue
-            _pt = _qg_position_percentiles(ptile_season, pos, playoffs=playoffs)
-            for m in _metrics:
-                if m in _pt:
-                    _tick75.append({"Player": pname, "Metric": m,
-                                    "y": _pt[m]["p75"],
-                                    "tier": f"Top 25% among {pos}"})
-                    _tick90.append({"Player": pname, "Metric": m,
-                                    "y": _pt[m]["p90"],
-                                    "tier": f"Top 10% among {pos}"})
-        if _tick75:
-            _t75_df = pd.DataFrame(_tick75)
-            _t90_df = pd.DataFrame(_tick90)
-            _tick_common = dict(orient="horizontal", thickness=2, size=26)
-            _p75 = alt.Chart(_t75_df).mark_tick(
-                color=PALETTE["text_secondary"], **_tick_common).encode(
-                x=alt.X("Metric:N", sort=_metrics), y="y:Q",
-                tooltip=["Metric:N", "tier:N", alt.Tooltip("y:Q", format=".1f")])
-            _p90 = alt.Chart(_t90_df).mark_tick(
-                color=PALETTE["text"], **_tick_common).encode(
-                x=alt.X("Metric:N", sort=_metrics), y="y:Q",
-                tooltip=["Metric:N", "tier:N", alt.Tooltip("y:Q", format=".1f")])
-            _layers.extend([_p75, _p90])
-    chart = alt.layer(*_layers).properties(width=_w, height=300).facet(
+    chart = alt.layer(bars, rule).properties(width=_w, height=300).facet(
         column=alt.Column("Player:N", title=None,
                           header=alt.Header(labelFontWeight="bold", labelFontSize=13)))
     if title:
@@ -4789,30 +4636,22 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         # Fixed order, matching the column order above the charts:
         # Quality Games -> Player Ratings (Elite + PP) -> CCG -> Zone Impact.
         _all_qg_vals = _player_qg_vals(pid, trend, _yr)
-        # Position for percentile ticks — same lookup used above for cohort.
-        _ptile_pos = ("D" if len(_prow_any) and str(_prow_any["position"].iloc[0]) == "D"
-                      else "F")
         _qg_paired_bar_chart(
             _all_qg_vals, _yr,
-            caption=("Quality Games % vs **50** (average). Ticks show **top-25%** "
-                     f"(light) and **top-10%** (dark) among **{_ptile_pos}** peers "
-                     f"in {_yr}."),
-            dl_prefix="QG-bars",
-            position=_ptile_pos, ptile_season=_yr)
+            caption="Quality Games % vs **50**.",
+            dl_prefix="QG-bars")
         # Player Ratings — right after QG. Elite Rating + PP Rating on the shared
         # 50-baseline diverging bar (both 0-100, 50 = positional average). Elite
         # Exposure + PK liability stay year-over-year (in the YoY view only).
         _rating_vals = _player_rating_vals(pid, trend, _yr)
         if any(pd.notna(v) for v in _rating_vals.values()):
             _qg_bar_chart(_rating_vals, _yr,
-                          caption=("**Player Ratings** vs the **50 baseline** (bar up = above "
-                                   "50, down = below; darker = further). Elite Rating = overall "
-                                   "5v5 value, PP Rating = power-play value (both 0-100, 50 = "
-                                   "positional average). Ticks: **top-25%** (light) and "
-                                   f"**top-10%** (dark) among **{_ptile_pos}** peers."),
+                          caption="**Player Ratings** vs the **50 baseline** (bar up = above "
+                                  "50, down = below; darker = further). Elite Rating = overall "
+                                  "5v5 value, PP Rating = power-play value (both 0-100, 50 = "
+                                  "positional average).",
                           dl_prefix="Rating-bars", title="Player Ratings",
-                          ydomain=[0, 100],   # full 0-100 (ratings spread wider than QG)
-                          position=_ptile_pos, ptile_season=_yr)
+                          ydomain=[0, 100])   # full 0-100 (ratings spread wider than QG)
         _ccg_vals = _player_ccg_vals(pid, trend, _yr)
         _ccg_bar_chart(_ccg_vals, _yr, dl_prefix="CCG-bars",
                        title="Chaos Created Goals / 60")
@@ -7780,50 +7619,14 @@ def load_gsax_league_avg() -> dict:
     return out
 
 
-@st.cache_data(show_spinner=False)
-def _goalie_metric_percentiles(season_int: int, qg_scope_suffix: str = "") -> dict:
-    """{metric: {'p75': v, 'p90': v}} on the same 0-100 chart scale used by
-    _goalie_consistency_bar. Population = qualified goalies (`qualified` flag when
-    present, else GP >= 25 / faced >= 100 floors mirroring the leaderboard cohort)
-    for the given season. Skips a metric when fewer than 15 qualified goalies."""
-    out = {}
-    for loader, src, disp, mul, floor_col, floor in (
-        (load_qnfs_by_season, "QNFS_pct", "QNFG%", 1.0, "GP", 25),
-        (load_qs_by_season, "QS_GSAx_pct", "QG%", 1.0, "GP", 25),
-        (lambda: load_qg_tiered_by_season(qg_scope_suffix), "QG_pct_s", "sQS%", 1.0, "GP", 25),
-        (load_goalie_nfi_by_season, "NFI_save_pct", "NFI SV%", 100.0, "total_faced", 100),
-    ):
-        df = loader()
-        if df.empty or src not in df.columns:
-            continue
-        d = df.copy()
-        d["season"] = d["season"].astype(int)
-        d = d[d["season"] == int(season_int)]
-        if d.empty:
-            continue
-        if "qualified" in d.columns:
-            d = d[d["qualified"].fillna(False).astype(bool)]
-        elif floor_col in d.columns:
-            d = d[pd.to_numeric(d[floor_col], errors="coerce").fillna(0) >= floor]
-        s = pd.to_numeric(d[src], errors="coerce").dropna() * mul
-        if len(s) < 15:
-            continue
-        out[disp] = {"p75": float(s.quantile(0.75)),
-                     "p90": float(s.quantile(0.90))}
-    return out
-
-
-def _goalie_consistency_bar(row, qg_label: str, sv_baseline, sqs_baseline=None,
-                            qg_scope_suffix: str = "") -> None:
+def _goalie_consistency_bar(row, qg_label: str, sv_baseline, sqs_baseline=None) -> None:
     """One-year diverging bar (like the player QG bar). QNFG% and QG% (GSAx≥0
     game shares) sit against the 50% line — a clean "beat expected half the time"
     reference. sQS% and NFI SV% each sit against their OWN season league-average
     line (sqs_baseline / sv_baseline) rather than 50%, because both are graded
     against a high save%-based bar where the league average is NOT 50%: sQS%
     averages ~51-53% (a hardcoded 50 would flatter every average goalie), and
-    NFI SV% averages ~91%. Bar colour: blue above its own line, orange below.
-    Also overlays per-metric top-25% / top-10% ticks among that season's
-    qualified goalies (starter-plus tier and elite-starter tier)."""
+    NFI SV% averages ~91%. Bar colour: blue above its own line, orange below."""
     import altair as alt
     # sQS% baseline: real league-average sQS% when supplied, else fall back to 50.
     _sqs_base = (float(sqs_baseline) if sqs_baseline is not None
@@ -7841,33 +7644,14 @@ def _goalie_consistency_bar(row, qg_label: str, sv_baseline, sqs_baseline=None,
     if not rows:
         return
     d = pd.DataFrame(rows)
-    _sort = [r["Metric"] for r in rows]
-
-    # Percentile ticks — per-metric tops among qualified goalies this season.
-    _ssn = int(row["season"]) if pd.notna(row.get("season")) else None
-    _pt = _goalie_metric_percentiles(_ssn, qg_scope_suffix) if _ssn else {}
-    _t75_rows, _t90_rows = [], []
-    for m in _sort:
-        if m == qg_label and m not in _pt and "sQS%" in _pt:
-            _pt_key = "sQS%"
-        else:
-            _pt_key = m
-        if _pt_key in _pt:
-            _t75_rows.append({"Metric": m, "y": _pt[_pt_key]["p75"],
-                              "tier": "Top 25% (starter-plus)"})
-            _t90_rows.append({"Metric": m, "y": _pt[_pt_key]["p90"],
-                              "tier": "Top 10% (elite starter)"})
-
-    _vals = [r["value"] for r in rows] + [r["base"] for r in rows] \
-            + [t["y"] for t in _t75_rows] + [t["y"] for t in _t90_rows]
+    _vals = [r["value"] for r in rows] + [r["base"] for r in rows]
     dom = [int(np.floor(min(_vals))) - 2, int(np.ceil(max(_vals))) + 2]
     _sqs_txt = (f"sQS% vs its **{_sqs_base:.0f}%** league average"
                 if sqs_baseline is not None and pd.notna(sqs_baseline)
                 else "sQS% vs 50")
-    _tick_note = (" Ticks: **top-25%** (light) and **top-10%** (dark) among qualified goalies."
-                  if _t75_rows else "")
     st.caption(f"**{row['Season']}** — QNFG% / QG% vs **50** (beat expected half the "
-               f"time); {_sqs_txt}; NFI SV% vs league-average save%.{_tick_note}")
+               f"time); {_sqs_txt}; NFI SV% vs league-average save%.")
+    _sort = [r["Metric"] for r in rows]
     bars = alt.Chart(d).mark_bar(size=40).encode(
         x=alt.X("Metric:N", sort=_sort,
                 axis=alt.Axis(labelAngle=0, title=None, labelFontWeight="bold")),
@@ -7881,18 +7665,7 @@ def _goalie_consistency_bar(row, qg_label: str, sv_baseline, sqs_baseline=None,
     # have three different baselines (~50 / ~52 / ~91).
     ticks = alt.Chart(d).mark_tick(color=_CHART_THIRD, thickness=2, size=44).encode(
         x=alt.X("Metric:N", sort=_sort), y="base:Q")
-    layers = bars + ticks
-    if _t75_rows:
-        _p75 = alt.Chart(pd.DataFrame(_t75_rows)).mark_tick(
-            color=PALETTE["text_secondary"], thickness=2, size=44).encode(
-            x=alt.X("Metric:N", sort=_sort), y="y:Q",
-            tooltip=["Metric:N", "tier:N", alt.Tooltip("y:Q", format=".1f")])
-        _p90 = alt.Chart(pd.DataFrame(_t90_rows)).mark_tick(
-            color=PALETTE["text"], thickness=2, size=44).encode(
-            x=alt.X("Metric:N", sort=_sort), y="y:Q",
-            tooltip=["Metric:N", "tier:N", alt.Tooltip("y:Q", format=".1f")])
-        layers = layers + _p75 + _p90
-    _show_chart(layers, dl_name=f"Goalie-consistency-{row['Season']}")
+    _show_chart(bars + ticks, dl_name=f"Goalie-consistency-{row['Season']}")
 
 
 def _goalie_gsax_bar(row, qg_scope_suffix: str = "") -> None:
@@ -8039,8 +7812,7 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
             _ssn_str = str(int(_row["season"])) if pd.notna(_row.get("season")) else None
             _svb = load_nfi_sv_baseline().get(_ssn_str) if _ssn_str else None
             _sqsb = load_sqs_league_avg(qg_scope_suffix).get(_ssn_str) if _ssn_str else None
-            _goalie_consistency_bar(_row, qg_label, _svb, sqs_baseline=_sqsb,
-                                    qg_scope_suffix=qg_scope_suffix)
+            _goalie_consistency_bar(_row, qg_label, _svb, sqs_baseline=_sqsb)
             _goalie_gsax_bar(_row, qg_scope_suffix)
 
     # (2) Consistency % over time (no GSAx) — QNFG%, QG%, sQS% on one axis.
@@ -8786,8 +8558,7 @@ def render_trade_analyzer() -> None:
     # than mixed together, matching the single-player drill-in's split.
     _seasons_all = [SEASON_DISPLAY.get(s, s) for s in PROFILE_SEASONS] + ["2yr avg (24-26)"]
     _cmp_yr = _default_qg_year(season_label, _seasons_all)
-    _trends, _pv, _zv, _cv, _rtv, _ppos = {}, {}, {}, {}, {}, {}
-    _nfi_base = load_nfi_player()
+    _trends, _pv, _zv, _cv, _rtv = {}, {}, {}, {}, {}
     for pid in sel:
         _nm = plabel.get(int(pid), str(pid))
         _tr = _player_trend(int(pid))
@@ -8797,9 +8568,6 @@ def render_trade_analyzer() -> None:
             _zv[_nm] = _player_zone_vals(int(pid), _tr, _cmp_yr)
             _cv[_nm] = _player_ccg_vals(int(pid), _tr, _cmp_yr)
             _rtv[_nm] = _player_rating_vals(int(pid), _tr, _cmp_yr)
-            # Position (F/D) for per-panel percentile ticks.
-            _r = _nfi_base[_nfi_base["player_id"] == int(pid)] if not _nfi_base.empty else _nfi_base
-            _ppos[_nm] = ("D" if len(_r) and str(_r["position"].iloc[0]) == "D" else "F")
     if _pv:
         _set_dl_title(" vs ".join(_pv.keys()))
         # Same 12-metric Raw+Rel paired set (and Attack/Suppress/Overall order)
@@ -8807,31 +8575,24 @@ def render_trade_analyzer() -> None:
         _qg_bar_chart_compare(
             _pv, _cmp_yr, metrics=_QG_BAR_ORDER_NFI,
             caption="**NFI** Quality-Games % vs the **50% baseline** "
-                    "(Raw next to its Relative counterpart), one panel per player. "
-                    "Ticks: **top-25%** (light) and **top-10%** (dark) among each "
-                    "player's position peers.",
-            dl_name="Trade-QG-bars-NFI", title="NFI Quality Games %",
-            player_positions=_ppos, ptile_season=_cmp_yr)
+                    "(Raw next to its Relative counterpart), one panel per player.",
+            dl_name="Trade-QG-bars-NFI", title="NFI Quality Games %")
         _qg_bar_chart_compare(
             _pv, _cmp_yr, metrics=_QG_BAR_ORDER_XG,
             caption="**xG** Quality-Games % vs the "
                     "**50% baseline** (Raw next to its Relative counterpart), one panel "
-                    "per player. Ticks: **top-25%** (light) / **top-10%** (dark) among "
-                    "position peers.", dl_name="Trade-QG-bars-xG",
-            title="xG Quality Games %",
-            player_positions=_ppos, ptile_season=_cmp_yr)
+                    "per player.", dl_name="Trade-QG-bars-xG",
+            title="xG Quality Games %")
         # Player Ratings bar — right after QG (column order): Elite Rating + PP
         # Rating on the 50-baseline diverging bar, one panel per player. (Elite
         # Exposure + PK stay year-over-year, in the YoY line graphs / scatter.)
         if any(any(pd.notna(v) for v in rv.values()) for rv in _rtv.values()):
             _qg_bar_chart_compare(
                 _rtv, _cmp_yr, metrics=_RATING_BAR_METRICS,
-                caption=("**Player Ratings** vs the **50 baseline** — Elite Rating (overall "
+                caption="**Player Ratings** vs the **50 baseline** — Elite Rating (overall "
                         "5v5 value) and PP Rating (power-play value), both 0-100 with 50 = "
-                        "positional average, one panel per player. Ticks: top-25% (light) / "
-                        "top-10% (dark) among position peers."),
-                dl_name="Trade-Rating-bars", title="Player Ratings", ydomain=[0, 100],
-                player_positions=_ppos, ptile_season=_cmp_yr)
+                        "positional average, one panel per player.",
+                dl_name="Trade-Rating-bars", title="Player Ratings", ydomain=[0, 100])
         # CCG bars — after the QG (NFI + xG) bars, faceted per player.
         if any(any(pd.notna(v) for v in cv.values()) for cv in _cv.values()):
             _ccg_bar_chart_compare(
