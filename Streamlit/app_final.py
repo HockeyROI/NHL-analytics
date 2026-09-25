@@ -166,6 +166,8 @@ _CHART_COLORS = {
     # Elite Exposure trio (distinct colours per line/bar)
     "Elite Exposure%": _CHART_PRIMARY, "Elite Support%": _CHART_SECOND,
     "Elite xGF%": _CHART_FOURTH,
+    # xGF% by matchup difficulty (Easy / Mid / Elite) — three distinct lines
+    "Easy xGF%": _CHART_SECOND, "Mid xGF%": _CHART_PRIMARY,
     # EV vs PP rating trajectory line
     "Elite Rating": _CHART_PRIMARY, "PP Rating": _CHART_SECOND,
     "NFI-QG%": _CHART_PRIMARY, "xG-QG%": _CHART_SECOND,
@@ -511,8 +513,14 @@ _ABBR_FULL = {
     "Elite Exposure%": "Full-strength exposure — % of 5v5 ice vs a matchup with ≥1 elite "
                  "and zero poor among all five opponents (league average ~31%).",
     "Elite Support%": "% of 5v5 ice with ≥1 elite TEAMMATE on the ice (excludes self).",
-    "Elite xGF%": "On-ice expected-goals share (xGF%) during the full-strength "
-                     "(Elite Exposure%) shifts — how the player did in the toughest matchups.",
+    "Elite xGF%": "On-ice expected-goals share (xGF%) during the ELITE-matchup "
+                     "shifts (≥1 elite, 0 poor) — how the player did in the toughest matchups (50 = even).",
+    "Mid xGF%": "On-ice xGF% in MID matchups (all-middle opponents, or a five with both "
+                "an elite and a poor) — 50 = even. Read alongside Elite/Easy xGF% to see "
+                "how a player holds up as competition rises.",
+    "Easy xGF%": "On-ice xGF% in EASY matchups (≥1 poor, 0 elite) — 50 = even. Being "
+                 "underwater here (below 50 vs soft competition) is the genuine red flag; "
+                 "a low Elite xGF% but healthy Easy/Mid means over his head, not bad.",
     "Elite ixG": "Individual expected goals per 60 (5v5) — the shot danger the player "
                 "generates himself (the scatter's x-axis). Distinct from Elite xGF%, "
                 "which is the on-ice team share in elite matchups.",
@@ -689,7 +697,7 @@ def _show_df(obj, **kwargs) -> None:
         _WIDE_PX = {"Elite Rating": 110, "Elite Rating Tier": 120,
                     "Elite Exposure%": 135, "Elite Exposure F%": 145,
                     "Elite Exposure D%": 145, "Elite Support%": 130,
-                    "Elite xGF%": 110, "Elite ixG": 100,
+                    "Elite xGF%": 110, "Mid xGF%": 100, "Easy xGF%": 105, "Elite ixG": 100,
                     "PP Rating": 105, "PP Tier": 95, "PK Rating": 100, "PK Flag": 160}
         for _c in cols[1:]:
             _full = _abbr_help(_c)
@@ -917,12 +925,22 @@ def render_methodology() -> None:
             "<b>Elite Exposure F%</b> (opposing forwards), <b>Elite Exposure D%</b> (opposing "
             "defense), and <b>Elite Exposure%</b> (all five opponents, full-strength; league "
             "average ~31%). <b>Elite Support%</b> is the share of ice with ≥1 elite "
-            "teammate on (excludes self), and <b>Elite xGF%</b> is the on-ice "
-            "expected-goals share during the full-strength shifts — results in the "
-            "toughest matchups. <b>Elite ixG</b> is the player's own individual "
-            "expected goals per 60 (5v5) — the shot danger he generates himself (the "
-            "scatter's x-axis), distinct from the on-ice Elite xGF%. Deployment and "
-            "results are kept as separate columns.",
+            "teammate on (excludes self). "
+            "<b>Results by matchup difficulty:</b> every 5v5 shift is classed by the "
+            "opposing five into one of three tiers (mutually exclusive, so the exposure "
+            "%s sum to 100) — <b>ELITE</b> (≥1 elite, 0 poor), <b>EASY</b> (≥1 poor, 0 "
+            "elite), and <b>MID</b> (everything else: all-middle, or a five with both an "
+            "elite and a poor). <b>Elite xGF%</b>, <b>Mid xGF%</b> and <b>Easy xGF%</b> "
+            "are the on-ice expected-goals share (50 = even) in each tier. Read them "
+            "together: a low Elite xGF% alongside a healthy Mid/Easy xGF% means a player "
+            "who's fine at his level but over his head against the best; being underwater "
+            "even vs EASY (below 50 vs soft competition) is the genuine red flag. Note "
+            "quality-of-competition effects in hockey are smaller than intuition suggests "
+            "(line-matching + the zero-sum of on-ice shares), so most curves are gentler "
+            "than expected — a big drop, or an underwater easy number, is what stands out. "
+            "<b>Elite ixG</b> is the player's own individual "
+            "expected goals per 60 (5v5) — the shot danger he generates himself, distinct "
+            "from the on-ice xGF%s. Deployment and results are kept as separate columns.",
         )
         + _meth_framework(
             "Expected Goals (xG) — our own model",
@@ -1363,8 +1381,10 @@ def load_ratings_all_seasons() -> pd.DataFrame:
 
 
 _CTX_REN = {"vsEliteF": "Elite Exposure F%", "vsEliteD": "Elite Exposure D%",
-            "vsElite": "Elite Exposure%", "EliteSupport": "Elite Support%",
-            "xGFvsElite": "Elite xGF%", "ixG60": "Elite ixG"}
+            "vsElite": "Elite Exposure%", "vsMid": "Mid Exposure%", "vsEasy": "Easy Exposure%",
+            "EliteSupport": "Elite Support%",
+            "xGFvsElite": "Elite xGF%", "xGFvsMid": "Mid xGF%", "xGFvsEasy": "Easy xGF%",
+            "ixG60": "Elite ixG"}
 
 
 def _load_ctx_files(scope: str) -> pd.DataFrame:
@@ -2919,7 +2939,8 @@ def _player_trend(pid: int) -> pd.DataFrame:
         cc2 = ctx[(ctx["player_name"] == name) & (ctx["_pos_group"] == pos_group)]
         if not cc2.empty:
             ccols = ["season"] + [c for c in ("Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%",
-                     "Elite Support%", "Elite xGF%", "Elite ixG") if c in cc2.columns]
+                     "Elite Support%", "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG")
+                     if c in cc2.columns]
             trend = trend.merge(cc2[ccols], on="season", how="outer")
 
     # Quality Games per season.
@@ -3197,7 +3218,8 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
             for _loader, _mets in (
                     (load_ratings_all_seasons, ["Elite Rating"]),
                     (load_ctx_all_seasons, ["Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%",
-                                            "Elite Support%", "Elite xGF%", "Elite ixG"]),
+                                            "Elite Support%", "Elite xGF%", "Mid xGF%", "Easy xGF%",
+                                            "Elite ixG"]),
                     (load_pppk_all_seasons, ["PP Rating"])):
                 _fr = _loader()
                 if _fr.empty:
@@ -3327,7 +3349,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     adv_cols = ["CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"]
     rating_cols = ["Elite Rating", "Elite Rating Tier"]   # Player Ratings, lead
     ctx_cols = ["Elite Exposure%", "Elite Exposure F%", "Elite Exposure D%", "Elite Support%",
-                "Elite xGF%", "Elite ixG"]
+                "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG"]
     pppk_cols = ["PP Rating", "PP Tier", "PK Rating", "PK Flag"]   # end of section
     sit_cols = list(_SIT_PLAIN)          # Advanced Stats (situation possession suite)
     edge_cols = _EDGE_VALUE_DISP
@@ -3364,7 +3386,8 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
         _b[c] = lambda v: f"{v:.1f}"
     for c in ("DZ Start%", "NZ Start%", "OZ Start%"):
         _b[c] = lambda v: f"{v:.1f}%"
-    for c in ("Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%", "Elite Support%", "Elite xGF%"):
+    for c in ("Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%", "Elite Support%",
+              "Elite xGF%", "Mid xGF%", "Easy xGF%"):
         _b[c] = lambda v: f"{v:.1f}%"
     _b["Elite ixG"] = lambda v: f"{v:.2f}"
     _b["Elite Rating"] = lambda v: f"{v:.1f}"
@@ -3784,26 +3807,42 @@ def _ctx_scatter_frame(season_label: str) -> pd.DataFrame:
     return _override_current_team(out, season_label)   # traded -> current team
 
 
+# Per-tier column + label config for the exposure scatters (elite / mid / easy).
+_CTX_TIERS = {
+    "elite": {"y": "vsElite", "x": "xGFvsElite", "yt": "Elite Exposure %",
+              "xt": "Elite xGF%", "word": "elite (≥1 elite, 0 poor)",
+              "dl": "Elite-Exposure-scatter"},
+    "mid":   {"y": "vsMid", "x": "xGFvsMid", "yt": "Mid Exposure %",
+              "xt": "Mid xGF%", "word": "mid (all-middle, or a mix)",
+              "dl": "Mid-Exposure-scatter"},
+    "easy":  {"y": "vsEasy", "x": "xGFvsEasy", "yt": "Easy Exposure %",
+              "xt": "Easy xGF%", "word": "easy (≥1 poor, 0 elite)",
+              "dl": "Easy-Exposure-scatter"},
+}
+
+
 def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
                  only_pids: list = None, eligible_ids: set = None,
-                 highlight_name: str = None) -> None:
-    """Elite Exposure% (y) × Elite xGF% (x, on-ice xG share in elite shifts;
-    50 = even, so right of the dashed line = winning those minutes), coloured by
-    elite teammate support (darker = LESS support). League-wide by default; a
-    `team` switches to a team-level view (that team's players, labelled);
-    `only_pids` (Trade Analyzer) plots just those players but with axes scaled to
-    the whole league. Sized to match the app's other scatters."""
+                 highlight_name: str = None, tier: str = "elite") -> None:
+    """Exposure% (y) × on-ice xGF% (x) for one matchup-difficulty tier
+    (elite / mid / easy; 50 = even, so right of the dashed line = winning those
+    minutes), coloured by elite teammate support (darker = LESS support).
+    League-wide by default; `team` switches to a team-level view (that team's
+    players, labelled); `only_pids` (Trade Analyzer) plots just those players but
+    with axes scaled to the whole league. Sized to match the app's other scatters."""
     import altair as alt
+    cfg = _CTX_TIERS.get(tier, _CTX_TIERS["elite"])
+    ycol, xcol = cfg["y"], cfg["x"]
     d_all = _ctx_scatter_frame(season_label)
-    if d_all.empty or not {"vsElite", "xGFvsElite", "EliteSupport"}.issubset(d_all.columns):
+    if d_all.empty or not {ycol, xcol, "EliteSupport"}.issubset(d_all.columns):
         return
     if pos_filter in ("F", "D"):
         d_all = d_all[d_all["pos_group"] == pos_filter]
-    # League-average Elite Exposure% for the horizontal reference line — computed
-    # over the WHOLE (position-filtered) season population, before the slider /
-    # team filter, so it stays the league mean rather than the shown cohort's.
-    _league_exp = (float(d_all["vsElite"].dropna().mean())
-                   if d_all["vsElite"].notna().any() else None)
+    # League-average exposure% for the horizontal reference line — computed over
+    # the WHOLE (position-filtered) season population, before the slider / team
+    # filter, so it stays the league mean rather than the shown cohort's.
+    _league_exp = (float(d_all[ycol].dropna().mean())
+                   if d_all[ycol].notna().any() else None)
     # Respect the leaderboard's Min ES TOI / Min GP sliders: the caller passes the
     # already-filtered cohort's player_ids so the scatter shows the same set of
     # players as the table above it (the ctx file has GP but no ES-TOI, so we
@@ -3818,27 +3857,27 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
         d = d_all[d_all["team"] == team]
     else:
         d = d_all
-    d = d.dropna(subset=["vsElite", "xGFvsElite", "EliteSupport"])
+    d = d.dropna(subset=[ycol, xcol, "EliteSupport"])
     if d.empty:
         return
     _scope = (f"{team} · {season_label}" if _team_view else season_label)
     _avg_txt = (f" Horizontal dashed line = **league-average exposure "
                 f"({_league_exp:.0f}%)**." if _league_exp is not None else "")
-    st.caption("One point per player. y = **Elite Exposure %** (share of 5v5 ice vs a "
-               "full-strength unit), x = **Elite xGF%** (on-ice xG share in those elite "
+    st.caption(f"One point per player. y = **{cfg['yt']}** (share of 5v5 ice in "
+               f"{cfg['word']} matchups), x = **{cfg['xt']}** (on-ice xG share in those "
                "shifts; **50 = even**, right of the dashed line = winning them)."
                f"{_avg_txt} **Darker = less elite teammate support.** {_scope}.")
     # Trade view keeps league-scaled axes (like the other trade scatters); team /
     # league views tighten to what's shown.
     _ddom = d_all if _trade_view else d
-    _xdom = _tight_domain(_ddom["xGFvsElite"].dropna(), pad_frac=0.15, min_pad=1e-6)
-    _ydom = _tight_domain(_ddom["vsElite"].dropna(), pad_frac=0.15, min_pad=1e-6)
+    _xdom = _tight_domain(_ddom[xcol].dropna(), pad_frac=0.15, min_pad=1e-6)
+    _ydom = _tight_domain(_ddom[ycol].dropna(), pad_frac=0.15, min_pad=1e-6)
     # Keep the league-average line inside the y-axis so it always shows.
     if _league_exp is not None:
         _ydom = [min(_ydom[0], _league_exp), max(_ydom[1], _league_exp)]
     base = alt.Chart(d).encode(
-        x=alt.X("xGFvsElite:Q", title="Elite xGF%", scale=alt.Scale(domain=_xdom, zero=False)),
-        y=alt.Y("vsElite:Q", title="Elite Exposure %", scale=alt.Scale(domain=_ydom, zero=False)))
+        x=alt.X(f"{xcol}:Q", title=cfg["xt"], scale=alt.Scale(domain=_xdom, zero=False)),
+        y=alt.Y(f"{ycol}:Q", title=cfg["yt"], scale=alt.Scale(domain=_ydom, zero=False)))
     pts = base.mark_circle(size=90, opacity=0.75).encode(
         color=alt.Color("EliteSupport:Q",
                         scale=alt.Scale(scheme="blues", reverse=True,
@@ -3847,25 +3886,25 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
         tooltip=[alt.Tooltip("player_name:N", title="Player"),
                  alt.Tooltip("team:N", title="Team"),
                  alt.Tooltip("pos:N", title="Pos"),
-                 alt.Tooltip("vsElite:Q", title="Elite Exposure%", format=".1f"),
-                 alt.Tooltip("xGFvsElite:Q", title="Elite xGF%", format=".1f"),
+                 alt.Tooltip(f"{ycol}:Q", title=cfg["yt"], format=".1f"),
+                 alt.Tooltip(f"{xcol}:Q", title=cfg["xt"], format=".1f"),
                  alt.Tooltip("EliteSupport:Q", title="Elite Support%", format=".1f")])
-    # 50 = even xG share in elite minutes (winning to the right); only drawn when
-    # it falls inside the tightened x-domain so it never blows the axis out.
+    # 50 = even xG share (winning to the right); only drawn when it falls inside
+    # the tightened x-domain so it never blows the axis out.
     ch = pts
     if _xdom[0] <= 50.0 <= _xdom[1]:
         ch = ch + alt.Chart(pd.DataFrame({"x": [50.0]})).mark_rule(
             strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(x="x:Q")
-    # Horizontal dashed line at league-average Elite Exposure% (y-domain was
-    # extended above so it's always in view).
+    # Horizontal dashed line at league-average exposure% (y-domain was extended
+    # above so it's always in view).
     if _league_exp is not None:
         ch = ch + alt.Chart(pd.DataFrame({"y": [_league_exp]})).mark_rule(
             strokeDash=[4, 4], color=PALETTE["text_secondary"]).encode(y="y:Q")
     _hl_on = bool(highlight_name) and (d["player_name"] == highlight_name).any()
     if _team_view or _trade_view or _hl_on:   # few points / a highlight -> label
         d = d.assign(_label=d["player_name"].astype(str).str.split().str[-1])
-        _encx = alt.X("xGFvsElite:Q", scale=alt.Scale(domain=_xdom, zero=False))
-        _ency = alt.Y("vsElite:Q", scale=alt.Scale(domain=_ydom, zero=False))
+        _encx = alt.X(f"{xcol}:Q", scale=alt.Scale(domain=_xdom, zero=False))
+        _ency = alt.Y(f"{ycol}:Q", scale=alt.Scale(domain=_ydom, zero=False))
         # In a league view we don't label everyone (unreadable) — only the
         # highlighted player. In team/trade views label everyone, and if one is
         # highlighted render just them bold + a ring, like the other scatters.
@@ -3882,7 +3921,7 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
                   + alt.Chart(_hl).mark_text(align="left", dx=7, dy=-7, fontSize=13,
                                              fontWeight="bold", color=PALETTE["orange"]).encode(
                         x=_encx, y=_ency, text="_label:N"))
-    _show_chart(ch, dl_name="Elite-Exposure-scatter", keep_tooltip=True)
+    _show_chart(ch, dl_name=cfg["dl"], keep_tooltip=True)
 
 
 # CCG bar metrics — the two per-60 rate forms (count metrics don't share a
@@ -4597,6 +4636,9 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             ("Player Ratings", lambda: _chart(
                    "Elite Exposure over time (Elite Exposure%, Elite Support%, Elite xGF%)",
                    ["Elite Exposure%", "Elite Support%", "Elite xGF%"])),
+            ("Player Ratings", lambda: _chart(
+                   "xGF% by matchup difficulty (Easy, Mid, Elite) — 50 = even",
+                   ["Easy xGF%", "Mid xGF%", "Elite xGF%"])),
             ("Player Ratings", lambda: _pk_line_chart(trend)),
             ("xG", lambda: _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])),
             ("xG", lambda: _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
@@ -4732,10 +4774,15 @@ def _render_team_scatters(trend: pd.DataFrame, season_label: str, same_pos: bool
                     f"xG%</h4>", unsafe_allow_html=True)
         _xgqg_xg_scatter(_team_frame, True, dl_suffix=dl_suffix, highlight_name=highlight_name,
                          year_label=_yl)
-    # Elite Exposure — right after the Quality-Games team scatters (column order).
-    st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
-                f"{heading_prefix}Elite Exposure vs Elite xGF%</h4>", unsafe_allow_html=True)
-    _ctx_scatter(_yl, team=_my_team, highlight_name=highlight_name)
+    # Exposure vs xGF% by matchup difficulty — Elite, then Mid, then Easy (read
+    # down to see how the player holds up as competition eases). Right after the
+    # Quality-Games team scatters (column order).
+    for _tier, _lbl in (("elite", "Elite Exposure vs Elite xGF%"),
+                        ("mid", "Mid Exposure vs Mid xGF%"),
+                        ("easy", "Easy Exposure vs Easy xGF%")):
+        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
+                    f"{heading_prefix}{_lbl}</h4>", unsafe_allow_html=True)
+        _ctx_scatter(_yl, team=_my_team, highlight_name=highlight_name, tier=_tier)
     if {"PDOxG", "xG%"}.issubset(_team_frame.columns):
         st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                     f"xG%</h4>", unsafe_allow_html=True)
@@ -5135,7 +5182,7 @@ PLAYER_FAMILY_COLS = {
     # on-ice xGF in exposure shifts (build_elite_context.py). Shown SECOND.
     "Player Ratings": ["Elite Rating", "Elite Rating Tier",
                        "Elite Exposure%", "Elite Exposure F%", "Elite Exposure D%",
-                       "Elite Support%", "Elite xGF%", "Elite ixG",
+                       "Elite Support%", "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG",
                        "PP Rating", "PP Tier", "PK Rating", "PK Flag"],
     # xG core — situation-driven (they follow the Situation filter). PDOxG stays
     # here (it's an xG-adjusted luck metric).
@@ -5959,7 +6006,7 @@ def render_players() -> None:
             "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
             "Elite Rating", "Elite Rating Tier",
             "Elite Exposure%", "Elite Exposure F%", "Elite Exposure D%", "Elite Support%",
-            "Elite xGF%", "Elite ixG",
+            "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG",
             "PP Rating", "PP Tier", "PK Rating", "PK Flag",
             "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDOxG",
             "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60", "PDO",
@@ -6019,7 +6066,8 @@ def render_players() -> None:
         fmt["PP Rating"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "PK Rating" in disp.columns:      # plain signed number, no diverging colour
         fmt["PK Rating"] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
-    for c in ("Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%", "Elite Support%", "Elite xGF%"):
+    for c in ("Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%", "Elite Support%",
+              "Elite xGF%", "Mid xGF%", "Easy xGF%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
     if "Elite ixG" in disp.columns:
@@ -6075,7 +6123,7 @@ def render_players() -> None:
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
                     "NFI-S/60", "OZI", "DZI", "NZI", "TZI", "Elite Rating", "PP Rating",
                     "Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%", "Elite Support%",
-                    "Elite xGF%", "Elite ixG",
+                    "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG",
                     "DZ Start%", "NZ Start%", "OZ Start%",
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
                     "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
@@ -6168,11 +6216,16 @@ def render_players() -> None:
     # by default; floats to the TOP of the scatter section when Player Ratings is
     # the selected family.
     def _elite_exp_scatter():
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
-                    f"Elite Exposure vs Elite xGF%</h4>", unsafe_allow_html=True)
         # Pass the slider-filtered cohort's ids so the scatter matches the table.
         _ids = set(df["player_id"].dropna().astype(int)) if "player_id" in df.columns else None
-        _ctx_scatter(season_label, pos, team_sel, eligible_ids=_ids)   # team filter -> team-level view
+        # Elite, then Mid, then Easy (same layout each) — read top-to-bottom to see
+        # how a player holds up as competition eases.
+        for _tier, _lbl in (("elite", "Elite Exposure vs Elite xGF%"),
+                            ("mid", "Mid Exposure vs Mid xGF%"),
+                            ("easy", "Easy Exposure vs Easy xGF%")):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>"
+                        f"{_lbl}</h4>", unsafe_allow_html=True)
+            _ctx_scatter(season_label, pos, team_sel, eligible_ids=_ids, tier=_tier)
 
     # Elite Exposure is the Player Ratings family scatter: it floats to the TOP of
     # the scatter section when Player Ratings is the selected family, otherwise it
@@ -8694,10 +8747,14 @@ def render_trade_analyzer() -> None:
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>NFI% vs "
                         "xG%</h4>", unsafe_allow_html=True)
             _trade_rawrel_scatter(_sf, "NFI%", "NFI%", "Trade-NFI-vs-xG", _full)
-        # Elite Exposure landscape — selected players, league-scaled axes.
-        st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>Elite Exposure "
-                    "vs Individual xG</h4>", unsafe_allow_html=True)
-        _ctx_scatter(_tyl, only_pids=[int(p) for p in sel])
+        # Exposure vs xGF% by matchup difficulty — Elite, then Mid, then Easy,
+        # selected players on league-scaled axes.
+        for _tier, _lbl in (("elite", "Elite Exposure vs Elite xGF%"),
+                            ("mid", "Mid Exposure vs Mid xGF%"),
+                            ("easy", "Easy Exposure vs Easy xGF%")):
+            st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>{_lbl}</h4>",
+                        unsafe_allow_html=True)
+            _ctx_scatter(_tyl, only_pids=[int(p) for p in sel], tier=_tier)
         if {"PDOxG", "NFI%"}.issubset(_sf.columns):
             st.markdown(f"<h4 style='color:{PALETTE['text']}; margin-top:1rem;'>PDOxG vs "
                         "NFI%</h4>", unsafe_allow_html=True)

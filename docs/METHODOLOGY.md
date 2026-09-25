@@ -381,8 +381,14 @@ Three **exposure buckets** — a shift can belong to more than one — each the 
 
 Plus:
 - **Elite Support%** — share of 5v5 ice with ≥1 elite **teammate** on the ice (excludes the player himself).
-- **Elite xGF%** — the player's on-ice expected-goals share (xGF%) during the full-strength (Elite Exposure%) shifts — how they did in the toughest matchups.
-- **Elite ixG** — the player's own individual expected goals per 60 (5v5): the shot danger he generates himself. Distinct from Elite xGF%, which is the on-ice *team* share in elite matchups (and is the Elite Exposure scatter's x-axis: Elite Exposure% vs Elite xGF%, 50 = even).
+
+**Results by matchup difficulty.** Every 5v5 shift is classed by the *opposing five* into exactly one of three tiers (mutually exclusive + exhaustive, so the three exposure %s sum to 100):
+- **Elite matchup** — ≥1 elite AND 0 poor (the hard minutes).
+- **Easy matchup** — ≥1 poor AND 0 elite (the soft minutes).
+- **Mid matchup** — everything else (all-middle, or a five with *both* an elite and a poor — neither clearly hard nor clearly easy).
+
+- **Elite xGF% / Mid xGF% / Easy xGF%** — the player's on-ice expected-goals share (xGF%, 50 = even) within each tier. Read left-to-right (easy → mid → elite): a low **Elite xGF%** alongside a healthy **Mid/Easy xGF%** is a player who's fine at his level but over his head against the best; being underwater even at **Easy xGF%** (below 50 vs soft competition) is the genuine "bad player" signal. Caveat: quality-of-competition effects in hockey are smaller than intuition suggests (coaches line-match, and on-ice shares are zero-sum), so most players' three tiers sit closer together than expected — a steep drop, or an underwater easy number, is what's notable. Each tier is the scatter x-axis for its matchup (Exposure% vs xGF%, dashed line at 50).
+- **Elite ixG** — the player's own individual expected goals per 60 (5v5): the shot danger he generates himself. Distinct from the on-ice xGF%s (which are *team* shares).
 
 Exposure is computed by segmenting every game into constant-personnel 5v5 intervals (`shifts_ingest.py`), classifying the opposing / teammate five by same-season tier, and accruing interval time (and, for xGF vs Elite%, the interval's 5v5 fenwick xG for/against). Available for single seasons 2022-23…2025-26 and the 2yr / 4yr pools.
 

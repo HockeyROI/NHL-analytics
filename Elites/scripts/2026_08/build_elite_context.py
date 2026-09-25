@@ -5,21 +5,34 @@ scopes (single seasons 2022-23..2025-26 + 2yr(2024-26) + pooled(2022-26)).
 Opponents / teammates are classified by the SAME-SEASON rating tier
 (tiers.csv tier_current: Elite = top 15%, Poor = bottom 30% of the position).
 
-Per player, over each scope -- three exposure buckets (a shift can be in more
-than one), each = share of 5v5 ice vs a unit with >=1 Elite AND zero Poor:
+Every 5v5 shift is classified by the opposing five's SAME-SEASON tiers into ONE
+of three matchup difficulties (mutually exclusive + exhaustive, so the three
+exposure %s sum to ~100):
+  ELITE matchup : >=1 Elite AND 0 Poor  (the hard minutes)
+  EASY  matchup : >=1 Poor  AND 0 Elite (the soft minutes)
+  MID   matchup : everything else (all-Middle, or a five with BOTH an elite and
+                  a poor -- neither clearly hard nor clearly easy)
+
+Per player, over each scope:
   vsEliteF     : opposing FORWARDS only (>=1 elite fwd, 0 poor fwd).
   vsEliteD     : opposing DEFENSEMEN only (>=1 elite D, 0 poor D).
-  vsElite      : ALL five opponents (full-strength: >=1 elite, 0 poor).
-Plus:
+  vsElite      : share of 5v5 ice in ELITE matchups (all five).
+  vsMid        : share of 5v5 ice in MID matchups.
+  vsEasy       : share of 5v5 ice in EASY matchups.
   EliteSupport : % of 5v5 ice with >=1 Elite TEAMMATE on the ice (excludes self).
-  xGFvsElite   : on-ice xGF% during the vsElite (full-strength) shifts.
-  ixG60        : individual xG per 60 (from tiers.csv, same-season) -- the scatter
-                 x-axis; darker bubble = less EliteSupport.
+  xGFvsElite   : on-ice xGF% during the ELITE-matchup shifts.
+  xGFvsMid     : on-ice xGF% during the MID-matchup shifts.
+  xGFvsEasy    : on-ice xGF% during the EASY-matchup shifts.
+  ixG60        : individual xG per 60 (from tiers.csv, same-season).
+
+Reading the three xGF%s left-to-right (easy -> mid -> elite) tells whether a
+low Elite xGF% is a genuinely weak player (also underwater vs easy/mid) or one
+who's fine at his level but over his head against the best.
 
 Output (mirrors player_ratings / zone_index100 layout so the app loads it the
 same way): Elites/Output/elite_context/{scope}_{forwards|defense}.csv
-  cols: player_name, team, pos, GP, vsEliteF, vsEliteD, vsElite, EliteSupport,
-        xGFvsElite, ixG60, player_id
+  cols: player_name, team, pos, GP, vsEliteF, vsEliteD, vsElite, vsMid, vsEasy,
+        EliteSupport, xGFvsElite, xGFvsMid, xGFvsEasy, ixG60, player_id
 """
 from __future__ import annotations
 
@@ -89,6 +102,8 @@ def main():
     ev = defaultdict(float); sup = defaultdict(float)
     fse = defaultdict(float); fse_f = defaultdict(float); fse_d = defaultdict(float)
     fxgf = defaultdict(float); fxga = defaultdict(float)
+    mse = defaultdict(float); mxgf = defaultdict(float); mxga = defaultdict(float)
+    ese = defaultdict(float); exgf = defaultdict(float); exga = defaultdict(float)
 
     def bucket(labels, positions):
         """(full, fwd, blue) full-strength flags for one opposing five."""
@@ -114,6 +129,11 @@ def main():
             # each side's exposure is to the OTHER side's five
             h_full, h_fwd, h_blue = bucket(alab, apos)
             a_full, a_fwd, a_blue = bucket(hlab, hpos)
+            # 3-way matchup class of the opposing five (mutually exclusive):
+            # elite = h_full/a_full; easy = >=1 poor & 0 elite; mid = the rest.
+            h_easy = ("Poor" in alab) and ("Elite" not in alab)
+            a_easy = ("Poor" in hlab) and ("Elite" not in hlab)
+            # (mid = the else branch below: not elite and not easy)
             n_elite_home = sum(l == "Elite" for l in hlab)
             n_elite_away = sum(l == "Elite" for l in alab)
             hxg = axg = 0.0
@@ -126,6 +146,10 @@ def main():
                 key = (p, season); ev[key] += dur
                 if h_full:
                     fse[key] += dur; fxgf[key] += hxg; fxga[key] += axg
+                elif h_easy:
+                    ese[key] += dur; exgf[key] += hxg; exga[key] += axg
+                else:
+                    mse[key] += dur; mxgf[key] += hxg; mxga[key] += axg
                 if h_fwd: fse_f[key] += dur
                 if h_blue: fse_d[key] += dur
                 if n_elite_home - (hlab[k] == "Elite") > 0:   # >=1 elite OTHER teammate
@@ -134,6 +158,10 @@ def main():
                 key = (p, season); ev[key] += dur
                 if a_full:
                     fse[key] += dur; fxgf[key] += axg; fxga[key] += hxg
+                elif a_easy:
+                    ese[key] += dur; exgf[key] += axg; exga[key] += hxg
+                else:
+                    mse[key] += dur; mxgf[key] += axg; mxga[key] += hxg
                 if a_fwd: fse_f[key] += dur
                 if a_blue: fse_d[key] += dur
                 if n_elite_away - (alab[k] == "Elite") > 0:
@@ -155,6 +183,8 @@ def main():
             "fse_f": fse_f[(pid, season)], "fse_d": fse_d[(pid, season)],
             "sup": sup[(pid, season)],
             "fxgf": fxgf[(pid, season)], "fxga": fxga[(pid, season)],
+            "mse": mse[(pid, season)], "mxgf": mxgf[(pid, season)], "mxga": mxga[(pid, season)],
+            "ese": ese[(pid, season)], "exgf": exgf[(pid, season)], "exga": exga[(pid, season)],
             # raw individual xG (back out from same-season rate) for clean pooling
             "ixg": (ixg60 * evsec / 3600.0) if ixg60 == ixg60 else 0.0,
         })
@@ -165,8 +195,10 @@ def main():
         agg = sub.groupby("player_id").agg(
             ev=("ev", "sum"), fse=("fse", "sum"), fse_f=("fse_f", "sum"),
             fse_d=("fse_d", "sum"), sup=("sup", "sum"),
-            fxgf=("fxgf", "sum"), fxga=("fxga", "sum"), ixg=("ixg", "sum"),
-            gp=("gp", "sum")).reset_index()
+            fxgf=("fxgf", "sum"), fxga=("fxga", "sum"),
+            mse=("mse", "sum"), mxgf=("mxgf", "sum"), mxga=("mxga", "sum"),
+            ese=("ese", "sum"), exgf=("exgf", "sum"), exga=("exga", "sum"),
+            ixg=("ixg", "sum"), gp=("gp", "sum")).reset_index()
         # name/team/pos = the row with most EV in scope
         top = (sub.sort_values("ev").drop_duplicates("player_id", keep="last")
                .set_index("player_id"))
@@ -179,9 +211,15 @@ def main():
         agg["vsEliteF"] = (agg["fse_f"] / agg["ev"] * 100).round(1)
         agg["vsEliteD"] = (agg["fse_d"] / agg["ev"] * 100).round(1)
         agg["vsElite"] = (agg["fse"] / agg["ev"] * 100).round(1)
+        agg["vsMid"] = (agg["mse"] / agg["ev"] * 100).round(1)
+        agg["vsEasy"] = (agg["ese"] / agg["ev"] * 100).round(1)
         agg["EliteSupport"] = (agg["sup"] / agg["ev"] * 100).round(1)
         denom = agg["fxgf"] + agg["fxga"]
         agg["xGFvsElite"] = np.where(denom > 0, agg["fxgf"] / denom * 100, np.nan).round(1)
+        _md = agg["mxgf"] + agg["mxga"]
+        agg["xGFvsMid"] = np.where(_md > 0, agg["mxgf"] / _md * 100, np.nan).round(1)
+        _ed = agg["exgf"] + agg["exga"]
+        agg["xGFvsEasy"] = np.where(_ed > 0, agg["exgf"] / _ed * 100, np.nan).round(1)
         agg["ixG60"] = (agg["ixg"] / agg["ev"] * 3600.0).round(2)
         agg["GP"] = agg["gp"].astype(int)
         for grp, posfile in (("F", "forwards"), ("D", "defense")):
@@ -189,15 +227,16 @@ def main():
             if len(q) < 5:
                 continue
             out = q[["player_name", "team", "pos", "GP", "vsEliteF", "vsEliteD",
-                     "vsElite", "EliteSupport", "xGFvsElite", "ixG60",
+                     "vsElite", "vsMid", "vsEasy", "EliteSupport",
+                     "xGFvsElite", "xGFvsMid", "xGFvsEasy", "ixG60",
                      "player_id"]].reset_index(drop=True)
             out.to_csv(os.path.join(OUTDIR, f"{scope}_{posfile}.csv"), index=False)
 
     print("done ->", OUTDIR, flush=True)
     top = pd.read_csv(os.path.join(OUTDIR, "2025-26_forwards.csv")).head(8)
-    print("\n2025-26 top forwards by vsElite:")
-    print(top[["player_name", "team", "vsEliteF", "vsEliteD", "vsElite",
-               "EliteSupport", "xGFvsElite", "ixG60"]].to_string(index=False))
+    print("\n2025-26 top forwards by vsElite (xGF% by matchup difficulty):")
+    print(top[["player_name", "team", "vsElite", "vsMid", "vsEasy",
+               "xGFvsElite", "xGFvsMid", "xGFvsEasy"]].to_string(index=False))
     for f in sorted(os.listdir(OUTDIR)):
         print("  ", f, len(pd.read_csv(os.path.join(OUTDIR, f))), "rows")
 
