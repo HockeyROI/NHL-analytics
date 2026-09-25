@@ -23,7 +23,10 @@ Per player, over each scope:
   xGFvsElite   : on-ice xGF% during the ELITE-matchup shifts.
   xGFvsMid     : on-ice xGF% during the MID-matchup shifts.
   xGFvsEasy    : on-ice xGF% during the EASY-matchup shifts.
-  ixG60        : individual xG per 60 (from tiers.csv, same-season).
+  ixG60        : individual xG per 60 generated in ELITE-matchup shifts.
+  ixgMid60     : individual xG per 60 in MID-matchup shifts.
+  ixgEasy60    : individual xG per 60 in EASY-matchup shifts.
+                 (Each = the shooter's own xG accrued in that tier / that tier's TOI.)
 
 Reading the three xGF%s left-to-right (easy -> mid -> elite) tells whether a
 low Elite xGF% is a genuinely weak player (also underwater vs easy/mid) or one
@@ -32,7 +35,8 @@ who's fine at his level but over his head against the best.
 Output (mirrors player_ratings / zone_index100 layout so the app loads it the
 same way): Elites/Output/elite_context/{scope}_{forwards|defense}.csv
   cols: player_name, team, pos, GP, vsEliteF, vsEliteD, vsElite, vsMid, vsEasy,
-        EliteSupport, xGFvsElite, xGFvsMid, xGFvsEasy, ixG60, player_id
+        EliteSupport, xGFvsElite, xGFvsMid, xGFvsEasy, ixG60, ixgMid60, ixgEasy60,
+        player_id
 """
 from __future__ import annotations
 
@@ -72,15 +76,17 @@ def shots_by_game():
     for pq in sorted(glob.glob(os.path.join(SHOT_DIR, "*.parquet"))):
         e = pd.read_parquet(pq, columns=["game_id", "event_id", "period", "time_secs",
                                          "situation_code", "event_type",
-                                         "shooting_team_id", "home_team_id"])
+                                         "shooting_team_id", "home_team_id",
+                                         "shooter_player_id"])
         e = e[(e["situation_code"].astype(str) == "1551") & e["event_type"].isin(FEN)].copy()
         e = e.merge(xg, on=["game_id", "event_id"], how="left").dropna(subset=["xg"])
         e["abs"] = (e["period"] - 1) * 1200 + e["time_secs"]
         e["home_shot"] = e["shooting_team_id"] == e["home_team_id"]
+        e["shooter"] = e["shooter_player_id"].fillna(-1).astype(int)
         e = e.sort_values(["game_id", "abs"])
         for gid, g in e.groupby("game_id", sort=False):
             out[int(gid)] = {"abs": g["abs"].to_numpy(), "home": g["home_shot"].to_numpy(),
-                             "xg": g["xg"].to_numpy()}
+                             "xg": g["xg"].to_numpy(), "shooter": g["shooter"].to_numpy()}
     return out
 
 
@@ -104,6 +110,8 @@ def main():
     fxgf = defaultdict(float); fxga = defaultdict(float)
     mse = defaultdict(float); mxgf = defaultdict(float); mxga = defaultdict(float)
     ese = defaultdict(float); exgf = defaultdict(float); exga = defaultdict(float)
+    # individual xG accrued by the SHOOTER, split by the shift's matchup tier
+    ixg_e = defaultdict(float); ixg_m = defaultdict(float); ixg_x = defaultdict(float)
 
     def bucket(labels, positions):
         """(full, fwd, blue) full-strength flags for one opposing five."""
@@ -136,12 +144,23 @@ def main():
             # (mid = the else branch below: not elite and not easy)
             n_elite_home = sum(l == "Elite" for l in hlab)
             n_elite_away = sum(l == "Elite" for l in alab)
+            # matchup tier of each side's shift (e=elite / m=mid / x=easy)
+            h_cls = "e" if h_full else ("x" if h_easy else "m")
+            a_cls = "e" if a_full else ("x" if a_easy else "m")
             hxg = axg = 0.0
             if sg is not None:
                 lo = np.searchsorted(s_abs, start, side="right"); hi = np.searchsorted(s_abs, end, side="right")
                 if hi > lo:
                     xs = sg["xg"][lo:hi]; hs = sg["home"][lo:hi]
                     hxg = xs[hs].sum(); axg = xs[~hs].sum()
+                    # individual xG -> the SHOOTER, bucketed by their side's tier
+                    for _xg, _hm, _sid in zip(xs, hs, sg["shooter"][lo:hi]):
+                        if _sid < 0:
+                            continue
+                        _ikey = (int(_sid), season); _cls = h_cls if _hm else a_cls
+                        if _cls == "e": ixg_e[_ikey] += _xg
+                        elif _cls == "m": ixg_m[_ikey] += _xg
+                        else: ixg_x[_ikey] += _xg
             for k, p in enumerate(home):
                 key = (p, season); ev[key] += dur
                 if h_full:
@@ -173,7 +192,6 @@ def main():
         if (pid, season) not in meta.index:
             continue
         m = meta.loc[(pid, season)]
-        ixg60 = float(m["ixg60_cur"]) if pd.notna(m["ixg60_cur"]) else np.nan
         rows.append({
             "player_id": pid, "season": season,
             "player_name": m["player_name"], "team": m["team"],
@@ -185,8 +203,10 @@ def main():
             "fxgf": fxgf[(pid, season)], "fxga": fxga[(pid, season)],
             "mse": mse[(pid, season)], "mxgf": mxgf[(pid, season)], "mxga": mxga[(pid, season)],
             "ese": ese[(pid, season)], "exgf": exgf[(pid, season)], "exga": exga[(pid, season)],
-            # raw individual xG (back out from same-season rate) for clean pooling
-            "ixg": (ixg60 * evsec / 3600.0) if ixg60 == ixg60 else 0.0,
+            # individual xG the SHOOTER generated, split by matchup tier (for clean
+            # pooling: sum raw xG, divide by that tier's TOI at scope level).
+            "ixg_e": ixg_e[(pid, season)], "ixg_m": ixg_m[(pid, season)],
+            "ixg_x": ixg_x[(pid, season)],
         })
     per = pd.DataFrame(rows)
 
@@ -198,7 +218,8 @@ def main():
             fxgf=("fxgf", "sum"), fxga=("fxga", "sum"),
             mse=("mse", "sum"), mxgf=("mxgf", "sum"), mxga=("mxga", "sum"),
             ese=("ese", "sum"), exgf=("exgf", "sum"), exga=("exga", "sum"),
-            ixg=("ixg", "sum"), gp=("gp", "sum")).reset_index()
+            ixg_e=("ixg_e", "sum"), ixg_m=("ixg_m", "sum"), ixg_x=("ixg_x", "sum"),
+            gp=("gp", "sum")).reset_index()
         # name/team/pos = the row with most EV in scope
         top = (sub.sort_values("ev").drop_duplicates("player_id", keep="last")
                .set_index("player_id"))
@@ -220,7 +241,10 @@ def main():
         agg["xGFvsMid"] = np.where(_md > 0, agg["mxgf"] / _md * 100, np.nan).round(1)
         _ed = agg["exgf"] + agg["exga"]
         agg["xGFvsEasy"] = np.where(_ed > 0, agg["exgf"] / _ed * 100, np.nan).round(1)
-        agg["ixG60"] = (agg["ixg"] / agg["ev"] * 3600.0).round(2)
+        # individual xG / 60 within each matchup tier (its own TOI as denominator)
+        agg["ixG60"] = np.where(agg["fse"] > 0, agg["ixg_e"] / agg["fse"] * 3600.0, np.nan).round(2)
+        agg["ixgMid60"] = np.where(agg["mse"] > 0, agg["ixg_m"] / agg["mse"] * 3600.0, np.nan).round(2)
+        agg["ixgEasy60"] = np.where(agg["ese"] > 0, agg["ixg_x"] / agg["ese"] * 3600.0, np.nan).round(2)
         agg["GP"] = agg["gp"].astype(int)
         for grp, posfile in (("F", "forwards"), ("D", "defense")):
             q = agg[agg["grp"] == grp].sort_values("vsElite", ascending=False)
@@ -228,7 +252,8 @@ def main():
                 continue
             out = q[["player_name", "team", "pos", "GP", "vsEliteF", "vsEliteD",
                      "vsElite", "vsMid", "vsEasy", "EliteSupport",
-                     "xGFvsElite", "xGFvsMid", "xGFvsEasy", "ixG60",
+                     "xGFvsElite", "xGFvsMid", "xGFvsEasy",
+                     "ixG60", "ixgMid60", "ixgEasy60",
                      "player_id"]].reset_index(drop=True)
             out.to_csv(os.path.join(OUTDIR, f"{scope}_{posfile}.csv"), index=False)
 

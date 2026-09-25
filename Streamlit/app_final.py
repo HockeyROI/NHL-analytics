@@ -521,9 +521,14 @@ _ABBR_FULL = {
     "Easy xGF%": "On-ice xGF% in EASY matchups (≥1 poor, 0 elite) — 50 = even. Being "
                  "underwater here (below 50 vs soft competition) is the genuine red flag; "
                  "a low Elite xGF% but healthy Easy/Mid means over his head, not bad.",
-    "Elite ixG": "Individual expected goals per 60 (5v5) — the shot danger the player "
-                "generates himself (the scatter's x-axis). Distinct from Elite xGF%, "
-                "which is the on-ice team share in elite matchups.",
+    "Elite ixG": "Individual expected goals per 60 the player generates himself "
+                "during ELITE-matchup shifts (his own shot danger vs the best). "
+                "Distinct from Elite xGF%, which is the on-ice team share.",
+    "Mid ixG": "Individual expected goals per 60 the player generates in MID-matchup "
+               "shifts — his own offense against middling competition.",
+    "Easy ixG": "Individual expected goals per 60 the player generates in EASY-matchup "
+                "shifts — his own offense against weak competition. Compare with Mid/Elite "
+                "ixG to see whether his shot creation holds up as competition rises.",
     # Zone Impact index (0–100, 50 = position-group average)
     "OZI": "Offensive Zone Impact — O-zone time after offensive-zone faceoffs (0–100, 50 = average)",
     "DZI": "Defensive Zone Impact — O-zone time after defensive-zone faceoffs (0–100, 50 = average)",
@@ -697,7 +702,8 @@ def _show_df(obj, **kwargs) -> None:
         _WIDE_PX = {"Elite Rating": 110, "Elite Rating Tier": 120,
                     "Elite Exposure%": 135, "Elite Exposure F%": 145,
                     "Elite Exposure D%": 145, "Elite Support%": 130,
-                    "Elite xGF%": 110, "Mid xGF%": 100, "Easy xGF%": 105, "Elite ixG": 100,
+                    "Elite xGF%": 110, "Mid xGF%": 100, "Easy xGF%": 105,
+                    "Elite ixG": 100, "Mid ixG": 95, "Easy ixG": 100,
                     "PP Rating": 105, "PP Tier": 95, "PK Rating": 100, "PK Flag": 160}
         for _c in cols[1:]:
             _full = _abbr_help(_c)
@@ -938,9 +944,10 @@ def render_methodology() -> None:
             "quality-of-competition effects in hockey are smaller than intuition suggests "
             "(line-matching + the zero-sum of on-ice shares), so most curves are gentler "
             "than expected — a big drop, or an underwater easy number, is what stands out. "
-            "<b>Elite ixG</b> is the player's own individual "
-            "expected goals per 60 (5v5) — the shot danger he generates himself, distinct "
-            "from the on-ice xGF%s. Deployment and results are kept as separate columns.",
+            "<b>Elite ixG / Mid ixG / Easy ixG</b> are the player's own individual "
+            "expected goals per 60 generated within each matchup tier — his personal shot "
+            "danger vs the best / middling / weak, distinct from the on-ice (team) xGF%s. "
+            "Deployment and results are kept as separate columns.",
         )
         + _meth_framework(
             "Expected Goals (xG) — our own model",
@@ -1384,7 +1391,7 @@ _CTX_REN = {"vsEliteF": "Elite Exposure F%", "vsEliteD": "Elite Exposure D%",
             "vsElite": "Elite Exposure%", "vsMid": "Mid Exposure%", "vsEasy": "Easy Exposure%",
             "EliteSupport": "Elite Support%",
             "xGFvsElite": "Elite xGF%", "xGFvsMid": "Mid xGF%", "xGFvsEasy": "Easy xGF%",
-            "ixG60": "Elite ixG"}
+            "ixG60": "Elite ixG", "ixgMid60": "Mid ixG", "ixgEasy60": "Easy ixG"}
 
 
 def _load_ctx_files(scope: str) -> pd.DataFrame:
@@ -2939,7 +2946,8 @@ def _player_trend(pid: int) -> pd.DataFrame:
         cc2 = ctx[(ctx["player_name"] == name) & (ctx["_pos_group"] == pos_group)]
         if not cc2.empty:
             ccols = ["season"] + [c for c in ("Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%",
-                     "Elite Support%", "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG")
+                     "Elite Support%", "Elite xGF%", "Mid xGF%", "Easy xGF%",
+                     "Elite ixG", "Mid ixG", "Easy ixG")
                      if c in cc2.columns]
             trend = trend.merge(cc2[ccols], on="season", how="outer")
 
@@ -3219,7 +3227,7 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
                     (load_ratings_all_seasons, ["Elite Rating"]),
                     (load_ctx_all_seasons, ["Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%",
                                             "Elite Support%", "Elite xGF%", "Mid xGF%", "Easy xGF%",
-                                            "Elite ixG"]),
+                                            "Elite ixG", "Mid ixG", "Easy ixG"]),
                     (load_pppk_all_seasons, ["PP Rating"])):
                 _fr = _loader()
                 if _fr.empty:
@@ -3349,7 +3357,7 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     adv_cols = ["CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"]
     rating_cols = ["Elite Rating", "Elite Rating Tier"]   # Player Ratings, lead
     ctx_cols = ["Elite Exposure%", "Elite Exposure F%", "Elite Exposure D%", "Elite Support%",
-                "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG"]
+                "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG", "Mid ixG", "Easy ixG"]
     pppk_cols = ["PP Rating", "PP Tier", "PK Rating", "PK Flag"]   # end of section
     sit_cols = list(_SIT_PLAIN)          # Advanced Stats (situation possession suite)
     edge_cols = _EDGE_VALUE_DISP
@@ -3389,7 +3397,8 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     for c in ("Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%", "Elite Support%",
               "Elite xGF%", "Mid xGF%", "Easy xGF%"):
         _b[c] = lambda v: f"{v:.1f}%"
-    _b["Elite ixG"] = lambda v: f"{v:.2f}"
+    for c in ("Elite ixG", "Mid ixG", "Easy ixG"):
+        _b[c] = lambda v: f"{v:.2f}"
     _b["Elite Rating"] = lambda v: f"{v:.1f}"
     _b["Elite Rating Tier"] = lambda v: f"{v}"          # string label (Elite/Middle/Poor)
     _b["PP Rating"] = lambda v: f"{v:.1f}"
@@ -3718,6 +3727,19 @@ def _player_rating_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
     return {m: (float(_tr[m].iloc[0]) if len(_tr) and m in _tr.columns
                 and pd.notna(_tr[m].iloc[0]) else np.nan)
             for m in _RATING_BAR_METRICS}
+
+
+# xGF% by matchup difficulty — the current-year bar (50 = even).
+_CTX_XGF_METRICS = ["Easy xGF%", "Mid xGF%", "Elite xGF%"]
+
+
+def _player_ctx_xgf_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
+    """Easy/Mid/Elite xGF% for one player at a season label (per-season trend);
+    the 2yr row isn't in the trend, so it returns NaNs there."""
+    _tr = trend[trend["Season"].astype(str) == str(label)]
+    return {m: (float(_tr[m].iloc[0]) if len(_tr) and m in _tr.columns
+                and pd.notna(_tr[m].iloc[0]) else np.nan)
+            for m in _CTX_XGF_METRICS}
 
 
 # The Zone-Impact-family index metrics for the hard-locked zone bar (0-100
@@ -4636,9 +4658,6 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             ("Player Ratings", lambda: _chart(
                    "Elite Exposure over time (Elite Exposure%, Elite Support%, Elite xGF%)",
                    ["Elite Exposure%", "Elite Support%", "Elite xGF%"])),
-            ("Player Ratings", lambda: _chart(
-                   "xGF% by matchup difficulty (Easy, Mid, Elite) — 50 = even",
-                   ["Easy xGF%", "Mid xGF%", "Elite xGF%"])),
             ("Player Ratings", lambda: _pk_line_chart(trend)),
             ("xG", lambda: _chart("On-ice xG per 60 (xGF/60, xGA/60)", ["xGF/60", "xGA/60"])),
             ("xG", lambda: _chart("Relative xG % (RelxG%, RelxG-F%, RelxG-A%)",
@@ -4665,8 +4684,16 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             ("EDGE", lambda: _chart("EDGE Speed Bursts (20+ mph, season total)",
                    ["EDGE Bursts 20+"])),
             ("EDGE", lambda: _chart("EDGE Distance Skated (mi)", ["EDGE Distance (mi)"])),
+            # Last line graph: xGF% across the three matchup difficulties over time.
+            ("Player Ratings", lambda: _chart(
+                   "xGF% by matchup difficulty (Easy, Mid, Elite) — 50 = even",
+                   ["Easy xGF%", "Mid xGF%", "Elite xGF%"])),
         ]
-        for _fam, _fn in sorted(_yoy_charts, key=lambda item: item[0] not in _show_fams):
+        # Keep the matchup-difficulty line dead last even when Player Ratings floats
+        # to the top (the user asked for it as the final line graph).
+        _last_line = _yoy_charts[-1]
+        _rest = _yoy_charts[:-1]
+        for _fam, _fn in (sorted(_rest, key=lambda item: item[0] not in _show_fams) + [_last_line]):
             _fn()          # all lines always show; the selected family floats first
     elif view_mode == "Show current year data":
         # Current-year bars: the combined NFI+xG Quality-Games panel (one
@@ -4702,6 +4729,15 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                      caption="Zone Impact index vs **50** (league average).",
                      dl_prefix="Zone-bars", ydomain=_PROFILE_BAR_YDOM,
                      title="Zone Impact Index")
+        # Last bar: on-ice xGF% by matchup difficulty (Easy / Mid / Elite), 50 = even.
+        _ctx_xgf_vals = _player_ctx_xgf_vals(pid, trend, _yr)
+        if any(pd.notna(v) for v in _ctx_xgf_vals.values()):
+            _qg_bar_chart(_ctx_xgf_vals, _yr,
+                          caption="**xGF% by matchup difficulty** vs the **50 baseline** "
+                                  "(bar up = out-chancing, down = out-chanced). Easy → Mid → "
+                                  "Elite: a steep drop = fine at his level but over his head vs "
+                                  "elites; underwater vs Easy = the genuine red flag.",
+                          dl_prefix="Matchup-xGF-bars", title="xGF% by Matchup Difficulty")
         st.caption("↕ Click a different year (or the 2yr row) above to change the bars.")
 
     # Team scatters — shown regardless of which family pills are selected,
@@ -5182,7 +5218,8 @@ PLAYER_FAMILY_COLS = {
     # on-ice xGF in exposure shifts (build_elite_context.py). Shown SECOND.
     "Player Ratings": ["Elite Rating", "Elite Rating Tier",
                        "Elite Exposure%", "Elite Exposure F%", "Elite Exposure D%",
-                       "Elite Support%", "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG",
+                       "Elite Support%", "Elite xGF%", "Mid xGF%", "Easy xGF%",
+                       "Elite ixG", "Mid ixG", "Easy ixG",
                        "PP Rating", "PP Tier", "PK Rating", "PK Flag"],
     # xG core — situation-driven (they follow the Situation filter). PDOxG stays
     # here (it's an xG-adjusted luck metric).
@@ -6006,7 +6043,7 @@ def render_players() -> None:
             "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
             "Elite Rating", "Elite Rating Tier",
             "Elite Exposure%", "Elite Exposure F%", "Elite Exposure D%", "Elite Support%",
-            "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG",
+            "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG", "Mid ixG", "Easy ixG",
             "PP Rating", "PP Tier", "PK Rating", "PK Flag",
             "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDOxG",
             "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60", "PDO",
@@ -6070,8 +6107,9 @@ def render_players() -> None:
               "Elite xGF%", "Mid xGF%", "Easy xGF%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
-    if "Elite ixG" in disp.columns:
-        fmt["Elite ixG"] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
+    for c in ("Elite ixG", "Mid ixG", "Easy ixG"):
+        if c in disp.columns:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
     for c in ("OZ Start%", "DZ Start%", "NZ Start%"):
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:.1f}%"
@@ -6123,7 +6161,7 @@ def render_players() -> None:
     _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
                     "NFI-S/60", "OZI", "DZI", "NZI", "TZI", "Elite Rating", "PP Rating",
                     "Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%", "Elite Support%",
-                    "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG",
+                    "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG", "Mid ixG", "Easy ixG",
                     "DZ Start%", "NZ Start%", "OZ Start%",
                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
                     "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
