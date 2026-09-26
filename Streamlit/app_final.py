@@ -4535,8 +4535,13 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
     _mode = st.radio("Show", ["All shots", "Goals only"], horizontal=True,
                      key=f"shotgoals_{kind}_{ident}", label_visibility="collapsed")
     _goals_only = _mode == "Goals only"
+    # Pass `situation` only if the (possibly stale, mid-redeploy) shot_charts
+    # module already supports it — otherwise skip the label rather than crash.
+    import inspect as _inspect
+    _sit_kw = ({"situation": _sit}
+               if "situation" in _inspect.signature(_sc.shot_chart).parameters else {})
     fig = _sc.shot_chart(shots, nm, season=str(lbl), team=team,
-                         goalie_view=gv, goals_only=_goals_only, situation=_sit)
+                         goalie_view=gv, goals_only=_goals_only, **_sit_kw)
     if fig is not None:
         import io
         import matplotlib.pyplot as _plt
@@ -4607,6 +4612,9 @@ def _render_team_shot_grid(team: str, frame: pd.DataFrame) -> None:
     st.caption(f"**{team}** — every skater's shot chart · **{_scope}** · **{_sit}** · "
                f"{'goals only' if _goals_only else 'all shots'}. Most ice time first. "
                "Empty-net shots excluded; each image is labeled with its scope + situation.")
+    import inspect as _inspect
+    _sit_kw = ({"situation": _sit}
+               if "situation" in _inspect.signature(_sc.shot_chart).parameters else {})
     _NCOL = 3
     cols = st.columns(_NCOL)
     for i, r in enumerate(ros.itertuples()):
@@ -4615,7 +4623,7 @@ def _render_team_shot_grid(team: str, frame: pd.DataFrame) -> None:
         nm = str(r.player_name) + (f" ({_pos})" if isinstance(_pos, str) and _pos else "")
         psh = shots[shots["shooter_player_id"] == pid]
         fig = _sc.shot_chart(psh, nm, season=str(_scope), team=team,
-                             goalie_view=False, goals_only=_goals_only, situation=_sit)
+                             goalie_view=False, goals_only=_goals_only, **_sit_kw)
         with cols[i % _NCOL]:
             if fig is None:
                 st.caption(f"{nm}: no {_sit} shots in scope")
