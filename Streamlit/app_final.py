@@ -4564,10 +4564,11 @@ _SHOT_SCOPE_OPTS = ["2yr avg (24-26)", "2025-26", "2024-25", "2023-24",
 
 
 def _render_team_shot_grid(team: str, frame: pd.DataFrame) -> None:
-    """The 'Shot Charts' family, team-scoped: a grid of per-player shot charts for
-    every skater on `team`. Defaults to the 2-year average, all shots (not goals-
+    """The 'Shot Charts' family, team-scoped: per-player shot charts for every
+    skater on `team`, shown ONE PER ROW (not side by side), ordered from the
+    highest goal scorer down. Defaults to the 2-year average, all shots (not goals-
     only), and the global Situation toggle (5v5 by default); each image is labeled
-    with its scope + situation. Most ice time first."""
+    with its scope + situation."""
     try:
         import shot_charts as _sc
     except Exception:
@@ -4580,8 +4581,7 @@ def _render_team_shot_grid(team: str, frame: pd.DataFrame) -> None:
         ros = ros[ros["_teams"].apply(lambda ts: team in (ts or []))]
     elif "team" in ros.columns:
         ros = ros[ros["team"] == team]
-    ros = (ros.dropna(subset=["player_id"]).drop_duplicates("player_id")
-           .sort_values("toi_min", ascending=False))
+    ros = ros.dropna(subset=["player_id"]).drop_duplicates("player_id")
     if ros.empty:
         st.info(f"No players found for {team} in this scope.")
         return
@@ -4609,30 +4609,36 @@ def _render_team_shot_grid(team: str, frame: pd.DataFrame) -> None:
     if _mats is not None and "situation" in shots.columns:
         shots = shots[shots["situation"].isin(_mats)]
 
+    # Order by goals scored in the SHOWN scope/situation (excluding empty-net, to
+    # match the chart), highest scorer first.
+    _gmask = shots["is_goal"].astype(int) == 1
+    if "empty_net" in shots.columns:
+        _gmask &= ~shots["empty_net"].astype(bool)
+    _goals_by_pid = shots[_gmask].groupby("shooter_player_id").size()
+    ros["_goals"] = ros["player_id"].astype(int).map(_goals_by_pid).fillna(0).astype(int)
+    ros = ros.sort_values(["_goals", "toi_min"], ascending=[False, False])
+
     st.caption(f"**{team}** — every skater's shot chart · **{_scope}** · **{_sit}** · "
-               f"{'goals only' if _goals_only else 'all shots'}. Most ice time first. "
-               "Empty-net shots excluded; each image is labeled with its scope + situation.")
+               f"{'goals only' if _goals_only else 'all shots'}. Ordered by goals "
+               "(highest first). Empty-net shots excluded; each image is labeled with "
+               "its scope + situation.")
     import inspect as _inspect
     _sit_kw = ({"situation": _sit}
                if "situation" in _inspect.signature(_sc.shot_chart).parameters else {})
-    _NCOL = 3
-    cols = st.columns(_NCOL)
-    for i, r in enumerate(ros.itertuples()):
+    for r in ros.itertuples():
         pid = int(r.player_id)
         _pos = getattr(r, "position", None)
         nm = str(r.player_name) + (f" ({_pos})" if isinstance(_pos, str) and _pos else "")
         psh = shots[shots["shooter_player_id"] == pid]
         fig = _sc.shot_chart(psh, nm, season=str(_scope), team=team,
                              goalie_view=False, goals_only=_goals_only, **_sit_kw)
-        with cols[i % _NCOL]:
-            if fig is None:
-                st.caption(f"{nm}: no {_sit} shots in scope")
-                continue
-            _buf = io.BytesIO()
-            fig.savefig(_buf, format="png", dpi=300, bbox_inches="tight",
-                        facecolor="white")
-            _plt.close(fig)
-            st.image(_buf.getvalue(), use_container_width=True)
+        if fig is None:
+            st.caption(f"{nm}: no {_sit} shots in scope")
+            continue
+        _buf = io.BytesIO()
+        fig.savefig(_buf, format="png", dpi=640, bbox_inches="tight", facecolor="white")
+        _plt.close(fig)
+        st.image(_buf.getvalue(), width=SHOT_MAP_WIDTH_PX)
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
