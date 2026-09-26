@@ -134,9 +134,9 @@ def _draw_rink(ax) -> None:
 def shot_chart(shots: pd.DataFrame, name: str, season: str = "",
                team: str | None = None, goalie_view: bool = False,
                show_bubbles: bool = True, goals_only: bool = False,
-               url: str = "hockeyROI.substack.com"):
+               situation: str = "", url: str = "hockeyROI.substack.com"):
     """Render a shot chart figure. Returns the matplotlib Figure (or None).
-    Header stacks: NAME (big) / season. goals_only: just goals."""
+    Header stacks: NAME (big) / season · situation. goals_only: just goals."""
     if shots is None or shots.empty:
         return None
     d = shots.dropna(subset=["x_coord_norm", "y_coord_norm"]).copy()
@@ -198,8 +198,11 @@ def shot_chart(shots: pd.DataFrame, name: str, season: str = "",
     # had in fact reloaded -- nothing on the image named the year.
     ax.text(0.0, 1.049, name, transform=ax.transAxes, fontsize=5.5,
             weight="bold", color=NAVY, ha="left", va="bottom", family="sans-serif")
-    if season:
-        ax.text(0.0, 1.012, str(season), transform=ax.transAxes, fontsize=4.6,
+    # Season line also carries the situation (5v5 / PP / PK / …) so a downloaded
+    # or posted image is self-labeled with the shot scope it's showing.
+    _subline = " · ".join(s for s in (str(season), str(situation)) if s)
+    if _subline:
+        ax.text(0.0, 1.012, _subline, transform=ax.transAxes, fontsize=4.6,
                 color=NAVY, ha="left", va="bottom", family="sans-serif")
     # Legend = shot types only. In goals-only view every dot IS a goal, so the
     # "Goal" swatch is redundant; in all-shots view the ring is explained by a

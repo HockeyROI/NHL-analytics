@@ -28,6 +28,21 @@ PPPK_DIR = REPO_ROOT / "Elites" / "Output" / "pp_pk_ratings"
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def load_player_names() -> dict:
+    """{player_id: player_name} from the shared name table — used to backfill any
+    id whose own source file is missing a real name (scrape gaps)."""
+    fp = REPO_ROOT / "xG" / "Created_Goals" / "Output" / "player_names.csv"
+    if not fp.exists():
+        return {}
+    df = pd.read_csv(fp)
+    if not {"player_id", "player_name"} <= set(df.columns):
+        return {}
+    df = df.dropna(subset=["player_id", "player_name"])
+    df = df[~df["player_name"].astype(str).str.fullmatch(r"\d+")]
+    return dict(zip(df["player_id"].astype(int), df["player_name"].astype(str)))
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_nfi_player() -> pd.DataFrame:
     fp = NFI_ADJ / "player_fully_adjusted.csv"
     if not fp.exists():
@@ -4515,11 +4530,13 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
         return
     lbl = season_label or ("Playoffs" if playoffs else "")
     nm = name + (" (shots faced)" if kind == "goalie" else "")
-    _mode = st.radio("Show", ["Goals only", "All shots"], horizontal=True,
+    # Default to "All shots" (not goals-only); the situation label comes from the
+    # global Situation toggle and is drawn onto the image.
+    _mode = st.radio("Show", ["All shots", "Goals only"], horizontal=True,
                      key=f"shotgoals_{kind}_{ident}", label_visibility="collapsed")
     _goals_only = _mode == "Goals only"
     fig = _sc.shot_chart(shots, nm, season=str(lbl), team=team,
-                         goalie_view=gv, goals_only=_goals_only)
+                         goalie_view=gv, goals_only=_goals_only, situation=_sit)
     if fig is not None:
         import io
         import matplotlib.pyplot as _plt
@@ -4534,6 +4551,80 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
         # Save-as-PNG free from Vega's "..." menu), a matplotlib image would
         # need its own button, and we'd rather not have one.
         st.image(_buf.getvalue(), width=SHOT_MAP_WIDTH_PX)
+
+
+# Scope options for the shot-chart views — 2yr average first (the default).
+_SHOT_SCOPE_OPTS = ["2yr avg (24-26)", "2025-26", "2024-25", "2023-24",
+                    "2022-23", "4yr (2022-2026)"]
+
+
+def _render_team_shot_grid(team: str, frame: pd.DataFrame) -> None:
+    """The 'Shot Charts' family, team-scoped: a grid of per-player shot charts for
+    every skater on `team`. Defaults to the 2-year average, all shots (not goals-
+    only), and the global Situation toggle (5v5 by default); each image is labeled
+    with its scope + situation. Most ice time first."""
+    try:
+        import shot_charts as _sc
+    except Exception:
+        st.info("Shot-chart module unavailable.")
+        return
+    import io
+    import matplotlib.pyplot as _plt
+    ros = frame.copy()
+    if "_teams" in ros.columns:
+        ros = ros[ros["_teams"].apply(lambda ts: team in (ts or []))]
+    elif "team" in ros.columns:
+        ros = ros[ros["team"] == team]
+    ros = (ros.dropna(subset=["player_id"]).drop_duplicates("player_id")
+           .sort_values("toi_min", ascending=False))
+    if ros.empty:
+        st.info(f"No players found for {team} in this scope.")
+        return
+
+    c1, c2 = st.columns([1.2, 1.0])
+    with c1:
+        _scope = st.selectbox("Shot-chart scope", _SHOT_SCOPE_OPTS, index=0,
+                              key="teamgrid_scope",
+                              help="Season scope for the shot charts. Defaults to the "
+                                   "2-year average.")
+    with c2:
+        _mode = st.radio("Show", ["All shots", "Goals only"], horizontal=True,
+                         key="teamgrid_mode")
+    _goals_only = _mode == "Goals only"
+    _sit = _situation_toggle_state()
+
+    seasons = _shot_chart_seasons(_scope, playoffs=False)
+    shots = _load_shots_cached(tuple(seasons) if seasons else None, "regular")
+    if shots.empty or "situation" not in shots.columns:
+        shots = _sc.load_shots(list(seasons) if seasons else None, "regular")
+    if shots.empty:
+        st.info("No shot data available for this scope.")
+        return
+    _mats = SITUATION_BUCKETS.get(_sit)
+    if _mats is not None and "situation" in shots.columns:
+        shots = shots[shots["situation"].isin(_mats)]
+
+    st.caption(f"**{team}** — every skater's shot chart · **{_scope}** · **{_sit}** · "
+               f"{'goals only' if _goals_only else 'all shots'}. Most ice time first. "
+               "Empty-net shots excluded; each image is labeled with its scope + situation.")
+    _NCOL = 3
+    cols = st.columns(_NCOL)
+    for i, r in enumerate(ros.itertuples()):
+        pid = int(r.player_id)
+        _pos = getattr(r, "position", None)
+        nm = str(r.player_name) + (f" ({_pos})" if isinstance(_pos, str) and _pos else "")
+        psh = shots[shots["shooter_player_id"] == pid]
+        fig = _sc.shot_chart(psh, nm, season=str(_scope), team=team,
+                             goalie_view=False, goals_only=_goals_only, situation=_sit)
+        with cols[i % _NCOL]:
+            if fig is None:
+                st.caption(f"{nm}: no {_sit} shots in scope")
+                continue
+            _buf = io.BytesIO()
+            fig.savefig(_buf, format="png", dpi=300, bbox_inches="tight",
+                        facecolor="white")
+            _plt.close(fig)
+            st.image(_buf.getvalue(), use_container_width=True)
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
@@ -4612,9 +4703,9 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
         if _ppos:
             _nm = f"{_nm} ({_ppos})"
         # When the user clicked a trend-table row, show that year's shots.
-        # Otherwise honour the global Season filter (pooled → all seasons).
+        # Otherwise default to the 2-year average (not the global Season filter).
         _shot_yr = (_yr if (_sel and 0 <= _sel[0] < len(_seasons))
-                    else season_label)
+                    else "2yr avg (24-26)")
         _render_shot_chart("player", int(pid), _nm, _pteam, _shot_yr,
                            playoffs=False)
 
@@ -5244,6 +5335,11 @@ PLAYER_FAMILY_COLS = {
     "EDGE": _EDGE_VALUE_DISP + ["DZ Start%", "NZ Start%", "OZ Start%"],
     # Box score — NHL counting stats (all situations; not situation-filtered).
     "Box Score": BOX_FAMILY_COLS,
+    # Shot Charts — NOT table columns. A special family: when a TEAM is selected it
+    # replaces the leaderboard with a grid of every skater's shot chart (handled in
+    # render_players via _render_team_shot_grid). Empty col list so the normal
+    # column machinery adds nothing for it.
+    "Shot Charts": [],
 }
 
 
@@ -5980,6 +6076,19 @@ def render_players() -> None:
             st.rerun()
         _drill(int(_drill_pid))
         return
+
+    # "Shot Charts" family: with a Team selected, REPLACE the leaderboard with a
+    # grid of every skater's shot chart (2yr avg / all shots / Situation-toggle by
+    # default). Only works team-scoped — otherwise prompt to pick a team.
+    if "Shot Charts" in display_fams:
+        if team_sel == "All":
+            st.info("**Shot Charts**: pick a **Team** above to see a shot chart for "
+                    "every player on that team.")
+        else:
+            _grid_frame = frame[frame["position"] == pos] if pos in ("F", "D") else frame
+            st.markdown(f"### {team_sel} — Shot Charts")
+            _render_team_shot_grid(team_sel, _grid_frame)
+            return
 
     df = frame.copy()
     if pos in ("F", "D"):
@@ -7853,8 +7962,9 @@ def _render_goalie_profile(gid: int, qg_scope_suffix: str = "", qg_starter: bool
     _gname = str(_grow["goalie_name"].iloc[0]) if len(_grow) else f"Goalie {gid}"
     _gteam = (str(_grow["team"].iloc[0]) if len(_grow) and "team" in _grow.columns
               and pd.notna(_grow["team"].iloc[0]) else None)
+    # Default to the 2-year average unless a specific season row is clicked.
     _shot_yr = (_gyr if (_gsel and 0 <= _gsel[0] < len(_gseasons))
-                else season_label)
+                else "2yr avg (24-26)")
     _render_shot_chart("goalie", int(gid), _gname, _gteam, _shot_yr,
                        playoffs=False)
 
@@ -8128,7 +8238,20 @@ def render_goalies() -> None:
     # avoid suffix collisions, then map a single canonical name back).
     name_src = pd.concat([f[["goalie_id", "goalie_name"]] for f in frames
                           if "goalie_name" in f.columns], ignore_index=True)
-    name_map = name_src.dropna().drop_duplicates("goalie_id").set_index("goalie_id")["goalie_name"]
+    name_src = name_src.dropna()
+    # Some source files carry the goalie_id string in place of a real name (scrape
+    # gaps, e.g. Arsenii Sergeev "8482949"). Drop those so a bare number can't win
+    # as the canonical name (they also sort to the top of the search box).
+    name_src = name_src[~name_src["goalie_name"].astype(str).str.fullmatch(r"\d+")]
+    name_map = name_src.drop_duplicates("goalie_id").set_index("goalie_id")["goalie_name"]
+    # Backfill any still-unresolved ids from the shared player-name table.
+    _pn = load_player_names()
+    if _pn:
+        _all_ids = set().union(*[set(f["goalie_id"].dropna().astype(int))
+                                 for f in frames if "goalie_id" in f.columns])
+        for _g in _all_ids - set(name_map.index):
+            if int(_g) in _pn:
+                name_map.loc[_g] = _pn[int(_g)]
     frames2 = [f.drop(columns=[c for c in ["goalie_name"] if c in f.columns]) for f in frames]
     base = frames2[0]
     for r in frames2[1:]:
