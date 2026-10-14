@@ -1,4 +1,4 @@
-name: Weekly Data Update
+name: Daily Data Update
 
 # Daily 10:00 UTC (after the previous night's games) during the live season.
 # workflow_dispatch lets you trigger it by hand from the Actions tab at any time.
