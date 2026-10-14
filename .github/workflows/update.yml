@@ -1,10 +1,15 @@
 name: Weekly Data Update
 
-# Mondays 10:00 UTC (after the weekend's games). workflow_dispatch lets you
-# trigger it by hand from the Actions tab at any time.
+# Daily 10:00 UTC (after the previous night's games) during the live season.
+# workflow_dispatch lets you trigger it by hand from the Actions tab at any time.
+# NOTE: this daily run refreshes the families the CI can rebuild from the
+# committed per-season parquets — Box Score, Situation/Advanced, CCG, Elite
+# Ratings/Context — plus the current-season NFI file. The heavy full-pipeline
+# families (canonical NFI, Zone, Quality Games, Goalie) need the local raw
+# CSVs, so they are NOT rebuilt here; refresh those with a local pipeline run.
 on:
   schedule:
-    - cron: '0 10 * * 1'
+    - cron: '0 10 * * *'
   workflow_dispatch:
 
 # Give the whole job room: the situation engines walk every game.
