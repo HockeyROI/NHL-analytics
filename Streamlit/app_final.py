@@ -4667,13 +4667,46 @@ def load_game_meta() -> pd.DataFrame:
 # (TOI / Corsi / xG / NFI); the season-construct families (Zone, Ratings, EDGE,
 # CCG, Box, Quality Games) have no per-game breakdown here.
 _GAME_FAMILY_COLS = {
+    "Box Score": ["G", "A", "P"],      # 5v5 goals + primary assists per game
     "Net Front Impact": ["NFI%", "NFI±"],
     "xG": ["xGF", "xGA", "xG%"],
     "Advanced Stats": ["CF%", "CF", "CA"],
+    "CCG": ["CCG"],
 }
 _GAME_COL_FMT = {"TOI": "{:.1f}", "CF%": "{:.1f}", "CF": "{:.0f}", "CA": "{:.0f}",
                  "xGF": "{:.2f}", "xGA": "{:.2f}", "xG%": "{:.1f}",
-                 "NFI%": "{:.1f}", "NFI±": "{:+.0f}"}
+                 "NFI%": "{:.1f}", "NFI±": "{:+.0f}",
+                 "G": "{:.0f}", "A": "{:.0f}", "P": "{:.0f}", "CCG": "{:.0f}"}
+
+
+def _per_game_scoring(pid: int, season: int) -> pd.DataFrame:
+    """Per-game 5v5 G / A (primary) / P for one player, from the Elites scoring
+    parquet (game_id, scorer, assist1)."""
+    fp = REPO_ROOT / "Data" / "elites_scoring_by_season" / f"{season}.parquet"
+    if not fp.exists():
+        return pd.DataFrame(columns=["game_id", "G", "A", "P"])
+    s = pd.read_parquet(fp)
+    g = s[s["scorer"] == pid].groupby("game_id").size().rename("G")
+    a = s[s["assist1"] == pid].groupby("game_id").size().rename("A")
+    out = pd.concat([g, a], axis=1).fillna(0).reset_index()
+    for c in ("G", "A"):
+        if c not in out:
+            out[c] = 0
+    out["P"] = out["G"] + out["A"]
+    return out
+
+
+def _per_game_ccg(pid: int, season: int) -> pd.DataFrame:
+    """Per-game CCG (chaos created goals) for one player, from the CCG-events
+    parquet (game_id, shooter, situation — 5v5 to match the rest)."""
+    fp = REPO_ROOT / "Data" / "ccg_events_by_season" / f"{season}.parquet"
+    if not fp.exists():
+        return pd.DataFrame(columns=["game_id", "CCG"])
+    c = pd.read_parquet(fp)
+    c = c[c["shooter"] == pid]
+    if "situation" in c.columns:
+        c = c[c["situation"].astype(str) == "5v5"]
+    return c.groupby("game_id").size().rename("CCG").reset_index()
 
 
 def _render_game_log(pid: int, name: str, season_label: str, families=None) -> None:
@@ -4709,6 +4742,11 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     gp["xG%"] = 100 * gp["xG_for"] / (gp["xG_for"] + gp["xG_ag"]).replace(0, np.nan)
     gp["NFI±"] = gp["NFI_for"] - gp["NFI_ag"]
     gp["NFI%"] = 100 * gp["NFI_for"] / (gp["NFI_for"] + gp["NFI_ag"]).replace(0, np.nan)
+    # Box score (5v5 G/A/P) + CCG per game, merged in and zero-filled.
+    gp = gp.merge(_per_game_scoring(pid, season), on="game_id", how="left")
+    gp = gp.merge(_per_game_ccg(pid, season), on="game_id", how="left")
+    for c in ("G", "A", "P", "CCG"):
+        gp[c] = gp[c].fillna(0) if c in gp.columns else 0
 
     # Columns follow the selected metric families; default to NFI+xG+Corsi.
     _fams = list(families) if families else []
@@ -4726,8 +4764,8 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     gp["Date"] = gp["game_date"].astype(str)
     cols = ["Date", "Game", "TOI"] + _metric_cols
     st.markdown(f"**{name} — game log, {_lbl}**  ·  {len(gp)} GP · {gp['TOI'].sum():.0f} ES min")
-    _cap = ("One row per game, newest first — 5v5 on-ice stats for the selected metric "
-            "family (tap families above to change the columns).")
+    _cap = ("One row per game, newest first — per-game 5v5 stats for the selected metric "
+            "family (tap families above to change the columns). G/A/P are 5v5.")
     if _no_pg:
         _cap += (f"  ·  No per-game breakdown for: {', '.join(_no_pg)} "
                  "(season constructs — see the season views).")
