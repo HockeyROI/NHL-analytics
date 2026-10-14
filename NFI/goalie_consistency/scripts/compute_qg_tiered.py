@@ -87,6 +87,7 @@ SEASONS = {
     "shots_2023.csv": 20232024,
     "shots_2024.csv": 20242025,
     "shots_2025.csv": 20252026,
+    "shots_2026.csv": 20262027,
 }
 
 MIN_SHOTS_PER_GAME = 10

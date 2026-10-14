@@ -29,7 +29,7 @@ import pandas as pd
 ROOT = Path(os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI"))
 OUT = ROOT / "Data" / "team_box_score.csv"
 BASE = "https://api.nhle.com/stats/rest/en/team"
-SEASONS = ["20202021", "20212022", "20222023", "20232024", "20242025", "20252026"]
+SEASONS = ["20202021", "20212022", "20222023", "20232024", "20242025", "20252026", "20262027"]
 GAME_TYPES = {"regular": 2, "playoff": 3}
 HDRS = {"User-Agent": "Mozilla/5.0 (HockeyROI team box-score pull)"}
 

@@ -31,8 +31,8 @@ TEAM_METRICS = ROOT / "NFI/output/team_level_all_metrics.csv"
 SHOTS_CSV = ROOT / "NFI/output/shots_tagged.csv"
 
 ABBR = {"ARI":"UTA"}
-POOLED = {"20222023","20232024","20242025","20252026"}
-CURRENT = "20252026"
+POOLED = {"20222023","20232024","20242025","20252026","20262027"}
+CURRENT = "20262027"
 def norm(a): return ABBR.get(a,a) if a else a
 
 print("[0] loading ...")
@@ -176,7 +176,11 @@ se_A = _se_diff_per60(pp["ca_cm"].to_numpy(),
 # Empirical partial correlation r(cf_cm, ca_cm | log(toi_sec)) across the pool.
 # Used as the Cov(F,A) proxy for the per-player combined SE. Computed on the
 # qualifying-TOI subset of pp to match the population whose CIs we're reporting.
-_mask = (pp["toi_sec"] > 0) & pp["cf_cm"].notna() & pp["ca_cm"].notna()
+# Exclude the in-progress live season from this pooled covariance proxy so the
+# completed seasons' reported CI bounds stay exactly as published (the live
+# season's thin, high-variance sample would otherwise shift them).
+_mask = ((pp["toi_sec"] > 0) & pp["cf_cm"].notna() & pp["ca_cm"].notna()
+         & (pp["season"].astype(str) != "20262027"))
 if _mask.sum() >= 30:
     _X_resid = sm_log = np.log(pp.loc[_mask, "toi_sec"].to_numpy())
     _f = pp.loc[_mask, "cf_cm"].to_numpy()
@@ -245,10 +249,15 @@ tm = tm[tm["season"]==CURRENT][["season","team","points"]]
 curr = pp[pp["season"]==CURRENT].copy()
 
 def team_agg_toi(df, col):
+    # TOI-weighted mean of `col` per (season, team). Vectorized (sum(v*w)/sum(w))
+    # rather than groupby.apply — robust across pandas versions (pandas 3.0's
+    # apply returns a DataFrame for a sparse/single-group frame, breaking .rename).
     d = df.dropna(subset=[col,"team"]).copy()
-    d["w"] = d["toi_sec"]
-    return d.groupby(["season","team"]).apply(
-        lambda x: np.average(x[col], weights=x["w"])).rename(col).reset_index()
+    d["_wv"] = d[col] * d["toi_sec"]
+    g = d.groupby(["season","team"], as_index=False).agg(_num=("_wv","sum"),
+                                                         _den=("toi_sec","sum"))
+    g[col] = g["_num"] / g["_den"].replace(0, np.nan)
+    return g[["season","team",col]]
 
 def r2(x, y):
     mask = (~np.isnan(x)) & (~np.isnan(y))

@@ -213,7 +213,10 @@ log(f"Wrote per_player_qg_fa{_SUF}.csv ({len(ps_out):,} rows)")
 
 # ---- Per (team, season): TOI-weighted mean of player rates, 20+ GP eligibility ----
 pst_rates = pst.merge(ps[["player_id", "season"] + _pcols], on=["player_id", "season"], how="inner")
-elig = pst_rates[pst_rates.GP >= TEAM_GP_FLOOR].copy()
+# Live (in-progress) season uses a floor of 1 so team rows appear early; completed
+# seasons keep the 20-GP eligibility bar (published numbers unchanged).
+_team_floor = np.where(pst_rates["season"].astype(str) == "20262027", 1, TEAM_GP_FLOOR)
+elig = pst_rates[pst_rates.GP >= _team_floor].copy()
 
 
 def _tw_mean(grp, col):

@@ -44,8 +44,8 @@ POS_CSV = ROOT / "NFI/output/player_positions.csv"
 GAME_IDS = ROOT / "Data/game_ids.csv"
 
 ABBR = {"ARI":"UTA"}
-POOLED = {"20222023","20232024","20242025","20252026"}
-CURRENT = "20252026"
+POOLED = {"20222023","20232024","20242025","20252026","20262027"}
+CURRENT = "20262027"
 FEN = {"shot-on-goal","missed-shot","goal"}
 COR = FEN | {"blocked-shot"}
 def norm(a): return ABBR.get(a,a) if a else a

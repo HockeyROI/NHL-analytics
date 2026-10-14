@@ -33,7 +33,7 @@ POS_CSV = f"{ROOT}/NFI/output/player_positions.csv"
 GAME_CSV = f"{ROOT}/Data/game_ids.csv"
 OUT_DIR = f"{ROOT}/NFI/output"
 
-SEASONS = {"20212022", "20222023", "20232024", "20242025", "20252026"}
+SEASONS = {"20212022", "20222023", "20232024", "20242025", "20252026", "20262027"}
 INFL1 = 55  # MNFI/FNFI boundary
 BLUE  = 25
 MIN_TOI_MIN = 500.0  # minutes

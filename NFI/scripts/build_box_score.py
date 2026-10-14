@@ -27,7 +27,7 @@ import pandas as pd
 ROOT = Path(os.environ.get("HOCKEYROI_ROOT", "/Users/ashgarg/Documents/HockeyROI"))
 OUT = ROOT / "Data" / "box_score_skaters.csv"
 BASE = "https://api.nhle.com/stats/rest/en/skater"
-SEASONS = ["20202021", "20212022", "20222023", "20232024", "20242025", "20252026"]
+SEASONS = ["20202021", "20212022", "20222023", "20232024", "20242025", "20252026", "20262027"]
 GAME_TYPES = {"regular": 2, "playoff": 3}
 REPORTS = ["summary", "realtime", "penalties", "faceoffwins", "shootout"]
 HDRS = {"User-Agent": "Mozilla/5.0 (HockeyROI box-score pull)"}

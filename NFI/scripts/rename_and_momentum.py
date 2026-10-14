@@ -40,8 +40,8 @@ TEAM_METRICS = ROOT / "NFI/output/team_level_all_metrics.csv"
 
 ABBR = {"ARI":"UTA"}
 POOLED = {"20222023","20232024","20242025","20252026"}
-CURRENT = "20252026"
-SEASONS_ORDERED = ["20222023","20232024","20242025","20252026"]
+CURRENT = "20262027"
+SEASONS_ORDERED = ["20222023","20232024","20242025","20252026","20262027"]
 def norm(a): return ABBR.get(a,a) if a else a
 
 print("[0] loading ...")

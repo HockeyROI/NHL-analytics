@@ -89,7 +89,7 @@ PBP_CACHE = os.path.join(OUTDIR, "_pbp_5v5_scoring.csv")
 SCORING_DIR = os.path.join(DATA, "elites_scoring_by_season")   # committed, CI-portable
 OUT = os.path.join(OUTDIR, "tiers.csv")
 
-ALL_SEASONS = ["20202021", "20212022", "20222023", "20232024", "20242025", "20252026"]
+ALL_SEASONS = ["20202021", "20212022", "20222023", "20232024", "20242025", "20252026", "20262027"]
 TIER_SEASONS = ALL_SEASONS[2:]           # need two priors -> 2022-23 .. 2025-26
 
 FEN = {"shot-on-goal", "missed-shot", "goal"}

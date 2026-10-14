@@ -52,7 +52,7 @@ QG_DIR = f"{ROOT}/Quality_Games"
 OUT_DIR = f"{QG_DIR}/output"
 XG_CSV = f"{ROOT}/xG/output/shot_xg_per_event.csv"   # our own per-event xG
 
-HR_SEASONS_SET = {20222023, 20232024, 20242025, 20252026}
+HR_SEASONS_SET = {20222023, 20232024, 20242025, 20252026, 20262027}
 
 # Lifted from 03_onice_attribution_pillars.py lines 36-38
 INFL1 = 55   # MNFI/FNFI boundary
@@ -69,7 +69,7 @@ if _IS_PLAYOFF:
     # shots_tagged now carries playoff data through 2025-26 (see
     # NFI/scripts/tag_playoff_shots.py). The season filter takes whatever's
     # present, so this just needs to list the playoff seasons available.
-    HR_SEASONS_SET = {20222023, 20232024, 20242025, 20252026}
+    HR_SEASONS_SET = {20222023, 20232024, 20242025, 20252026, 20262027}
 
 
 def classify_zone(x, y):

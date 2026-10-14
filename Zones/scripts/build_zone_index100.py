@@ -31,7 +31,7 @@ from collections import defaultdict
 import compute_zone_variations as zv
 
 METRICS = [("OZI", "OZI"), ("DZI", "DZI"), ("NZI", "NZI"), ("TZI", "TNZI")]
-SEASONS = ["20222023", "20232024", "20242025", "20252026"]
+SEASONS = ["20222023", "20232024", "20242025", "20252026", "20262027"]
 OUT_DIR = zv.ZONES / "adjusted_rankings" / "zone_index100"
 
 
@@ -133,12 +133,13 @@ def main():
     print("[3/3] building + writing per-season and pooled indices ...")
     for season in SEASONS:
         label = {"20222023": "2022-23", "20232024": "2023-24",
-                 "20242025": "2024-25", "20252026": "2025-26"}[season]
+                 "20242025": "2024-25", "20252026": "2025-26",
+                 "20262027": "2026-27"}[season]
         bundle = zv.build_scenario_rows(player_bucket, player_season_gp,
                                         player_meta, {season})
         write_scope(label, bundle, player_meta)
     bundle = zv.build_scenario_rows(player_bucket, player_season_gp,
-                                    player_meta, set(SEASONS))
+                                    player_meta, {"20222023","20232024","20242025","20252026"})
     write_scope("pooled", bundle, player_meta)
     # 2-year pool (2024-25 + 2025-26) — mirrors the app's "2yr (2024–2026)" lens.
     bundle = zv.build_scenario_rows(player_bucket, player_season_gp,

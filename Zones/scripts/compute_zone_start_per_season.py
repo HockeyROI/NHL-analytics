@@ -30,7 +30,7 @@ PBP_DIR     = os.path.join(ZONES_DIR, "raw", "pbp")
 GAME_IDS    = os.path.join(PROJECT, "Data", "game_ids.csv")
 OUT_DIR     = os.path.join(ZONES_DIR, "output")
 
-SEASONS_POOL       = {"20222023", "20232024", "20242025", "20252026"}
+SEASONS_POOL       = {"20222023", "20232024", "20242025", "20252026", "20262027"}
 SITCODE_5V5        = "1551"
 BLUE_LINE_X        = 25
 FACEOFF_MATCH_SEC  = 2

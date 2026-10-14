@@ -17,7 +17,7 @@ GAME_IDS = os.path.join(PROJECT, "Data", "game_ids.csv")
 SHIFTS_DIR = os.path.join(ROOT, "raw", "shifts")
 PBP_DIR    = os.path.join(ROOT, "raw", "pbp")
 UA = {"User-Agent": "Mozilla/5.0 (NHL analytics research)"}
-SEASONS = {"20222023", "20232024", "20242025", "20252026"}
+SEASONS = {"20222023", "20232024", "20242025", "20252026", "20262027"}
 GAME_TYPES = {"regular", "playoff"}
 WORKERS = 6
 

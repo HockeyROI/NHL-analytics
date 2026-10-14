@@ -23,7 +23,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "NFI/output/fully_adjusted"
-CURRENT = "20252026"
+CURRENT = "20262027"
 MIN_POOLED_TOI = 2000
 MIN_CURRENT_TOI = 500
 SMALL_CURRENT_CUTOFF = 1000  # flag as small sample if < this

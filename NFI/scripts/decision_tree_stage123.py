@@ -51,7 +51,7 @@ OUT = ROOT / "NFI/output/zone_adjustment/complete_decision_tree"
 OUT.mkdir(parents=True, exist_ok=True)
 
 ABBR_MAP = {"ARI": "UTA"}
-POOLED_SEASONS = {"20222023", "20232024", "20242025", "20252026"}
+POOLED_SEASONS = {"20222023", "20232024", "20242025", "20252026", "20262027"}
 FLIP = {"O": "D", "D": "O", "N": "N"}
 FENWICK_TYPES = {"shot-on-goal", "missed-shot", "goal"}
 CORSI_TYPES = FENWICK_TYPES | {"blocked-shot"}

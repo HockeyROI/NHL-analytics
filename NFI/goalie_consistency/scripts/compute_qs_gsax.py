@@ -36,7 +36,7 @@ MIN_SHOTS_PER_GAME = 10
 MIN_GP_PER_SEASON = 25
 # Same 4-season window the "2022-2026" outputs have always covered (the shim
 # also carries 2020-21/2021-22, which we exclude to keep the pool unchanged).
-SEASONS = {20222023, 20232024, 20242025, 20252026}
+SEASONS = {20222023, 20232024, 20242025, 20252026, 20262027}
 
 # ---- BUILD PER-GAME GSAx (regular-season, 5v5 ES, all Fenwick) ----
 # One MP-schema frame for every season; goalie name comes from player_positions

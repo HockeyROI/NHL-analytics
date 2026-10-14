@@ -21,11 +21,11 @@ from pathlib import Path
 from statsmodels.stats.proportion import proportion_confint
 
 # ---- CONFIG ----
-SHOT_FILE  = Path("/Users/ashgarg/Documents/HockeyROI/Data/nhl_shot_events.v2.csv")
+SHOT_FILE  = Path("/Users/ashgarg/Documents/HockeyROI/Data/nhl_shot_events.csv")
 NAMES_FILE = Path("/Users/ashgarg/Documents/HockeyROI/NFI/output/player_positions.csv")
 OUT_FILE   = Path(__file__).parent.parent / "output" / "qnfs_per_season_2022-2026.csv"
 
-SEASONS = [20222023, 20232024, 20242025, 20252026]
+SEASONS = [20222023, 20232024, 20242025, 20252026, 20262027]
 MIN_NF_SHOTS_PER_GAME = 3
 QUALITY_THRESHOLD = 0.0
 MIN_GP_PER_SEASON = 10        # legacy (no longer used to drop rows)

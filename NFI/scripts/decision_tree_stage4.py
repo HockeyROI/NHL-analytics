@@ -48,7 +48,7 @@ TEAM_METRICS = ROOT / "NFI/output/team_level_all_metrics.csv"
 GAME_IDS = ROOT / "Data/game_ids.csv"
 
 ABBR_MAP = {"ARI": "UTA"}
-POOLED = {"20222023", "20232024", "20242025", "20252026"}
+POOLED = {"20222023", "20232024", "20242025", "20252026", "20262027"}
 FLIP = {"O":"D","D":"O","N":"N"}
 FEN  = {"shot-on-goal","missed-shot","goal"}
 COR  = FEN | {"blocked-shot"}
@@ -75,6 +75,11 @@ FACTOR_EFFECTIVE = {
 }
 TRADITIONAL_FACTOR = 0.035  # 3.5 pct-pts, applied to all metrics in traditional variant
 MIN_TOI_MIN = 200           # minimum ES TOI to include a player in a season
+# Live (in-progress) season uses a much lower floor so early-season players
+# appear from game 1 — completed seasons keep the 200-min floor, so their
+# published numbers are unchanged.
+LIVE_SEASON = "20262027"
+LIVE_MIN_TOI = 10
 
 def norm_team(a): return ABBR_MAP.get(a, a) if a else a
 def mmss(s):
@@ -221,7 +226,8 @@ for (pid, season), d in pp.items():
 ppdf = pd.DataFrame(rows)
 ppdf["pos"] = ppdf["player_id"].map(lambda p: pos_map.get(int(p), ""))
 ppdf["name"] = ppdf["player_id"].map(lambda p: name_map.get(int(p), ""))
-ppdf = ppdf[(ppdf["pos"].isin(["F","D"])) & (ppdf["toi_sec"]/60 >= MIN_TOI_MIN)]
+_floor = np.where(ppdf["season"].astype(str) == LIVE_SEASON, LIVE_MIN_TOI, MIN_TOI_MIN)
+ppdf = ppdf[(ppdf["pos"].isin(["F","D"])) & (ppdf["toi_sec"]/60 >= _floor)]
 ppdf["fen_pct"] = ppdf["cf_fen"] / (ppdf["cf_fen"] + ppdf["ca_fen"]).replace(0,np.nan)
 ppdf["cor_pct"] = ppdf["cf_cor"] / (ppdf["cf_cor"] + ppdf["ca_cor"]).replace(0,np.nan)
 ppdf["cm_pct"]  = ppdf["cf_cm"]  / (ppdf["cf_cm"]  + ppdf["ca_cm"]).replace(0,np.nan)
@@ -371,7 +377,9 @@ traditional_ratings = {} # (metric, season) -> dict
 FWD_ONLY = {"V1b", "V3"}
 
 def forward_mask_for_season(season, pids_s):
-    return np.array([pos_map.get(p) == "F" for p in pids_s])
+    # dtype=bool so an empty pids_s (e.g. a sparse new season) still yields a
+    # boolean array — otherwise np.array([]) is float64 and ~mask raises.
+    return np.array([pos_map.get(p) == "F" for p in pids_s], dtype=bool)
 
 for metric in ["V5","Fenwick","Corsi","V1b"]:
     for season in sorted(POOLED):

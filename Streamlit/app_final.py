@@ -1169,8 +1169,9 @@ def render_methodology() -> None:
         f"<p style='color:{PALETTE['text_secondary']}; font-size:0.85rem; max-width:62rem;'>"
         "Cohorts differ by metric by design — qualifying floors vary (e.g. pooled goalie NFI-GSAx "
         "requires ≥300 net-front shots; QNFG% requires ≥25 games in a season), so a player or "
-        "goalie may appear in one table and not another. Data is current through the 2025-26 season; "
-        "daily auto-updates are paused, with refreshes moving to roughly every 10 games.</p>",
+        "goalie may appear in one table and not another. The live 2026-27 season updates daily — "
+        "early-season samples are small, so rate metrics are noisy and small-sample players are "
+        "flagged; Zone Impact, Elite Rating and EDGE build up as the season progresses.</p>",
         unsafe_allow_html=True,
     )
 
@@ -1179,6 +1180,7 @@ def render_methodology() -> None:
 # Players tab — NFI + Quality Games (+ Zone Impact in the Pooled view)
 # ---------------------------------------------------------------------------
 SEASON_KEY = {
+    "2026-27": "20262027",
     "2025-26": "20252026",
     "2024-25": "20242025",
     "2023-24": "20232024",
@@ -2791,9 +2793,10 @@ def _team_qg_fa(scope_key: str) -> pd.DataFrame:
 
 
 # --- In-tab profiles (Gate F): per-season trends ----------------------------
-PROFILE_SEASONS = ["20222023", "20232024", "20242025", "20252026"]  # 4yr, excl 2021-22
+PROFILE_SEASONS = ["20222023", "20232024", "20242025", "20252026", "20262027"]  # 4yr, excl 2021-22
 SEASON_DISPLAY = {"20222023": "2022-23", "20232024": "2023-24",
-                  "20242025": "2024-25", "20252026": "2025-26"}
+                  "20242025": "2024-25", "20252026": "2025-26",
+                  "20262027": "2026-27"}
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -4559,7 +4562,7 @@ def _render_shot_chart(kind: str, ident, name: str, team: str | None,
 
 
 # Scope options for the shot-chart views — 2yr average first (the default).
-_SHOT_SCOPE_OPTS = ["2yr avg (24-26)", "2025-26", "2024-25", "2023-24",
+_SHOT_SCOPE_OPTS = ["2yr avg (24-26)", "2026-27", "2025-26", "2024-25", "2023-24",
                     "2022-23", "4yr (2022-2026)"]
 
 
@@ -5985,7 +5988,10 @@ def render_players() -> None:
     # Default position for the Min ES TOI slider. The slider itself IS the
     # ranking floor — players below its current value are unranked "(UR)";
     # move it down to bring more players into the ranked cohort.
-    rank_floor = 300 if playoffs else (2000 if is_pooled else 500)
+    # Live (in-progress) season: use a near-zero default floor so early-season
+    # players show from game 1 (they can't clear a 500-min / 25-GP bar yet).
+    _is_live = (not playoffs) and SEASON_KEY.get(season_label) == "20262027"
+    rank_floor = 10 if _is_live else (300 if playoffs else (2000 if is_pooled else 500))
     c1, c2, c3 = st.columns([1.5, 1.0, 1.3])
     with c1:
         player_sel = st.selectbox(
@@ -6039,7 +6045,8 @@ def render_players() -> None:
             min_toi = st.slider("Min ES TOI (min)", 0, 1500, rank_floor, 25,
                                 key="players_toi_playoffs")
         else:
-            toi_key = "players_toi_pooled" if is_pooled else "players_toi_season"
+            toi_key = ("players_toi_live" if _is_live else
+                       ("players_toi_pooled" if is_pooled else "players_toi_season"))
             min_toi = st.slider("Min ES TOI (min)", 0, 7500, rank_floor, 50, key=toi_key)
     with gcol:
         # Min GP — a SEPARATE, adjustable floor from Min ES TOI, so a player who's
@@ -6048,8 +6055,9 @@ def render_players() -> None:
         # ranking eligibility (still shows "(UR)" below that), only which rows show.
         _is_2yr_scope = (not playoffs) and SEASON_KEY.get(season_label) == "pooled_2yr"
         _gpmax = 30 if playoffs else (350 if is_pooled else (170 if _is_2yr_scope else 82))
-        _gpkey = (f"players_mingp_{'playoffs' if playoffs else ('pooled' if is_pooled else ('2yr' if _is_2yr_scope else 'season'))}")
-        min_gp = st.slider("Min GP", 0, _gpmax, min(25, _gpmax), 1, key=_gpkey)
+        _gpkey = ("players_mingp_live" if _is_live else
+                  f"players_mingp_{'playoffs' if playoffs else ('pooled' if is_pooled else ('2yr' if _is_2yr_scope else 'season'))}")
+        min_gp = st.slider("Min GP", 0, _gpmax, (1 if _is_live else min(25, _gpmax)), 1, key=_gpkey)
 
     # Drill-in (via the search box OR clicking a leaderboard row): show one
     # player's detail (trend + charts) here. Clear/deselect to return to the list.
@@ -7444,7 +7452,7 @@ def _render_team_landscape(scope_key: str, season_label: str,
 # ---------------------------------------------------------------------------
 # Goalies tab — NFI-GSAx + QNFG% + QG (union of qualified cohorts)
 # ---------------------------------------------------------------------------
-GOALIE_SEASON_INT = {"2025-26": 20252026, "2024-25": 20242025,
+GOALIE_SEASON_INT = {"2026-27": 20262027, "2025-26": 20252026, "2024-25": 20242025,
                      "2023-24": 20232024, "2022-23": 20222023}
 _QC = REPO_ROOT / "NFI" / "goalie_consistency" / "output"
 
@@ -8293,7 +8301,11 @@ def render_goalies() -> None:
     with c2:
         # Min Shots Faced FILTERS the list (hides small-sample goalies by default);
         # ranking is gated separately by each metric's qualified flag.
-        if playoffs:
+        # Live (in-progress) season: near-zero defaults so early-season goalies show.
+        _is_live = (not playoffs) and SEASON_KEY.get(season_label) == "20262027"
+        if _is_live:
+            _shdef, _shkey, _shmax = 10, "goalies_minshots_live", 3000
+        elif playoffs:
             _shdef, _shkey, _shmax = 50, "goalies_minshots_playoffs", 1500
         elif is_pooled:
             _shdef, _shkey, _shmax = 500, "goalies_minshots_pooled", 3000
@@ -8309,8 +8321,9 @@ def render_goalies() -> None:
         # whichever of their columns don't clear that metric's own floor) — it
         # does not change what counts as "qualified" for ranking.
         _gpmax = 30 if playoffs else (100 if (is_pooled or is_2yr) else 82)
-        _gpkey = f"goalies_mingp_{'playoffs' if playoffs else ('pooled' if is_pooled else ('2yr' if is_2yr else 'season'))}"
-        min_gp = st.slider("Min GP", 0, _gpmax, min(25, _gpmax), 1, key=_gpkey)
+        _gpkey = ("goalies_mingp_live" if _is_live else
+                  f"goalies_mingp_{'playoffs' if playoffs else ('pooled' if is_pooled else ('2yr' if is_2yr else 'season'))}")
+        min_gp = st.slider("Min GP", 0, _gpmax, (1 if _is_live else min(25, _gpmax)), 1, key=_gpkey)
     with c4:
         _gteam_opts = ["All"] + sorted(base["Team"].dropna().unique().tolist())
         # Picking a team exits any drill-in and clears the goalie search (mutually
