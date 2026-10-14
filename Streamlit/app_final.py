@@ -4668,11 +4668,25 @@ def load_game_meta() -> pd.DataFrame:
 # CCG, Box, Quality Games) have no per-game breakdown here.
 _GAME_FAMILY_COLS = {
     "Box Score": ["G", "A", "P"],      # 5v5 goals + primary assists per game
+    "Quality Games": ["NFI-QG", "xG-QG"],   # per-game quality flag (✓/✗/—)
     "Net Front Impact": ["NFI%", "NFI±"],
     "xG": ["xGF", "xGA", "xG%"],
     "Advanced Stats": ["CF%", "CF", "CA"],
     "CCG": ["CCG"],
 }
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_qg_position_medians() -> dict:
+    """Position-median QG thresholds {(pos, 'xG'|'NFI'): median 0-1} from
+    Quality_Games (02_quality_game_aggregation). A game is a quality game on a
+    metric if its 5v5 game% >= the position median (and it clears the TOI/attempts
+    floor)."""
+    fp = REPO_ROOT / "Quality_Games" / "output" / "position_medians.csv"
+    if not fp.exists():
+        return {}
+    d = pd.read_csv(fp)
+    return {(r["position"], r["metric"]): float(r["median"]) for _, r in d.iterrows()}
 _GAME_COL_FMT = {"TOI": "{:.1f}", "CF%": "{:.1f}", "CF": "{:.0f}", "CA": "{:.0f}",
                  "xGF": "{:.2f}", "xGA": "{:.2f}", "xG%": "{:.1f}",
                  "NFI%": "{:.1f}", "NFI±": "{:+.0f}",
@@ -4747,6 +4761,20 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     gp = gp.merge(_per_game_ccg(pid, season), on="game_id", how="left")
     for c in ("G", "A", "P", "CCG"):
         gp[c] = gp[c].fillna(0) if c in gp.columns else 0
+    # Per-game Quality-Game flags: a game is quality on a metric if its 5v5 game%
+    # clears the position median — same definition as QG%, just not yet aggregated.
+    # Games below the QG floor (TOI < 8 min OR < 5 attempts) can't qualify → "—".
+    _med = load_qg_position_medians()
+    _pos = str(gp["position"].iloc[0]) if "position" in gp.columns and len(gp) else "F"
+    _qualn = (gp["TOI_on_sec"] >= 480) & ((gp["attempts_for"] + gp["attempts_ag"]) >= 5)
+
+    def _qg_flag(metric_pct, key):
+        thr = _med.get((_pos, key))
+        if thr is None:
+            return pd.Series(["—"] * len(gp), index=gp.index)
+        return np.where(~_qualn, "—", np.where(metric_pct >= thr * 100, "✓", "✗"))
+    gp["NFI-QG"] = _qg_flag(gp["NFI%"], "NFI")
+    gp["xG-QG"] = _qg_flag(gp["xG%"], "xG")
 
     # Columns follow the selected metric families; default to NFI+xG+Corsi.
     _fams = list(families) if families else []
