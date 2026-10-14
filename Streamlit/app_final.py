@@ -4644,6 +4644,91 @@ def _render_team_shot_grid(team: str, frame: pd.DataFrame) -> None:
         st.image(_buf.getvalue(), width=SHOT_MAP_WIDTH_PX)
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_per_player_game() -> pd.DataFrame:
+    """Per-player, per-game 5v5 on-ice counts (Quality_Games/01_build_per_player_game).
+    season, game_id, player_id, team_abbrev, position, TOI_on_sec, attempts_for/ag,
+    xG_for/ag, NFI_for/ag — the basis for the game-by-game log."""
+    fp = REPO_ROOT / "Quality_Games" / "output" / "per_player_game.csv"
+    return pd.read_csv(fp) if fp.exists() else pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_game_meta() -> pd.DataFrame:
+    """game_id → date + home/away team, for labeling the game log."""
+    fp = REPO_ROOT / "Data" / "game_ids.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    return pd.read_csv(fp, usecols=["game_id", "game_date", "home_abbrev", "away_abbrev"])
+
+
+def _render_game_log(pid: int, name: str, season_label: str) -> None:
+    """MoneyPuck-style per-game log for one player: each game's 5v5 on-ice rates
+    (CF%, xG for/against, xG%, NFI±) newest-first, plus a cumulative trajectory
+    chart showing the season rate build up game by game. No minutes floor — works
+    from game 1, so it's the natural view for the live season."""
+    import altair as alt
+    g = load_per_player_game()
+    if g.empty:
+        st.info("Per-game data not available."); return
+    gp = g[g["player_id"] == pid].copy()
+    if gp.empty:
+        st.info(f"No per-game data for {name}."); return
+    # Single-season view: use the global single-season pick, else the player's
+    # most recent season with games (pooled / 2yr / 4yr picks).
+    _key = SEASON_KEY.get(season_label)
+    season = int(_key) if (_key and str(_key).isdigit()) else int(gp["season"].max())
+    gp = gp[gp["season"] == season].copy()
+    _lbl = SEASON_DISPLAY.get(str(season), str(season))
+    if gp.empty:
+        st.info(f"No per-game data for {name} in {_lbl}."); return
+    meta = load_game_meta()
+    if not meta.empty:
+        gp = gp.merge(meta, on="game_id", how="left")
+    else:
+        gp["game_date"] = gp["game_id"]; gp["home_abbrev"] = ""; gp["away_abbrev"] = ""
+    gp["home"] = gp["team_abbrev"] == gp["home_abbrev"]
+    gp["opp"] = np.where(gp["home"], gp["away_abbrev"], gp["home_abbrev"])
+    gp = gp.sort_values(["game_date", "game_id"]).reset_index(drop=True)
+
+    gp["TOI"] = gp["TOI_on_sec"] / 60.0
+    gp["CF%"] = 100 * gp["attempts_for"] / (gp["attempts_for"] + gp["attempts_ag"]).replace(0, np.nan)
+    gp["xG%"] = 100 * gp["xG_for"] / (gp["xG_for"] + gp["xG_ag"]).replace(0, np.nan)
+    gp["NFI%"] = 100 * gp["NFI_for"] / (gp["NFI_for"] + gp["NFI_ag"]).replace(0, np.nan)
+    for c in ("attempts_for", "attempts_ag", "xG_for", "xG_ag", "NFI_for", "NFI_ag"):
+        gp[f"_c_{c}"] = gp[c].cumsum()
+    gp["cumCF%"] = 100 * gp["_c_attempts_for"] / (gp["_c_attempts_for"] + gp["_c_attempts_ag"]).replace(0, np.nan)
+    gp["cumxG%"] = 100 * gp["_c_xG_for"] / (gp["_c_xG_for"] + gp["_c_xG_ag"]).replace(0, np.nan)
+    gp["cumNFI%"] = 100 * gp["_c_NFI_for"] / (gp["_c_NFI_for"] + gp["_c_NFI_ag"]).replace(0, np.nan)
+    gp["g#"] = range(1, len(gp) + 1)
+
+    st.markdown(f"**{name} — game log, {_lbl}**  ·  {len(gp)} GP · season so far: "
+                f"CF% {gp['cumCF%'].iloc[-1]:.1f} · xG% {gp['cumxG%'].iloc[-1]:.1f} · "
+                f"NFI% {gp['cumNFI%'].iloc[-1]:.1f} · {gp['TOI'].sum():.0f} ES min")
+    st.caption("5v5 on-ice rates per game, newest first. The line chart shows the running "
+               "(cumulative) season rate building up game by game — wild early, settling as GP grow.")
+    _long = gp[["g#", "cumCF%", "cumxG%", "cumNFI%"]].melt("g#", var_name="Metric", value_name="value")
+    _long["Metric"] = _long["Metric"].map({"cumCF%": "CF%", "cumxG%": "xG%", "cumNFI%": "NFI%"})
+    _order = ["NFI%", "xG%", "CF%"]
+    ch = alt.Chart(_long).mark_line(point=True, strokeWidth=2.5).encode(
+        x=alt.X("g#:Q", title="Game #", axis=alt.Axis(tickMinStep=1)),
+        y=alt.Y("value:Q", title="Running %", scale=alt.Scale(domain=_tight_domain(_long["value"]))),
+        color=alt.Color("Metric:N", sort=_order, legend=alt.Legend(orient="bottom", title=None),
+                        scale=alt.Scale(domain=_order,
+                                        range=[_CHART_COLORS.get(m, _CHART_SECOND) for m in _order])),
+        tooltip=["g#:Q", "Metric:N", alt.Tooltip("value:Q", format=".1f")]).properties(height=280)
+    _show_chart(ch, dl_name=f"GameLog-{name.replace(' ', '-')}-{_lbl}")
+
+    disp = gp.sort_values(["game_date", "game_id"], ascending=False).copy()
+    disp["Game"] = disp.apply(lambda r: f"{'vs' if r['home'] else '@'} {r['opp']}", axis=1)
+    disp["Date"] = disp["game_date"].astype(str)
+    out = disp[["Date", "Game", "TOI", "CF%", "xG_for", "xG_ag", "xG%", "NFI%"]].rename(
+        columns={"xG_for": "xGF", "xG_ag": "xGA"})
+    _fmt = {"TOI": "{:.1f}", "CF%": "{:.1f}", "xGF": "{:.2f}", "xGA": "{:.2f}",
+            "xG%": "{:.1f}", "NFI%": "{:.1f}"}
+    _show_df(out.style.format(_fmt), width="stretch", hide_index=True)
+
+
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                            team=None, season_label=None) -> None:
     """Per-season trend table + auto-showing line charts for one player.
@@ -4706,8 +4791,12 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             "font-weight:600;}</style>",
             unsafe_allow_html=True)
         view_mode = st.radio(
-            "View", ["Show current year data", "Year over year", "Shot map"],
+            "View", ["Show current year data", "Year over year", "Game log", "Shot map"],
             horizontal=True, key="players_view_mode", label_visibility="collapsed")
+
+    if view_mode == "Game log":
+        _gl_nm = (_highlight_name or f"Player {pid}")
+        _render_game_log(int(pid), _gl_nm, season_label)
 
     if view_mode == "Shot map":
         _pteam = (str(_prow_any["team"].iloc[0])
