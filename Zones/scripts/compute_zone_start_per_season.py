@@ -140,6 +140,7 @@ def main():
     team_abbrev = {}
     # keyed by (season, player_id) — the whole point of this script
     zone = defaultdict(blank)
+    zone_pg = defaultdict(lambda: {'oz': 0, 'dz': 0, 'nz': 0})  # (season,pid,gid) -> per-game
 
     t0 = time.time()
     n_processed = 0
@@ -218,6 +219,7 @@ def main():
 
             shift_prefix = {"OZ": "oz", "DZ": "dz", "NZ": "nz"}[fo_zone_player]
             zone[(season, pid)][f"{shift_prefix}_fo_shifts"] += 1
+            zone_pg[(season, pid, gid)][shift_prefix] += 1
 
         n_processed += 1
         if gi % 1000 == 0:
@@ -253,6 +255,24 @@ def main():
         w.writeheader()
         w.writerows(rows)
     print(f"[zone-per-season] wrote {out_path} ({len(rows)} player-season rows)")
+
+    # Per-game O/D/N faceoff-start shares (for the player game log). The RECENTERED
+    # OZI/DZI/NZI indices are season cohort constructs and are NOT emitted per game.
+    pg_rows = []
+    for (season, pid, gid), c in zone_pg.items():
+        tot = c["oz"] + c["dz"] + c["nz"]
+        if not tot:
+            continue
+        pg_rows.append({"season": season, "player_id": pid, "game_id": gid,
+                        "OZ Start%": round(c["oz"] / tot * 100, 1),
+                        "DZ Start%": round(c["dz"] / tot * 100, 1),
+                        "NZ Start%": round(c["nz"] / tot * 100, 1)})
+    pg_path = os.path.join(OUT_DIR, "zone_start_per_game.csv")
+    with open(pg_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["season", "player_id", "game_id",
+                                          "OZ Start%", "DZ Start%", "NZ Start%"])
+        w.writeheader(); w.writerows(pg_rows)
+    print(f"[zone-per-season] wrote {pg_path} ({len(pg_rows)} player-game rows)")
 
 
 if __name__ == "__main__":

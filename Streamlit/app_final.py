@@ -4674,7 +4674,18 @@ _GAME_FAMILY_COLS = {
     "xG": ["xGF", "xGA", "xG%"],
     "Advanced Stats": ["CF%", "CF", "CA"],
     "CCG": ["CCG"],
+    # Zone: only the raw per-game faceoff-start shares (the recentered OZI/DZI/
+    # NZI/TZI indices are season cohort constructs, so they stay season-only).
+    "Zone Impact": ["OZ Start%", "DZ Start%", "NZ Start%"],
 }
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_zone_start_per_game() -> pd.DataFrame:
+    """Per-(player, game) O/D/N faceoff-start shares (compute_zone_start_per_season
+    → zone_start_per_game.csv)."""
+    fp = ZONES / "output" / "zone_start_per_game.csv"
+    return pd.read_csv(fp) if fp.exists() else pd.DataFrame()
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -4710,7 +4721,8 @@ _GAME_COL_FMT = {"TOI": "{:.1f}", "CF%": "{:.1f}", "CF": "{:.0f}", "CA": "{:.0f}
                  "xGF": "{:.2f}", "xGA": "{:.2f}", "xG%": "{:.1f}",
                  "NFI%": "{:.1f}", "NFI±": "{:+.0f}",
                  "G": "{:.0f}", "A": "{:.0f}", "P": "{:.0f}", "CCG": "{:.0f}",
-                 "ixG": "{:.2f}"}
+                 "ixG": "{:.2f}", "OZ Start%": "{:.1f}", "DZ Start%": "{:.1f}",
+                 "NZ Start%": "{:.1f}"}
 
 
 def _per_game_scoring(pid: int, season: int) -> pd.DataFrame:
@@ -4781,10 +4793,18 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     gp = gp.merge(_per_game_ccg(pid, season), on="game_id", how="left")
     _ixg = load_per_game_ixg(season)
     gp = gp.merge(_ixg[_ixg["player_id"] == pid][["game_id", "ixG"]], on="game_id", how="left")
+    _zs = load_zone_start_per_game()
+    if not _zs.empty:
+        _zs = _zs[(_zs["player_id"] == pid) & (_zs["season"] == season)]
+        gp = gp.merge(_zs[["game_id", "OZ Start%", "DZ Start%", "NZ Start%"]],
+                      on="game_id", how="left")
     for c in ("G", "A", "P", "CCG"):
         gp[c] = gp[c].fillna(0) if c in gp.columns else 0
     if "ixG" not in gp.columns:
         gp["ixG"] = np.nan
+    for c in ("OZ Start%", "DZ Start%", "NZ Start%"):
+        if c not in gp.columns:
+            gp[c] = np.nan
     # Per-game Quality-Game flags: a game is quality on a metric if its 5v5 game%
     # clears the position median — same definition as QG%, just not yet aggregated.
     # Games below the QG floor (TOI < 8 min OR < 5 attempts) can't qualify → "—".
@@ -4820,7 +4840,7 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
             "family (tap families above to change the columns). G/A/P are 5v5.")
     if _no_pg:
         _cap += (f"  ·  No per-game breakdown for: {', '.join(_no_pg)} "
-                 "(season constructs — see the season views).")
+                 "(EDGE is published by the NHL as season totals only — no per-game log).")
     st.caption(_cap)
     out = gp[cols]
     _show_df(out.style.format({k: v for k, v in _GAME_COL_FMT.items() if k in cols}),
