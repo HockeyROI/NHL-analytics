@@ -4669,11 +4669,30 @@ def load_game_meta() -> pd.DataFrame:
 _GAME_FAMILY_COLS = {
     "Box Score": ["G", "A", "P"],      # 5v5 goals + primary assists per game
     "Quality Games": ["NFI-QG", "xG-QG"],   # per-game quality flag (✓/✗/—)
+    "Player Ratings": ["ixG"],          # the per-game ixG ingredient of the rating
     "Net Front Impact": ["NFI%", "NFI±"],
     "xG": ["xGF", "xGA", "xG%"],
     "Advanced Stats": ["CF%", "CF", "CA"],
     "CCG": ["CCG"],
 }
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_per_game_ixg(season: int) -> pd.DataFrame:
+    """Per-(player, game) 5v5 individual xG — the player's own shots' xG summed.
+    This is the ixG ingredient of the Elite Rating, shown per game (the rating
+    INDEX itself is a whole-season percentile rank, so it isn't shown per game)."""
+    fp = REPO_ROOT / "Data" / "shot_events_by_season" / f"{season}.parquet"
+    xfp = REPO_ROOT / "NFI" / "output" / "shot_xg_per_event.csv"
+    if not fp.exists() or not xfp.exists():
+        return pd.DataFrame(columns=["player_id", "game_id", "ixG"])
+    sp = pd.read_parquet(fp, columns=["game_id", "event_id", "situation_code",
+                                      "shooter_player_id"])
+    m = sp.merge(pd.read_csv(xfp), on=["game_id", "event_id"], how="left")
+    sc = m["situation_code"].astype(str).str.zfill(4)
+    m = m[(sc.str[1] == "5") & (sc.str[2] == "5") & (sc.str[0] != "0") & (sc.str[3] != "0")]
+    out = m.groupby(["shooter_player_id", "game_id"])["xg"].sum().reset_index()
+    return out.rename(columns={"shooter_player_id": "player_id", "xg": "ixG"})
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -4690,7 +4709,8 @@ def load_qg_position_medians() -> dict:
 _GAME_COL_FMT = {"TOI": "{:.1f}", "CF%": "{:.1f}", "CF": "{:.0f}", "CA": "{:.0f}",
                  "xGF": "{:.2f}", "xGA": "{:.2f}", "xG%": "{:.1f}",
                  "NFI%": "{:.1f}", "NFI±": "{:+.0f}",
-                 "G": "{:.0f}", "A": "{:.0f}", "P": "{:.0f}", "CCG": "{:.0f}"}
+                 "G": "{:.0f}", "A": "{:.0f}", "P": "{:.0f}", "CCG": "{:.0f}",
+                 "ixG": "{:.2f}"}
 
 
 def _per_game_scoring(pid: int, season: int) -> pd.DataFrame:
@@ -4759,8 +4779,12 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     # Box score (5v5 G/A/P) + CCG per game, merged in and zero-filled.
     gp = gp.merge(_per_game_scoring(pid, season), on="game_id", how="left")
     gp = gp.merge(_per_game_ccg(pid, season), on="game_id", how="left")
+    _ixg = load_per_game_ixg(season)
+    gp = gp.merge(_ixg[_ixg["player_id"] == pid][["game_id", "ixG"]], on="game_id", how="left")
     for c in ("G", "A", "P", "CCG"):
         gp[c] = gp[c].fillna(0) if c in gp.columns else 0
+    if "ixG" not in gp.columns:
+        gp["ixG"] = np.nan
     # Per-game Quality-Game flags: a game is quality on a metric if its 5v5 game%
     # clears the position median — same definition as QG%, just not yet aggregated.
     # Games below the QG floor (TOI < 8 min OR < 5 attempts) can't qualify → "—".
