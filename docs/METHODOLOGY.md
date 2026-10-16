@@ -405,6 +405,8 @@ Zone Impact is a player-evaluation framework measuring how a player's on-ice dep
 - **NZI — Neutral Zone Impact.** Share of offensive-zone time on shifts that begin with a neutral-zone faceoff. Captures transition play.
 - **TZI — Transitional Zone Impact.** The neutral-zone transition *split*: offensive-zone time **minus** defensive-zone time on shifts that begin with a neutral-zone faceoff. Reads how a player tilts play out of the neutral zone (positive = pushes toward the O-zone, negative = gets pushed back). Internally this is the metric previously labelled TNZI.
 
+> **Note (2026-10): TZI is superseded for player rankings by ITI.** Player zone-impact rankings now use [ITI (Ice Tilt Impact)](#rapm-and-iti-ice-tilt-impact), which measures a player's own effect on 5v5 zone time across all his stints while controlling for teammates, opponents, zone starts, score and home ice. TZI is retained as a **post-faceoff diagnostic** (what happens on shifts that start with a neutral-zone faceoff). The TZI text below is unchanged and still describes how TZI is computed.
+
 Zone Impact metrics are **zone-time share** measures, not shot-differential. The earlier description in this document as "Fenwick-based shot differential" was inaccurate — corrected May 2026 to match what the code computes.
 
 ### The 0–100 index (50 = average)
@@ -458,6 +460,200 @@ Only **OZI** has a working linemate-adjusted variant (`OZI_L`). Linemate adjustm
 Added 2026-07: a per-player faceoff-**start**-zone breakdown — the plain share of a player's faceoff-started 5v5 shifts that began in the defensive / neutral / offensive zone (`DZ Start%` / `NZ Start%` / `OZ Start%`). Same play-by-play data and same faceoff-started-shift basis as DZI/NZI/OZI, shown alongside them on the Player List table and in a companion scatter chart (D-zone starts vs O-zone starts, one point per player). This is descriptive only — it does not feed into, adjust, or replace DZI/NZI/OZI. Source: `Zones/output/zone_time_raw.csv`, pooled across all regular seasons (no per-season or playoff breakdown exists for this specific cut yet).
 
 ---
+
+## RAPM and ITI (Ice Tilt Impact)
+
+Added 2026-10. Regularised adjusted plus-minus (RAPM) for 5v5 and special-teams targets, and ITI, the RAPM-based player zone-time metric that replaces TZI for player rankings. Code: `Zones/2026-09/rapm/` (engine and targets) and `Zones/2026-09/iti/` (ITI). Section numbers below are local to this section.
+
+### 1. Purpose
+
+Regularised adjusted plus-minus (RAPM) estimates each skater's on-ice effect on a target rate while holding constant who he played with, who he played against, and how he was deployed. RAPM is a **second number beside** each raw metric. The raw metrics themselves are unchanged.
+
+### 2. Data sources
+
+| Item | Source |
+|---|---|
+| Seasons | 2023-24, 2024-25, 2025-26 regular season, pooled (1,312 games each) |
+| Shift charts | NHL API `api.nhle.com/stats/rest/en/shiftcharts`, cached as JSON per game; 6 games re-fetched, 0 failures |
+| Play-by-play | NHL API play-by-play, cached (`Zones/raw/pbp/`) |
+| Shot events | `Data/shot_events_by_season/*.parquet` (attacking-normalised coordinates) |
+| xG, special teams | **HockeyROI's own xG** (`xG/output/shot_xg_per_event.csv`, from `xG/build_xg.py`), joined on (game, event); 100% of special-teams Fenwick events matched. The earlier MoneyPuck-xG special-teams run (`special_teams/`) is **superseded** |
+| xG, public-xG checks | MoneyPuck shot-level `xGoal`, used **only** in the NFI G−xG 5v5 target and the public-xG comparison in the HD map value gap analysis. Joined on (game, game-second, shooter); 99.2% of NHL Fenwick events match |
+| Rebound flag | HD map value gap analysis: MoneyPuck `shotRebound`. Own-xG check: HockeyROI's own definition from `build_xg.py` (previous play-by-play event is a shot attempt within 3 s) |
+| Tracking validation | NHL EDGE skater zone time (`Edge/output/edge_skater_stats.csv`), read-only |
+| Published zone scores | `Zones/zone_variations/*_V1_*_pooled.csv` (0–10 score, 2022-26) and `Zones/adjusted_rankings/zone_index100/{season}_*.csv` (Streamlit 0–100 index, per season) |
+| PP Rating | `SpecialTeams/Output/pp_rating.csv` (no player ID; matched on name + F/D) |
+
+### 3. Stints
+
+- **5v5 stint:** a maximal run of time within a period with the same five skaters and one goalie on each side, built from the shift charts. Stints are also split at goals so score state is constant within each one. Faceoffs don't split a stint.
+  - Recorded per stint: game, period, start, end, duration, the 5 + 5 skater IDs, both goalies, score state from the home team's view (capped at ±2), and start type (OZ, DZ or NZ faceoff at the stint's first second, else on the fly).
+  - Result: 1,341,830 stints. Stint TOI is within 0.3–0.5% of league 5v5 TOI in every season.
+- **Special-teams stint:** the same builder restricted to 5v4 and 4v5 with both goalies in. Each stint is split at 5s and 30s after kill start, so the penalty-clock bucket is constant.
+  - Kill start follows `pk_situation_adjusted.py`: the first moment the killing team has 3–4 skaters against 5. A 5v3 → 5v4 step continues the same kill.
+  - 97.7% of stints sit inside a play-by-play kill run; the rest use the start of the shift-chart power-play run.
+  - TOI is 35,678 min against a league total of 34,788 min (+2.6%).
+- **Event-to-stint rule:** a stint covers (start, end], so an event at second t belongs to the stint that **ends** at t.
+  - This is the on-ice rule validated in the July 2026 NFI boundary audit.
+  - The other rule, [start, end), credited the scorer's own stint for only 24% of 5v5 goals and let power-play goals leak into 5v5 stints.
+  - Under (start, end], stint goals match league 5v5 goals exactly, and 0.14–0.20% of 5v5-coded events are left unmatched.
+
+### 4. Design matrix
+
+There are two rows per stint, one for each team attacking. For the attacking team, a row has:
+
+- **Player columns:** +1 in the **offence** column of each of its skaters, and +1 in the **defence** column of each opposing skater.
+- **Controls, from the attacking team's view:**
+  - start type: OZ, DZ or NZ, with on-the-fly as the base
+  - score state: −2, −1, +1 or +2, with tied as the base
+  - home
+  - penalty-clock bucket (special teams only): 5–30s or 30s+, with 0–5s as the base
+
+The matrix is sparse: 2.68M rows × 2,400 columns for 5v5, covering 1,196 skaters. Every skater stays in the fit; reporting thresholds apply only to output. A defence coefficient is the player's effect on the **opponent's** rate, so lower is better.
+
+**Targets.** The engine doesn't depend on the target. Each target returns the attacking team's quantity and exposure per stint row; the row rate is quantity ÷ exposure, and the row weight is the exposure.
+
+| Target | Quantity | Exposure |
+|---|---|---|
+| HD Fenwick | Fenwick in NST home plate (x 69–85 with \|y\| ≤ 22, or x 85–89 with \|y\| ≤ 18) | stint seconds |
+| NFI zone Fenwick | Fenwick in CNFI ∪ MNFI (the Streamlit NFI zone) | stint seconds |
+| NFI zone G − xG | Σ(goal − MoneyPuck xG) over NFI-zone Fenwick | stint seconds |
+| On-ice cG | Chaos Created Goals logic (`build_ccg_by_season.py`), credited to the stint of the **originating** shot | stint seconds |
+| TZI original | Offensive-zone seconds in the TZI context walk (5v5 NZ-faceoff contexts, V1 events including the faceoff anchor, last-event interpolation) | context seconds in the stint |
+| TZI all-stints (`tzi_allstints/`, formerly "TZI v2") | The same walk, with contexts opened at every 5v5 faceoff (OZ, DZ and NZ) | zone-assigned seconds |
+| NZ seconds (`nzi_allstints/`) | Neutral-zone seconds in the all-stints walk. **Symmetric** model: one row per stint, one column per skater (all 10 get +1); controls are end-zone/NZ faceoff start and \|score\| bins | zone-assigned seconds |
+| **ITI** (`Zones/2026-09/iti/`) | Own OZ seconds in the all-stints walk, **faceoff anchor kept**. Numerically identical to TZI all-stints (section 9) | zone-assigned seconds |
+| PP offence / PK defence | PP team xG, **own xG** (MoneyPuck version superseded) | stint-piece seconds |
+| Shorthanded (exploratory) | PK team xG, own xG | stint-piece seconds |
+
+### 5. Estimation
+
+- **Model:** weighted ridge regression with an unpenalised intercept and penalty α on all other columns. This is identical to sklearn `Ridge(fit_intercept=True)` with `sample_weight`.
+- **Choosing α:** GroupKFold (5 folds) **grouped by game**, minimising weighted held-out MSE over a log grid. The chosen α was inside the grid for every target.
+- **Validation:** the final fit runs through sklearn `Ridge` (sparse_cg solver) and is checked against a direct normal-equation solve of (ZᵀWZ + αP)β = ZᵀWy. The largest coefficient difference was 6e-6 or smaller for every model.
+- **Intervals:** 200 bootstrap resamples **of games**, with α fixed at its CV value, giving percentile 2.5 / 97.5 intervals. Every 5v5 target uses the same game draws, so paired comparisons between targets are valid (for example, the HD − NFI difference).
+- **Bootstrap is the interval method for RAPM.** Wilson intervals (for proportions) and Poisson intervals (for counts over fixed exposure) don't apply to penalised regression coefficients. Elsewhere in this study, Wilson intervals are used only for true proportions (goal rates in the HD map value gap analysis, and the selection share analysis).
+- **Reading a percentile interval:** it's centred on the shrunk estimate. "% of CIs excluding 0" is read against the roughly 5% expected by chance.
+
+### 6. Reporting thresholds
+
+- **5v5:** ≥ 500 pooled 5v5 minutes (812 skaters).
+- **Special teams:** ≥ 150 pooled PP minutes for offence (358 skaters) or PK minutes for defence (351 skaters).
+- **Selection share analysis:** ≥ 100 pooled 5v5 HD attempts (358 shooters).
+
+### 7. Diagnostics reported per target
+
+- **Width ÷ SD:** median interval width divided by the spread of point estimates. Lower means more signal.
+- **% of intervals excluding 0.**
+- **Spearman correlation** between the raw on-ice rate and RAPM.
+- **Cross-target Spearman** correlations.
+- **Movers:** the 20 players who move most in each direction between raw and RAPM, and between each target and HD.
+
+### 8. Known limitations
+
+- **Collinearity:**
+  - At 5v5, regular linemates and pairings share credit. Ridge shrinks toward zero instead of splitting credit arbitrarily, but the split stays uncertain.
+  - On the power play it's acute. The median player spends 15% of PP time with his single most common four-man unit (90th percentile 33%, maximum 78%), and 10 players spend half or more.
+  - Edmonton's PP1 (about 70% together) can't be separated, so individual estimates there should carry a collinearity flag.
+- **TZI coverage:**
+  - Original TZI contexts cover 32.9% of 5v5 stint time; TZI all-stints and the final ITI (anchor kept) cover 92.2%. The anchor-dropped sensitivity version covers 68.4%.
+  - The remaining 7.8% is mostly time after play returns to 5v5 without a faceoff, which the Streamlit walk leaves unassigned.
+  - Last-event interpolation under-assigns the neutral zone (17% of assigned time).
+  - The faceoff anchor credits the seconds right after each faceoff to the faceoff's zone.
+- **cG window crossing stints:** the 30-second window crosses a stint boundary for 24.7% of cG events (1,819 goals land in a later 5v5 stint and 24 outside 5v5). Credit goes to the originating shot's stint by design.
+- **xG source per model:**
+  - Own xG: all special-teams models (current). The MoneyPuck-xG run is superseded and kept only for the record.
+  - MoneyPuck: the NFI G−xG 5v5 target and the public-xG comparison in the HD map value gap analysis.
+  - None: HD, NFI zone, cG, TZI and ITI don't use xG.
+  - The special-teams RAPM is still a standalone study, separate from PP Rating / PK Rating.
+  - Within MoneyPuck, rebounds are over-priced: G/xG is 0.51–0.55 by season on MoneyPuck's own 5v5 data. HockeyROI's own xG is close to calibrated on rebounds (0.86–0.97 by season, with 2025-26 the weakest). Its rebound calibration is partly in-sample, because the rebound flag is a model feature fit on these seasons.
+- **Penalty clock and zone start are confounded:** 90% of 0–5s time comes from offensive-zone-start stints, so the bucket coefficients depend on the start-type control.
+- **Unmatched events:**
+  - 0.14–0.20% of 5v5-coded events fall outside 5v5 stints.
+  - 404 NFI-zone shots (0.5%) and 138 special-teams Fenwick events (0.3%) had no MoneyPuck xG and were dropped.
+- **Shift-chart vs play-by-play strength:** these disagree for a small share of time. 5v4 TOI is 2.6% above the play-by-play-based league figure, and about 1.9% of 5v5 stint time gets no TZI zone even when contexts reopen at every return to 1551, mostly where the play-by-play situation code isn't 1551 during a shift-chart 5v5 stint.
+
+### 9. ITI (Ice Tilt Impact)
+
+ITI measures a player's own effect on 5v5 zone time, controlling for teammates, opponents, zone starts, score and home ice.
+
+- **ITI-A (attack):** the effect on his own team's offensive-zone seconds per 60 minutes of zone-assigned 5v5 time.
+- **ITI-S (suppression):** the effect on the opponent's offensive-zone seconds per 60, sign-flipped so that positive is better.
+- **ITI (net) = ITI-A + ITI-S.** Its 95% interval comes from summing A and S **within each bootstrap resample**, not from adding the two separate intervals.
+
+**Construction:**
+- **Re-runnable builder:** `Zones/2026-09/iti/build_iti.py` takes a `--seasons` window (default 2023-24 to 2025-26), so it can be re-run monthly. Shift and play-by-play JSON come from the existing caches; games without a usable shift chart are logged and skipped, with no fetching.
+- **Inputs:** the same stints, design matrix, controls and estimation as the all-stints TZI model (subsections 3–5 above): CV by game, sklearn validation, 200 game resamples and a 500-minute reporting threshold.
+- **Final version: faceoff anchor KEPT** (decision 2026-10-16). `build_iti.py --anchor keep` reproduces `tzi_allstints` exactly (largest coefficient difference 0.0). So the final `iti/player_iti.csv` is built by `iti/finalize_iti.py` from the `tzi_allstints` fit and its 200 resamples, with no refit. ITI-A is the offence coefficient, ITI-S the negated defence coefficient, and every interval is a percentile of the per-resample values, with the net summed within each resample.
+- **Why the anchor is kept:**
+  1. Reliability ties overall (split-half 0.42 kept vs 0.41 dropped).
+  2. It keeps 92% zone coverage, against 68% with the anchor dropped.
+  3. The start-type controls absorb the anchor bias: the anchor inflates the OZ/DZ/NZ start coefficients (+1,111 / −840 / −872 s per 60 kept, against +350 / −223 / −57 dropped), not the player columns.
+  4. It's the version validated against EDGE, since the EDGE alignment uses the anchor-kept walk.
+- **Sensitivity version:** anchor dropped, in `iti/sensitivity_anchor_dropped/` (README inside). Spearman with the final ITI is 0.94 (net), 0.93 (A) and 0.93 (S).
+- **Output** (`player_iti.csv`): player, F/D, pooled 5v5 TOI, seasons, then ITI, ITI-A and ITI-S, each with its 95% interval and a flag for whether the interval clears zero. Positive is better on all three.
+
+**Gates:**
+1. **EDGE validation** (`iti/edge_validation.py`, `iti/edge_alignment.py`):
+   - **Definitions:** EDGE zone-time shares are fractions of total on-ice time in all situations; OZ + NZ + DZ = 1. EDGE's even-strength field covers OZ only.
+   - **Aligned comparison:** with our share re-run on EDGE's denominator (the same zone walk over all situations, divided by shift-chart on-ice time), pooled Spearman is 0.85 / 0.82 for OZ (forwards / D), 0.85 / 0.84 for DZ and 0.86 / 0.83 for net tilt. NZ is weak (0.50 / 0.45).
+   - **Even-strength comparison:** it stays at 0.51–0.64 whichever denominator we use. Our even-strength share matches EDGE's all-situations OZ (0.61 F / 0.66 D) better than EDGE's own even-strength field (0.55 / 0.63), and EDGE's two fields correlate only 0.79 / 0.88 with each other. Part of that gap looks like it's on EDGE's side.
+   - **By season,** the 5v5-vs-EDGE-even-strength OZ figure is lowest for forwards in 2025-26 (0.51); defencemen run about 0.1 higher every season. On EDGE's own denominator, every season and group falls between 0.78 and 0.85 for OZ, DZ and net tilt (`iti/edge_alignment_spearman.csv`).
+   - **Caveat:** some of the all-situations agreement comes from power-play and penalty-kill usage, which both sources capture.
+2. **Split-half reliability** (`iti/reliability.py`, odd vs even games; players need at least 200 minutes in each half; ITI halves use the full-sample α; the published scores are recomputed per half by importing their scripts read-only):
+
+   | Metric | All: half r (Spearman-Brown) | Forwards | Defence |
+   |---|---|---|---|
+   | **ITI, anchor kept (final)** | 0.42 (0.59) | 0.29 (0.45) | 0.58 (0.74) |
+   | ITI-A, anchor kept | 0.40 (0.57) | 0.29 (0.45) | 0.55 (0.71) |
+   | ITI-S, anchor kept | 0.40 (0.57) | 0.28 (0.44) | 0.57 (0.72) |
+   | ITI, anchor dropped (sensitivity) | 0.41 (0.58) | 0.33 (0.50) | 0.52 (0.68) |
+   | Published TZI (0–100) | 0.34 (0.51) | 0.30 (0.46) | 0.41 (0.58) |
+   | Published OZI (0–100) | 0.29 (0.45) | 0.19 (0.32) | 0.46 (0.63) |
+   | Published DZI (0–100) | 0.27 (0.42) | 0.20 (0.34) | 0.41 (0.58) |
+   | Published NZI (0–100) | 0.35 (0.52) | 0.36 (0.53) | 0.33 (0.50) |
+
+   - **ITI's gain over TZI is clear for defencemen** (0.58 vs 0.41) and **only slight for forwards**: 0.29–0.33 depending on the anchor, against 0.30.
+   - **Published NZI is the most repeatable zone measure for forwards** (0.36), but it ranks established play-drivers poorly. For example, Crosby is 408th, MacKinnon 356th and Matthews 307th of 517 forwards on raw NZI. Its repeatability reflects the faceoff time window, not player quality (section 10).
+   - **Single-season ITI will be noisy,** since even the best measures correlate only about 0.4 between halves of three pooled seasons. Read the intervals and the clears-zero flag, not raw rank order.
+
+#### 9a. Team-season controls (sensitivity)
+
+`iti/sensitivity_team/iti_team.py` refits the final ITI with one indicator per team-season for the attacking team and one for the defending team (96 team-seasons). Everything else is unchanged: CV chose α = 1e5, sklearn matches the normal equations to within 7e-6, and the 200 resamples use the same seed.
+- **Agreement with the final ITI:** Spearman 0.98 for ITI, ITI-A and ITI-S.
+- **Signal is slightly lower:** width ÷ SD is 2.57 against 2.46, and 18.6% of intervals clear zero against 21.9%.
+- **Forward top 25:** Oilers stay at 4 under both versions. Hurricanes fall from 7 to 4, as Staal, Martinook and Jarvis drop out.
+- **This understates how much a team system could absorb.** The team columns were penalised with the same ridge α as the players, so ridge splits a shared team effect between the team column and that team's players. Unpenalised team columns would absorb more. The team-season coefficients are also sizeable: their SD is 16.6 (attack) and 18.1 (defence), against 12.9 for players.
+
+#### 9b. Collinearity flag
+
+- **Definition:** a qualified player (≥ 500 pooled 5v5 minutes) is **flagged** when ≥ 65% of his pooled 5v5 TOI is spent with a single same-team skater (forward or defenceman).
+- **Count:** 42 of 517 forwards and 19 of 295 defencemen are flagged (`iti/collinearity_flags.py`, output `iti/collinearity_flags.csv`).
+- **Reading a flagged player's ITI:** treat it as a **collinearity-limited estimate**. Ridge shrinks the shared credit and splits it between the pair, so one player in a pair can sit near zero even when the pair tilts the ice strongly.
+- **Worked cases:**
+  - **Makar:** 7th of 295 defencemen on raw all-stints zone share, but 70th on ITI (+26.5, CI −7.7 to +59.7). He spends 71% of his 5v5 TOI with Toews and 63% with MacKinnon.
+  - **Hyman:** 73% of his 5v5 TOI with McDavid. His ITI interval's lower bound is +14, the lowest margin in the forward top 10.
+  - In both cases the estimate reflects collinearity, not evidence of ordinary play.
+
+### 10. Comparison methods
+
+- **Published zone scores vs RAPM** (`published_vs_rapm/compare_published.py`):
+  - The published files are the 0–10 score in `zone_variations` (pooled 2022-26) and, for season alignment, the Streamlit 0–100 index pooled for 2023-26 as a 5v5-TOI-weighted mean.
+  - Matched RAPM: OZI and NZI against TZI all-stints offence; DZI and TZI against all-stints net.
+  - Disagreement lists use fixed `rank_published` and `rank_rapm` columns, and an assert checks that every row's direction label agrees with its ranks.
+- **PP Rating vs PP RAPM:** PP Rating is per season, so it's pooled for 2023-26 as a PP-TOI-weighted mean, then matched on normalised name + F/D (358 of 358 matched, none ambiguous).
+- **Zone gap decomposition** (`published_vs_rapm/zone_gap_decomposition.py`):
+  - **Raw all-stints share:** a player's own OZ and DZ share of zone-assigned time over all his 5v5 stints, with no adjustment.
+  - **Published stages:** faceoff shifts, raw share, Wilson bound and 0–100 index, all recomputed in memory for 2023-26.
+  - **Test:** if the raw all-stints share agrees with RAPM but not with the published score, the gap comes from the faceoff time window. If it agrees with the published score but not with RAPM, the gap comes from the teammate/opponent adjustment.
+
+### 11. Decisions recorded
+
+- **Special teams use own xG.** All special-teams RAPM uses HockeyROI's own xG; the MoneyPuck version is superseded.
+- **TZI becomes a faceoff tool.** It's no longer a player ranking, because its faceoff time window, not player quality, drives most of the ordering (section 10, decomposition).
+- **ITI replaces TZI as the player zone-impact measure on the dashboard,** with the faceoff anchor kept (reasons in section 9).
+- **NZI is retired.**
+- **Not added as player metrics:** NFI-zone goals minus xG, PK defence RAPM, the shorthanded reverse model and the NZ-seconds RAPM. Each either carries too little signal or isn't directional.
 
 ## Expected Goals (xG) model
 
@@ -863,10 +1059,11 @@ These thresholds reduce noise from low-sample player-seasons and goalie filter c
 
 ### Confidence intervals
 
-The framework uses two interval families, chosen by the underlying statistic:
+The framework uses three interval families, chosen by the underlying statistic:
 
 - **Wilson 95% CIs** for proportions — save percent, NFI percent share, conversion rate, anything bounded in [0, 1]. Wilson is preferred over the normal approximation because it remains valid at small samples (a goalie's CNFI save rate may draw from only 50-100 shots).
 - **Poisson 95% CIs** for per-60 rates — events per 60 minutes of TOI, anywhere a count is divided by a time exposure. Uses the exact Garwood (chi-square) interval on the event count, scaled to per-60. Wilson is incorrect for rates and was previously misapplied here; the May 20, 2026 bug fix migrated all per-60 helpers to Poisson.
+- **Bootstrap 95% CIs by game resampling** for RAPM-based metrics (RAPM targets, ITI, ITI-A, ITI-S): 200 resamples of games with the ridge penalty fixed at its cross-validated value, percentile 2.5 / 97.5 intervals; a net metric's interval is taken from the per-resample sums of its parts. Wilson and Poisson intervals do not apply to penalised regression coefficients. See [RAPM and ITI (Ice Tilt Impact)](#rapm-and-iti-ice-tilt-impact).
 
 RelNFI metrics carry 95% CIs at the season-player level (Poisson-differential SE; the combined RelNFI uses an empirical partial correlation as the covariance proxy rather than assuming independence) and at the career-pool level (TOI-weighted point with variance-pooled SE).
 
