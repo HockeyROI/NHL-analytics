@@ -4667,13 +4667,13 @@ def load_game_meta() -> pd.DataFrame:
 # (TOI / Corsi / xG / NFI); the season-construct families (Zone, Ratings, EDGE,
 # CCG, Box, Quality Games) have no per-game breakdown here.
 _GAME_FAMILY_COLS = {
-    "Box Score": ["G", "A", "P"],      # 5v5 goals + primary assists per game
+    "Box Score": ["G", "A", "P", "SOG"],    # 5v5 goals + primary assists + shots
     "Quality Games": ["NFI-QG", "xG-QG"],   # per-game quality flag (✓/✗/—)
-    "Player Ratings": ["ixG"],          # the per-game ixG ingredient of the rating
-    "Net Front Impact": ["NFI%", "NFI±"],
-    "xG": ["xGF", "xGA", "xG%"],
-    "Advanced Stats": ["CF%", "CF", "CA"],
-    "CCG": ["CCG"],
+    "Player Ratings": ["ixG", "ixG/60"],    # the per-game ixG ingredient of the rating
+    "Net Front Impact": ["NFI%", "NFI±", "NFI-A/60", "NFI-S/60"],
+    "xG": ["xGF", "xGA", "xG%", "xGF/60", "xGA/60"],
+    "Advanced Stats": ["CF%", "CF", "CA", "CF/60", "CA/60", "iCF", "iG"],
+    "CCG": ["CCG", "CCG/60"],
     # Zone: only the raw per-game faceoff-start shares (the recentered OZI/DZI/
     # NZI/TZI indices are season cohort constructs, so they stay season-only).
     "Zone Impact": ["OZ Start%", "DZ Start%", "NZ Start%"],
@@ -4689,21 +4689,29 @@ def load_zone_start_per_game() -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def load_per_game_ixg(season: int) -> pd.DataFrame:
-    """Per-(player, game) 5v5 individual xG — the player's own shots' xG summed.
-    This is the ixG ingredient of the Elite Rating, shown per game (the rating
-    INDEX itself is a whole-season percentile rank, so it isn't shown per game)."""
+def load_per_game_individual(season: int) -> pd.DataFrame:
+    """Per-(player, game) 5v5 individual stats from the shot parquet (+ our xG):
+    ixG (own shots' xG), iCF (shot attempts), SOG (shots on goal), iG (goals).
+    ixG is the Elite-Rating ingredient; the rating INDEX stays season-only."""
     fp = REPO_ROOT / "Data" / "shot_events_by_season" / f"{season}.parquet"
     xfp = REPO_ROOT / "NFI" / "output" / "shot_xg_per_event.csv"
-    if not fp.exists() or not xfp.exists():
-        return pd.DataFrame(columns=["player_id", "game_id", "ixG"])
+    cols = ["player_id", "game_id", "ixG", "iCF", "SOG", "iG"]
+    if not fp.exists():
+        return pd.DataFrame(columns=cols)
     sp = pd.read_parquet(fp, columns=["game_id", "event_id", "situation_code",
-                                      "shooter_player_id"])
-    m = sp.merge(pd.read_csv(xfp), on=["game_id", "event_id"], how="left")
-    sc = m["situation_code"].astype(str).str.zfill(4)
-    m = m[(sc.str[1] == "5") & (sc.str[2] == "5") & (sc.str[0] != "0") & (sc.str[3] != "0")]
-    out = m.groupby(["shooter_player_id", "game_id"])["xg"].sum().reset_index()
-    return out.rename(columns={"shooter_player_id": "player_id", "xg": "ixG"})
+                                      "shooter_player_id", "event_type"])
+    if xfp.exists():
+        sp = sp.merge(pd.read_csv(xfp), on=["game_id", "event_id"], how="left")
+    else:
+        sp["xg"] = np.nan
+    sc = sp["situation_code"].astype(str).str.zfill(4)
+    sp = sp[(sc.str[1] == "5") & (sc.str[2] == "5") & (sc.str[0] != "0") & (sc.str[3] != "0")]
+    sp["_g"] = (sp["event_type"] == "goal").astype(int)
+    sp["_sog"] = sp["event_type"].isin(["shot-on-goal", "goal"]).astype(int)
+    out = sp.groupby(["shooter_player_id", "game_id"]).agg(
+        ixG=("xg", "sum"), iCF=("event_type", "size"),
+        SOG=("_sog", "sum"), iG=("_g", "sum")).reset_index()
+    return out.rename(columns={"shooter_player_id": "player_id"})
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -4718,11 +4726,14 @@ def load_qg_position_medians() -> dict:
     d = pd.read_csv(fp)
     return {(r["position"], r["metric"]): float(r["median"]) for _, r in d.iterrows()}
 _GAME_COL_FMT = {"TOI": "{:.1f}", "CF%": "{:.1f}", "CF": "{:.0f}", "CA": "{:.0f}",
+                 "CF/60": "{:.1f}", "CA/60": "{:.1f}",
                  "xGF": "{:.2f}", "xGA": "{:.2f}", "xG%": "{:.1f}",
-                 "NFI%": "{:.1f}", "NFI±": "{:+.0f}",
-                 "G": "{:.0f}", "A": "{:.0f}", "P": "{:.0f}", "CCG": "{:.0f}",
-                 "ixG": "{:.2f}", "OZ Start%": "{:.1f}", "DZ Start%": "{:.1f}",
-                 "NZ Start%": "{:.1f}"}
+                 "xGF/60": "{:.2f}", "xGA/60": "{:.2f}",
+                 "NFI%": "{:.1f}", "NFI±": "{:+.0f}", "NFI-A/60": "{:.1f}", "NFI-S/60": "{:.1f}",
+                 "G": "{:.0f}", "A": "{:.0f}", "P": "{:.0f}", "SOG": "{:.0f}",
+                 "CCG": "{:.0f}", "CCG/60": "{:.2f}",
+                 "ixG": "{:.2f}", "ixG/60": "{:.2f}", "iCF": "{:.0f}", "iG": "{:.0f}",
+                 "OZ Start%": "{:.1f}", "DZ Start%": "{:.1f}", "NZ Start%": "{:.1f}"}
 
 
 def _per_game_scoring(pid: int, season: int) -> pd.DataFrame:
@@ -4788,23 +4799,32 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     gp["xG%"] = 100 * gp["xG_for"] / (gp["xG_for"] + gp["xG_ag"]).replace(0, np.nan)
     gp["NFI±"] = gp["NFI_for"] - gp["NFI_ag"]
     gp["NFI%"] = 100 * gp["NFI_for"] / (gp["NFI_for"] + gp["NFI_ag"]).replace(0, np.nan)
-    # Box score (5v5 G/A/P) + CCG per game, merged in and zero-filled.
+    # Box score (5v5 G/A/P) + CCG + individual (iCF/SOG/iG/ixG) per game.
     gp = gp.merge(_per_game_scoring(pid, season), on="game_id", how="left")
     gp = gp.merge(_per_game_ccg(pid, season), on="game_id", how="left")
-    _ixg = load_per_game_ixg(season)
-    gp = gp.merge(_ixg[_ixg["player_id"] == pid][["game_id", "ixG"]], on="game_id", how="left")
+    _ind = load_per_game_individual(season)
+    gp = gp.merge(_ind[_ind["player_id"] == pid][["game_id", "ixG", "iCF", "SOG", "iG"]],
+                  on="game_id", how="left")
     _zs = load_zone_start_per_game()
     if not _zs.empty:
         _zs = _zs[(_zs["player_id"] == pid) & (_zs["season"] == season)]
         gp = gp.merge(_zs[["game_id", "OZ Start%", "DZ Start%", "NZ Start%"]],
                       on="game_id", how="left")
-    for c in ("G", "A", "P", "CCG"):
+    for c in ("G", "A", "P", "CCG", "iCF", "SOG", "iG"):
         gp[c] = gp[c].fillna(0) if c in gp.columns else 0
-    if "ixG" not in gp.columns:
-        gp["ixG"] = np.nan
-    for c in ("OZ Start%", "DZ Start%", "NZ Start%"):
+    for c in ("ixG", "OZ Start%", "DZ Start%", "NZ Start%"):
         if c not in gp.columns:
             gp[c] = np.nan
+    # Per-game /60 rates (value per 60 min of ES TOI).
+    _p60 = (60.0 / gp["TOI"].replace(0, np.nan))
+    gp["NFI-A/60"] = gp["NFI_for"] * _p60
+    gp["NFI-S/60"] = gp["NFI_ag"] * _p60
+    gp["CF/60"] = gp["attempts_for"] * _p60
+    gp["CA/60"] = gp["attempts_ag"] * _p60
+    gp["xGF/60"] = gp["xG_for"] * _p60
+    gp["xGA/60"] = gp["xG_ag"] * _p60
+    gp["CCG/60"] = gp["CCG"] * _p60
+    gp["ixG/60"] = gp["ixG"] * _p60
     # Per-game Quality-Game flags: a game is quality on a metric if its 5v5 game%
     # clears the position median — same definition as QG%, just not yet aggregated.
     # Games below the QG floor (TOI < 8 min OR < 5 attempts) can't qualify → "—".
@@ -4820,16 +4840,18 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     gp["NFI-QG"] = _qg_flag(gp["NFI%"], "NFI")
     gp["xG-QG"] = _qg_flag(gp["xG%"], "xG")
 
-    # Columns follow the selected metric families; default to NFI+xG+Corsi.
+    # Columns follow the selected metric families. With none selected, show every
+    # family's per-game columns — matching the season drill-in (which shows all
+    # families when no pill is active).
     _fams = list(families) if families else []
     _metric_cols, _seen = [], set()
-    for fam in (_fams or ["Net Front Impact", "xG", "Advanced Stats"]):
+    for fam in (_fams or list(_GAME_FAMILY_COLS)):
         for c in _GAME_FAMILY_COLS.get(fam, []):
             if c not in _seen:
                 _metric_cols.append(c); _seen.add(c)
     _no_pg = [f for f in _fams if f not in _GAME_FAMILY_COLS]
-    if not _metric_cols:   # only season-construct families were picked
-        _metric_cols = ["NFI%", "xG%", "CF%"]
+    if not _metric_cols:   # only season-only families were picked (e.g. EDGE)
+        _metric_cols = [c for fam in _GAME_FAMILY_COLS for c in _GAME_FAMILY_COLS[fam]]
 
     gp = gp.sort_values(["game_date", "game_id"], ascending=False).reset_index(drop=True)
     gp["Game"] = np.where(gp["home"], "vs ", "@ ") + gp["opp"].astype(str)
