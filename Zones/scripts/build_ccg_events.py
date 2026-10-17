@@ -128,7 +128,8 @@ def main():
             df = df_new
         df = df.sort_values(["game_id", "abs", "sort"]).reset_index(drop=True)
         df.to_parquet(pq, index=False)
-        print(f"  wrote {season}: +{df_new['game_id'].nunique()} games "
+        _n_new = df_new["game_id"].nunique() if "game_id" in df_new.columns else 0
+        print(f"  wrote {season}: +{_n_new} games "
               f"({len(df):,} events total) -> {pq}", flush=True)
 
 

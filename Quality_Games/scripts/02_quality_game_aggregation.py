@@ -525,7 +525,10 @@ pst_with_rates = pst.merge(
     on=['player_id', 'season'], how='inner')   # 'inner' drops blank-position rows
 
 # Eligibility: 20+ GP with that team in that season
-elig = pst_with_rates[pst_with_rates.GP >= TEAM_GP_FLOOR].copy()
+# Live (in-progress) season: floor of 1 so team rows appear early; completed
+# seasons keep the 20-GP bar (published numbers unchanged).
+_tf = np.where(pst_with_rates["season"].astype(str) == "20262027", 1, TEAM_GP_FLOOR)
+elig = pst_with_rates[pst_with_rates.GP >= _tf].copy()
 log(f"  per-(player, season, team) rows: total={len(pst_with_rates):,}  "
     f"eligible (GP>={TEAM_GP_FLOOR}): {len(elig):,}")
 
