@@ -95,8 +95,17 @@ def main():
     t = t[t["season"].isin([int(s) for s in SEASONS])].copy()
     t["season"] = t["season"].astype(str)
     t["player_id"] = t["player_id"].astype(int)
-    tier = {(int(r.player_id), r.season): (r.tier_current if isinstance(r.tier_current, str) else "Middle")
-            for r in t.itertuples()}
+    # Opponent tier for matchup classification. Completed seasons use the
+    # current-season tier (tier_current) as before -- frozen, unchanged. The
+    # LIVE season (20262027) has NO qualified current-season tiers yet (nobody
+    # has enough EV TOI this early), so tier_current is "Middle" for everyone,
+    # which would collapse every matchup into "mid". Fall back to the player's
+    # prior-2-season window tier (`tier`, which already carries Elite/Poor for
+    # the live season) so Elite/Mid/Easy exposure + xGF% populate from game 1.
+    def _opp_tier(r):
+        val = r.tier if str(r.season) == "20262027" else r.tier_current
+        return val if isinstance(val, str) else "Middle"
+    tier = {(int(r.player_id), r.season): _opp_tier(r) for r in t.itertuples()}
     posg = {(int(r.player_id), r.season): r.position for r in t.itertuples()}
     meta = t.set_index(["player_id", "season"])
 

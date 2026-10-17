@@ -39,8 +39,10 @@ OUT_CSV = f"{ROOT}/NFI/output/player_pdo_5v5_per_season.csv"
 OUT_CSV_ALLSIT = f"{ROOT}/NFI/output/player_pdo_allsit_per_season.csv"
 SHOT_XG_CSV = f"{ROOT}/xG/output/shot_xg_per_event.csv"  # per-event xG (xG/build_xg.py, v2)
 
-SEASONS = {"20212022", "20222023", "20232024", "20242025", "20252026"}
+SEASONS = {"20212022", "20222023", "20232024", "20242025", "20252026", "20262027"}
 TOI_FLOOR_MIN = 200.0
+LIVE_SEASON = "20262027"       # in-progress: drop the TOI floor so players show early
+LIVE_TOI_FLOOR_MIN = 10.0
 
 
 def state_from_code(sc, shoot_home):
@@ -254,7 +256,8 @@ def build_rows(gl_df: pd.DataFrame, sog_scope: str, toi_label: str) -> pd.DataFr
             xgf = sum(plr_onice_for_xg_s.get((pid, season), {}).values())
             xga = sum(plr_onice_ag_xg_s.get((pid, season), {}).values())
         gf, ga, toi_min = r["onice_for_gl"], r["onice_ag_gl"], r["toi_min"]
-        if toi_min < TOI_FLOOR_MIN or sog_for <= 0 or sog_ag <= 0:
+        _floor = LIVE_TOI_FLOOR_MIN if season == LIVE_SEASON else TOI_FLOOR_MIN
+        if toi_min < _floor or sog_for <= 0 or sog_ag <= 0:
             continue
         sh_pct = gf / sog_for
         sv_pct = 1 - ga / sog_ag
