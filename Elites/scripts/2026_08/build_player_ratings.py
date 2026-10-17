@@ -40,7 +40,19 @@ PROJECT = os.path.dirname(os.path.dirname(os.path.dirname(ROOT)))
 OUTDIR = os.path.join(PROJECT, "Elites", "Output", "player_ratings")
 os.makedirs(OUTDIR, exist_ok=True)
 
-# scope label -> (seasons in scope, min EV minutes to qualify)
+# Live-season blending. While 2026-27 is in progress, a same-season-only rating
+# is too noisy (tiny sample early), so the live scope blends the PREVIOUS season
+# with the current one (ratio-of-sums pooling: as 2026-27 games accrue, the live
+# season's weight grows automatically). Once the live season is COMPLETE (team
+# games-played reaches the full slate), the scope auto-reverts to current-season-
+# only, so a finished 2026-27 behaves exactly like every other completed season.
+LIVE_SEASON = "20262027"
+PREV_SEASON = "20252026"          # the "previous season" blended in while live
+FULL_SEASON_TEAM_GP = 84          # 2026-27 is an 84-game season; "done" at/after this
+
+# scope label -> (seasons in scope, min EV minutes to qualify). The live "2026-27"
+# entry is a placeholder; main() overrides its seasons+floor based on whether the
+# live season is complete (see _live_scope).
 SCOPES = {
     "2022-23": (["20222023"], 200),
     "2023-24": (["20232024"], 200),
@@ -50,6 +62,19 @@ SCOPES = {
     "2yr":     (["20242025", "20252026"], 400),
     "pooled":  (["20222023", "20232024", "20242025", "20252026"], 700),
 }
+
+
+def _live_scope(per: pd.DataFrame) -> tuple[list[str], float]:
+    """Seasons + qualify floor for the live 2026-27 Rating scope.
+
+    In progress  -> blend [previous, current], low floor so players show early.
+    Complete (>= FULL_SEASON_TEAM_GP team games) -> current-season only, standard
+    200-min floor, i.e. identical treatment to a finished season."""
+    live_gp = per.loc[per["season"] == LIVE_SEASON, "gp"]
+    max_gp = int(live_gp.max()) if len(live_gp) and pd.notna(live_gp.max()) else 0
+    if max_gp >= FULL_SEASON_TEAM_GP:
+        return [LIVE_SEASON], 200.0
+    return [PREV_SEASON, LIVE_SEASON], 10.0
 
 
 def main():
@@ -62,10 +87,33 @@ def main():
     for c in ["ixg", "g5v5", "a1_5v5"]:
         per[c] = per[c].fillna(0.0)
 
+    # Live-season rating scope: blend previous+current while 2026-27 is in
+    # progress, auto-revert to current-only once it's a full 84-game season.
+    SCOPES["2026-27"] = _live_scope(per)
+    _lv_seasons, _lv_floor = SCOPES["2026-27"]
+    print(f"[live] 2026-27 Rating scope = {_lv_seasons} (floor {_lv_floor} EV min) "
+          f"{'[blended: season in progress]' if len(_lv_seasons) > 1 else '[current-only: season complete]'}",
+          flush=True)
+
     pos = pd.read_csv(POS_CSV)
     pos_grp = dict(zip(pos["player_id"].astype(int), pos["pos_group"].astype(str)))
     pos_det = dict(zip(pos["player_id"].astype(int), pos["position"].astype(str)))
     name = dict(zip(pos["player_id"].astype(int), pos["player_name"].astype(str)))
+
+    # Live-season games-played, for display. The blended live scope ranks on the
+    # pooled (prev+current) window, but the GP shown in the app should be the
+    # CURRENT season's games only -- otherwise a 2026-27 view reads a two-season
+    # total (e.g. 86) that looks like more than a full 84-game slate.
+    _live_gp_map = (per.loc[per["season"] == LIVE_SEASON]
+                    .set_index("player_id")["gp"].to_dict())
+    _blended_live = len(SCOPES["2026-27"][0]) > 1
+    # Players actually active in the live season (>=1 game). The blended scope
+    # ranks only these -- each using their pooled prev+current stats -- so a
+    # 2025-26-only player (not on a 2026-27 roster) never shows in the 2026-27
+    # view, while current rookies with no prior season still qualify on their
+    # current-season sample.
+    _live_participants = {int(pid) for pid, gp in _live_gp_map.items()
+                          if pd.notna(gp) and gp >= 1}
 
     print("[2/3] pooling per scope + scoring ...", flush=True)
     for scope, (seasons, min_min) in SCOPES.items():
@@ -88,12 +136,22 @@ def main():
         agg["pos"] = agg["player_id"].map(pos_det)
         agg["player_name"] = agg["player_id"].map(name)
         agg = agg[agg["pos_group"].isin(["F", "D"])].copy()
+        # Blended live scope ranks only current-season participants (pooled
+        # prev+current stats); drop players with no 2026-27 games.
+        if scope == "2026-27" and _blended_live:
+            agg = agg[agg["player_id"].astype(int).isin(_live_participants)].copy()
         agg["ev_min"] = agg["ev_toi_sec"] / 60.0
         agg = agg[agg["ev_min"] >= min_min].copy()          # qualify
         agg["ev_toi_gp"] = agg["ev_min"] / agg["gp"]
         agg["ixg60"] = agg["ixg"] / agg["ev_min"] * 60.0
         agg["prim_pts60"] = (agg["g5v5"] + agg["a1_5v5"]) / agg["ev_min"] * 60.0
         agg["GP"] = agg["gp"].astype(int)
+        # Blended live scope: show CURRENT-season GP (not the pooled 2-season sum).
+        # The Rating/ev_toi_gp still use the pooled window; only the display GP
+        # is reset so "2026-27" never shows more than its games-so-far.
+        if scope == "2026-27" and _blended_live:
+            agg["GP"] = (agg["player_id"].map(_live_gp_map)
+                         .fillna(0).astype(int))
 
         for posg, posfile in (("F", "forwards"), ("D", "defense")):
             q = agg[agg["pos_group"] == posg].copy()
