@@ -4666,17 +4666,21 @@ def load_game_meta() -> pd.DataFrame:
 # the event-based families have real per-game values in per_player_game.csv
 # (TOI / Corsi / xG / NFI); the season-construct families (Zone, Ratings, EDGE,
 # CCG, Box, Quality Games) have no per-game breakdown here.
+# Family order mirrors PLAYER_FAMILY_COLS (the season view) so the game log's
+# default column layout matches the season table family-for-family. EDGE and
+# Shot Charts are omitted — the NHL publishes EDGE as season totals only (no
+# per-game log) and shot charts aren't a per-game table.
 _GAME_FAMILY_COLS = {
-    "Box Score": ["G", "A", "P", "SOG"],    # 5v5 goals + primary assists + shots
     "Quality Games": ["NFI-QG", "xG-QG"],   # per-game quality flag (✓/✗/—)
     "Player Ratings": ["ixG", "ixG/60"],    # the per-game ixG ingredient of the rating
-    "Net Front Impact": ["NFI%", "NFI±", "NFI-A/60", "NFI-S/60"],
     "xG": ["xGF", "xGA", "xG%", "xGF/60", "xGA/60"],
-    "Advanced Stats": ["CF%", "CF", "CA", "CF/60", "CA/60", "iCF", "iG"],
     "CCG": ["CCG", "CCG/60"],
+    "Advanced Stats": ["CF%", "CF", "CA", "CF/60", "CA/60", "iCF", "iG"],
+    "Net Front Impact": ["NFI%", "NFI±", "NFI-A/60", "NFI-S/60"],
     # Zone: only the raw per-game faceoff-start shares (the recentered OZI/DZI/
     # NZI/TZI indices are season cohort constructs, so they stay season-only).
     "Zone Impact": ["OZ Start%", "DZ Start%", "NZ Start%"],
+    "Box Score": ["G", "A", "P", "SOG"],    # 5v5 goals + primary assists + shots
 }
 
 
@@ -4694,7 +4698,9 @@ def load_per_game_individual(season: int) -> pd.DataFrame:
     ixG (own shots' xG), iCF (shot attempts), SOG (shots on goal), iG (goals).
     ixG is the Elite-Rating ingredient; the rating INDEX stays season-only."""
     fp = REPO_ROOT / "Data" / "shot_events_by_season" / f"{season}.parquet"
-    xfp = REPO_ROOT / "NFI" / "output" / "shot_xg_per_event.csv"
+    # Canonical xG model output (xG/output). The NFI/output copy is a staler shim
+    # that can lag the live season by weeks, which left recent-game ixG blank.
+    xfp = REPO_ROOT / "xG" / "output" / "shot_xg_per_event.csv"
     cols = ["player_id", "game_id", "ixG", "iCF", "SOG", "iG"]
     if not fp.exists():
         return pd.DataFrame(columns=cols)
