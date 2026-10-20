@@ -465,6 +465,8 @@ Added 2026-07: a per-player faceoff-**start**-zone breakdown — the plain share
 
 Added 2026-10. Regularised adjusted plus-minus (RAPM) for 5v5 and special-teams targets, and ITI, the RAPM-based player zone-time metric that replaces TZI for player rankings. Code: `Zones/2026-09/rapm/` (engine and targets) and `Zones/2026-09/iti/` (ITI). Section numbers below are local to this section.
 
+> **Not published on the dashboard: special-teams (PP/PK) RAPM.** Power-play and penalty-kill RAPM were studied here, but they are **not shown on the dashboard**, because power-play units share too much ice for the model to separate individual players reliably (the median player spends ~15% of his PP time with his single most common four-man unit, and some top units are together ~70% of the time). Only the three 5v5 families are published — **NFI RAPM**, **ITI** and **cG RAPM** — via `rapm/output/player_rapm_5v5.csv`.
+
 ### 1. Purpose
 
 Regularised adjusted plus-minus (RAPM) estimates each skater's on-ice effect on a target rate while holding constant who he played with, who he played against, and how he was deployed. RAPM is a **second number beside** each raw metric. The raw metrics themselves are unchanged.

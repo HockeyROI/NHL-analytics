@@ -1110,23 +1110,46 @@ def render_methodology() -> None:
             "(on-ice vs off-ice), isolating individual contribution from team strength.",
         )
         + _meth_framework(
-            "Zone Impact",
-            "<b>OZI / DZI / NZI / TZI</b> — four lenses for a player's offensive-zone time after 5v5 "
-            "faceoffs, expressed as a <b>0–100 index where 50 = the position-group average</b> "
-            "(above 50 = more O-zone time than an average forward / defenseman, below = less). "
-            "OZI / DZI / NZI measure O-zone time after <b>o</b>ffensive / <b>d</b>efensive / "
-            "<b>n</b>eutral-zone draws; <b>TZI</b> (Transitional Zone Impact) is the neutral-zone "
-            "transition split — O-zone minus D-zone time after neutral draws — so it reads how a "
-            "player tilts play out of the neutral zone. The index is built by taking each player's "
-            "raw per-shift zone-time percentage and recentring it on the league-average percentage "
-            "for their position; the natural spread of the underlying stat sets the spread of the "
-            "index (no artificial stretch), so most players sit in a tight band around 50 and only "
-            "genuine outliers reach the extremes — the same idea as a save% that lives between .880 "
-            "and .920. Independent lenses, not a hierarchy; a complete player rates above 50 across "
-            "all four. <b>D/N/O Start%</b> sits alongside them — the plain share of a player's "
-            "faceoff-started shifts that began in each zone (my own play-by-play data). It's a "
-            "presentation layer showing deployment context, not a new metric — it doesn't feed into "
-            "or alter OZI/DZI/NZI/TZI.",
+            "Ice Tilt (ITI) &amp; zone context",
+            "<b>ITI (Ice Tilt Impact)</b> is a player's own effect on 5v5 offensive-zone time, "
+            "holding constant who he played with, who he played against, and how he was deployed "
+            "(zone starts, score, home ice) — a regularised adjusted plus-minus on zone time. "
+            "<b>ITI-A</b> is his effect on his team's O-zone seconds per 60; <b>ITI-S</b> is his "
+            "effect on the opponent's, sign-flipped so <b>positive is better</b>; <b>ITI (net) = "
+            "A + S</b>. It is 3-season pooled (2023-24 to 2025-26) with a bootstrap 95% interval. "
+            "ITI <b>replaces the old OZI / DZI / NZI / TZI 0–100 zone indices for player rankings</b>: "
+            "those were driven as much by the faceoff time window as by player quality (it ranked "
+            "established drivers like Crosby and MacKinnon poorly), and it validates against NHL "
+            "EDGE zone time. The OZI/DZI/NZI/TZI indices are kept on the <b>Teams</b> tab and as a "
+            "<b>post-faceoff diagnostic</b> (what happens on shifts that start with a neutral-zone "
+            "draw), not as a player ranking. <b>D/N/O Start%</b> remains alongside ITI as deployment "
+            "context — the share of a player's faceoff-started shifts that began in each zone.",
+        )
+        + _meth_framework(
+            "Adjusted impact (RAPM) &amp; Primary Points",
+            "<b>RAPM</b> (regularised adjusted plus-minus) estimates a player's own on-ice effect "
+            "on a rate while holding his linemates, opponents and deployment constant — it answers "
+            "“what happens to this rate with him on the ice, beyond who he's with and against?” "
+            "Three 5v5 families sit beside their raw counterparts, each as net / Attack (A) / "
+            "Suppress (S), with <b>positive = better</b> on every column: <b>NFI RAPM</b> (effect on "
+            "the net-front shot rate, beside RelNFI), <b>ITI</b> (effect on O-zone time, in place of "
+            "TZI) and <b>cG RAPM</b> (effect on the Chaos-Created-Goals rate, beside CCG). All three "
+            "are <b>3-season pooled (2023-24 to 2025-26)</b>, 5v5, for skaters with at least <b>500 "
+            "pooled 5v5 minutes</b>. Each value carries a <b>95% bootstrap interval</b> (200 game "
+            "resamples); a <b>●</b> marks an interval that <b>clears zero</b> (the effect is "
+            "distinguishable from average). A <b>⚠ collinearity flag</b> marks a player who "
+            "spends <b>≥ 65% of his 5v5 ice with one teammate</b> (shown with that teammate and "
+            "the share): the model can't fully separate the pair, so the estimate is <b>less certain, "
+            "not lower</b> — one of a pair can sit near zero even when the pair tilts play strongly. "
+            "<b>Interval rules:</b> RAPM/ITI use the <b>bootstrap</b> (the only valid interval for a "
+            "penalised regression coefficient); <b>Wilson</b> intervals are used only for true "
+            "proportions, and <b>Poisson</b> for count rates over fixed exposure. Single-season RAPM "
+            "would be noisy, which is why these are pooled — read the interval and the clears-zero "
+            "mark, not the raw rank order. "
+            "Special-teams (PP/PK) RAPM was studied but is <b>not shown</b>: power-play units share "
+            "too much ice for the model to separate players reliably. "
+            "<b>Primary Points</b> (box score) = goals + <b>primary (first) assists</b>, all "
+            "situations — the share of scoring a player is most directly responsible for.",
         )
         + _meth_framework(
             "NHL EDGE",
