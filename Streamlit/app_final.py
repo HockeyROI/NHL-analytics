@@ -3156,6 +3156,34 @@ def _player_trend(pid: int) -> pd.DataFrame:
         for _c in ("NFI-A/60", "NFI-S/60"):
             if _c in trend.columns:
                 trend.loc[_no_nfi, _c] = np.nan
+    # Box-score counting stats per season (Box Score family on the drill-in — the
+    # per-season counterpart of the leaderboard's box columns). Counts summed,
+    # rates recomputed from the sums; PrimP = G + primary assists.
+    _bx = load_box_score()
+    if not _bx.empty:
+        _bx = _bx[(_bx["player_id"] == pid) & (_bx["game_type"] == "regular")].copy()
+        _bx["season"] = _bx["season"].astype(str)
+        _bx = _bx[_bx["season"].isin(PROFILE_SEASONS)]
+        if not _bx.empty:
+            _bsum = {c: (c, "sum") for c in _BOX_SUMS if c in _bx.columns and c != "GP"}
+            _bg = _bx.groupby("season").agg(**_bsum).reset_index().rename(columns=_BOX_REN)
+            if {"G", "Shots"}.issubset(_bg.columns):
+                _bg["Shot%"] = np.where(_bg["Shots"] > 0, _bg["G"] / _bg["Shots"] * 100, np.nan)
+            if {"FO W", "FO L"}.issubset(_bg.columns):
+                _d = _bg["FO W"] + _bg["FO L"]
+                _bg["FO%"] = np.where(_d > 0, _bg["FO W"] / _d * 100, np.nan)
+            if {"SO G", "SO Att"}.issubset(_bg.columns):
+                _bg["SO%"] = np.where(_bg["SO Att"] > 0, _bg["SO G"] / _bg["SO Att"] * 100, np.nan)
+            if {"ppGoals", "G"}.issubset(_bg.columns):
+                _bg["PPG Share%"] = np.where(_bg["G"] > 0, _bg["ppGoals"] / _bg["G"] * 100, np.nan)
+            if {"PPP", "ppGoals", "A"}.issubset(_bg.columns):
+                _ppa = _bg["PPP"] - _bg["ppGoals"]
+                _bg["PPA Share%"] = np.where(_bg["A"] > 0, _ppa / _bg["A"] * 100, np.nan)
+            if {"G", "A1"}.issubset(_bg.columns):
+                _bg["PrimP"] = _bg["G"] + _bg["A1"]
+            _bkeep = ["season"] + [c for c in BOX_FAMILY_COLS if c in _bg.columns]
+            trend = trend.merge(_bg[_bkeep], on="season", how="outer")
+
     # Always show every season 2022-23 → 2025-26 as a row, even ones before the
     # player debuted (blank cells), so the trend table has a consistent shape.
     missing = [s for s in PROFILE_SEASONS if s not in set(trend["season"])]
@@ -3259,7 +3287,7 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
         prow = nfi[nfi["player_id"] == pid]
         if len(prow):
             name = prow["player_name"].iloc[0]
-            for m in ():   # OZI/DZI/NZI/TZI retired from player rankings
+            for m in ("OZI", "DZI", "NZI", "TZI"):   # kept in the per-season drill-in
                 if m not in z.columns:
                     continue
                 d = {}
@@ -3436,9 +3464,10 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
         return pd.DataFrame(), trend, []
     share_cols = ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%"]
     rate_cols = ["NFI-A/60", "NFI-S/60"]
-    # OZI/DZI/NZI/TZI retired from player rankings (replaced by ITI on the main
-    # table); faceoff-start shares kept as context.
-    zone_cols = ["DZ Start%", "NZ Start%", "OZ Start%"]
+    # ITI replaces OZI/DZI/NZI/TZI on the MAIN rankings table, but the per-season
+    # drill-in keeps the zone indices as a detailed breakdown (they're per-season;
+    # ITI is a single 3-season-pooled number) alongside the faceoff-start shares.
+    zone_cols = ["DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI"]
     # Grouped raw+rel so the table above the charts mirrors the paired bars:
     # each Quality-Games metric sits next to its relative (on/off) counterpart.
     qg_cols = ["NFI-QG%", "RelNFI-QG%", "NFI-QG-A%", "RelNFI-QG-A%",
@@ -3453,8 +3482,10 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     pppk_cols = ["PP Rating", "PP Tier", "PK Rating", "PK Flag"]   # end of section
     sit_cols = list(_SIT_PLAIN)          # Advanced Stats (situation possession suite)
     edge_cols = _EDGE_VALUE_DISP
+    box_cols = list(BOX_FAMILY_COLS)     # Box Score family (per-season counting stats)
     metric_cols = [c for c in rating_cols + qg_cols + adv_cols + xg_cols + share_cols
                    + rate_cols + zone_cols + ctx_cols + pppk_cols + sit_cols + edge_cols
+                   + box_cols
                    if c in trend.columns]
     # families is None  -> show every metric (callers that don't filter, e.g.
     #                      the Trade Analyzer).
@@ -3512,6 +3543,15 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     _b["EDGE Bursts 20+"] = lambda v: f"{v:.0f}"
     _b["EDGE Distance (mi)"] = lambda v: f"{v:.1f} mi"
     _b["EDGE Distance/60"] = lambda v: f"{v:.2f} mi/60"
+    # Box-score counting stats — integers; box-score rates — 1 decimal %. Without
+    # these, counts printed as "26.0" and rates (Sh%/FO%/…) printed raw floats with
+    # many decimals in the drill-in table.
+    for c in ("G", "A1", "A2", "A", "Pts", "PrimP", "PPP", "SHP", "Shots", "GWG",
+              "Reb Created", "TK", "GV", "Hits", "Hits Taken", "Blocks", "Min Pen",
+              "Maj Pen", "PIM", "Pen Drawn", "SO G", "SO Att", "FO W", "FO L"):
+        _b[c] = lambda v: f"{v:,.0f}"
+    for c in ("Shot%", "FO%", "SO%", "PPG Share%", "PPA Share%"):
+        _b[c] = lambda v: f"{v:.1f}%"
     has_team = "Team" in trend.columns
     has_gp = "GP" in trend.columns
     rows = []
@@ -3526,8 +3566,10 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
             v = r[c]
             if pd.isna(v):
                 row[c] = "—"
-            elif c in ("Elite Rating Tier", "PP Tier", "PK Rating", "PK Flag"):
-                # string labels + PK (asymmetric) — value only, no rank annotation
+            elif c in ("Elite Rating Tier", "PP Tier", "PK Rating", "PK Flag") \
+                    or c in _BOX_FAMILY_SET:
+                # string labels + PK (asymmetric) + box counting stats — value only,
+                # no (rank) annotation
                 row[c] = _b.get(c, lambda v: f"{v}")(v)
             else:
                 txt = _b.get(c, lambda v: f"{v}")(v)
@@ -3605,7 +3647,7 @@ _QG_PAIR_PANELS = {
 # single-player drill-in's paired panels.
 _QG_BAR_ORDER_NFI = [m for _c, raw, rel in _QG_PAIR_PANELS["NFI"] for m in (raw, rel)]
 _QG_BAR_ORDER_XG = [m for _c, raw, rel in _QG_PAIR_PANELS["xG"] for m in (raw, rel)]
-_ZONE_BAR_METRICS_ORDER = ["EZI"]   # OZI/DZI/NZI/TZI retired from player rankings
+_ZONE_BAR_METRICS_ORDER = ["OZI", "DZI", "NZI", "TZI", "EZI"]
 _BRAND_DEEP = "#0A1A2F"          # "Hockey" — deeper than the chart navy
 _BRAND_ROI = PALETTE["orange"]   # "ROI" — brand orange (#FF6B35)
 
@@ -3840,9 +3882,9 @@ def _player_ctx_xgf_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
 # read straight through with NO ×100 rescale. EZI joins them here too — it's
 # the same 0-100/50-avg scale, just EDGE-time-vs-starts instead of PBP-time
 # share, so it belongs alongside the others as a 5th lens.
-# OZI/DZI/NZI/TZI retired from player rankings; only EZI (EDGE Zone Impact, not a
-# PBP faceoff index) remains as a player zone-bar lens.
-_ZONE_BAR_METRICS = ["EZI"]
+# Zone-bar lenses for the per-season drill-in: the zone indices + EZI. (The MAIN
+# rankings table uses ITI instead; these stay in the drill-in as a breakdown.)
+_ZONE_BAR_METRICS = ["OZI", "DZI", "NZI", "TZI", "EZI"]
 
 
 def _player_zone_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
@@ -4463,7 +4505,7 @@ def _zone_line_chart_compare(players: dict) -> None:
     charts, one panel per player. players: {name: trend}. Mirrors the QG line
     comparison."""
     import altair as alt
-    zcols = []   # OZI/DZI/NZI/TZI retired from player rankings (no per-player zone line)
+    zcols = ["OZI", "DZI", "NZI", "TZI"]   # kept in the drill-in / trade compare
     parts = []
     for name, tr in players.items():
         cols = [c for c in zcols if c in tr.columns and tr[c].notna().any()]
@@ -5088,8 +5130,11 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             ("Net Front Impact", lambda: _chart(
                    "RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
                    ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])),
-            # OZI/DZI/NZI/TZI year-over-year chart retired (replaced by ITI on the
-            # main rankings table; ITI is 3-season pooled, not a per-season line).
+            # Per-season zone indices kept in the drill-in (the main rankings table
+            # uses ITI instead). ITI is a single 3-season-pooled value, not a line.
+            ("Zone Impact", lambda: _chart(
+                   "Zone Impact index 0–100 (OZI, DZI, NZI, TZI) — 50 = average",
+                   ["OZI", "DZI", "NZI", "TZI"], ydomain=[30, 70])),
             ("Zone Impact", lambda: _chart(
                    "D/O Zone Start% (faceoff-started 5v5 shifts)",
                    ["OZ Start%", "DZ Start%"])),
@@ -5632,6 +5677,9 @@ BOX_FAMILY_COLS = ["G", "A1", "A2", "A", "Pts", "PrimP", "PPP", "SHP",
                    "Reb Created", "TK", "GV", "Hits", "Hits Taken", "Blocks",
                    "Min Pen", "Maj Pen", "PIM", "Pen Drawn",
                    "SO G", "SO Att", "SO%", "FO W", "FO L", "FO%"]
+# Box counting stats are shown value-only in the per-season drill-in (not ranked
+# there — the main leaderboard is where box stats rank/sort).
+_BOX_FAMILY_SET = set(BOX_FAMILY_COLS)
 
 # Player List metric families — the collapse filter toggles each group's columns
 # (display names, post-rename). Identity columns (Player/Pos/Team/GP/TOI) always
@@ -8124,8 +8172,10 @@ def _goalie_profile_table(gid: int, qg_scope_suffix: str = "", qg_starter: bool 
             v = r[c]
             if pd.isna(v):
                 row[c] = "—"
-            elif c in ("Elite Rating Tier", "PP Tier", "PK Rating", "PK Flag"):
-                # string labels + PK (asymmetric) — value only, no rank annotation
+            elif c in ("Elite Rating Tier", "PP Tier", "PK Rating", "PK Flag") \
+                    or c in _BOX_FAMILY_SET:
+                # string labels + PK (asymmetric) + box counting stats — value only,
+                # no (rank) annotation
                 row[c] = _b.get(c, lambda v: f"{v}")(v)
             else:
                 txt = _b.get(c, lambda v: f"{v}")(v)
