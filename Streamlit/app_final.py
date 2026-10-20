@@ -5718,9 +5718,12 @@ PLAYER_FAMILY_COLS = {
                          "NFI RAPM-S", "NFI RAPM-S CI",
                          "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
-    # Ice Tilt — ITI (3-season-pooled zone-time RAPM, net/A/S) replaces the retired
-    # OZI/DZI/NZI/TZI player indices. Faceoff-start shares kept as context.
+    # Zone Impact — ITI (3-season-pooled zone-time RAPM) leads on the MAIN leaderboard
+    # (the OZI/DZI/NZI/TZI indices are kept out of the leaderboard's column list), but
+    # the family still CLAIMS OZI/DZI/NZI/TZI so the per-season drill-in shows them as
+    # the detailed breakdown + faceoff-start shares.
     "Zone Impact": ["ITI", "ITI CI", "ITI-A", "ITI-A CI", "ITI-S", "ITI-S CI",
+                    "OZI", "DZI", "NZI", "TZI",
                     "DZ Start%", "NZ Start%", "OZ Start%"],
     # NHL EDGE tracking — a separate basis than NZI/DZI/OZI (player-position,
     # all-situations/EV tracking vs strict 5v5 faceoff-started PBP). See
