@@ -54,6 +54,29 @@ def load_nfi_player() -> pd.DataFrame:
     return df
 
 
+# RAPM (3-season pooled, 2023-24 to 2025-26) — three published families, each
+# net / Attack (A) / Suppress (S). Keyed by player_id. See rapm/output/README.md.
+# (display net, display A, display S, raw-prefix)
+RAPM_FAMILIES = [
+    ("NFI RAPM", "NFI RAPM-A", "NFI RAPM-S", "nfi_rapm"),
+    ("ITI", "ITI-A", "ITI-S", "iti"),
+    ("cG RAPM", "cG RAPM-A", "cG RAPM-S", "cg_rapm"),
+]
+RAPM_SEASONS_LABEL = "3-season pooled (2023-24 to 2025-26)"
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_rapm_5v5() -> pd.DataFrame:
+    """Published RAPM export (rapm/output/player_rapm_5v5.csv): NFI RAPM, ITI and
+    cG RAPM, each net/A/S with bootstrap 95% intervals + clears-zero, plus the
+    collinearity flag. 3-season pooled 5v5; one row per qualified skater
+    (>= 500 pooled 5v5 min), keyed by player_id. Positive = better."""
+    fp = REPO_ROOT / "rapm" / "output" / "player_rapm_5v5.csv"
+    if not fp.exists():
+        return pd.DataFrame()
+    return pd.read_csv(fp)
+
+
 # ---------------------------------------------------------------------------
 # Goalie loaders
 # ---------------------------------------------------------------------------
@@ -501,6 +524,32 @@ def _sort_hint() -> None:
 # across the Players, Goalies, Teams and Referees tables. PDO is deliberately
 # just "Luck" — the whole point of the metric is that it's a luck proxy.
 _ABBR_FULL = {
+    # RAPM (3-season pooled 2023-24 to 2025-26, 5v5). Positive = better. ● in the
+    # CI = 95% interval clears zero; ⚠ = collinearity-flagged (shares ≥65% of 5v5
+    # ice with one teammate — estimate less certain, not lower).
+    "NFI RAPM": "NFI RAPM — on-ice effect on the NFI-zone (net-front) shot rate, teammates/"
+                "opponents/deployment held constant. 3-season pooled 5v5, + = better.",
+    "NFI RAPM-A": "NFI RAPM Attack — effect on your team's NFI-zone shot rate (offence).",
+    "NFI RAPM-S": "NFI RAPM Suppress — effect on the opponent's NFI-zone shot rate (defence, sign-flipped so + = better).",
+    "NFI RAPM CI": "95% bootstrap interval for NFI RAPM (net). ● = clears zero; ⚠ = collinearity-flagged.",
+    "NFI RAPM-A CI": "95% bootstrap interval for NFI RAPM Attack. ● = clears zero.",
+    "NFI RAPM-S CI": "95% bootstrap interval for NFI RAPM Suppress. ● = clears zero.",
+    "ITI": "ITI (Ice Tilt Impact) — on-ice effect on 5v5 offensive-zone time, teammates/"
+           "opponents/deployment held constant. Replaces TZI for player rankings. "
+           "3-season pooled, + = better.",
+    "ITI-A": "ITI Attack — effect on your team's offensive-zone seconds per 60.",
+    "ITI-S": "ITI Suppress — effect on the opponent's offensive-zone seconds per 60 (sign-flipped so + = better).",
+    "ITI CI": "95% bootstrap interval for ITI (net). ● = clears zero; ⚠ = collinearity-flagged.",
+    "ITI-A CI": "95% bootstrap interval for ITI Attack. ● = clears zero.",
+    "ITI-S CI": "95% bootstrap interval for ITI Suppress. ● = clears zero.",
+    "cG RAPM": "cG RAPM — on-ice effect on the Chaos Created Goals rate, teammates/"
+               "opponents/deployment held constant. 3-season pooled 5v5, + = better.",
+    "cG RAPM-A": "cG RAPM Attack — effect on your team's cG rate (offence).",
+    "cG RAPM-S": "cG RAPM Suppress — effect on the opponent's cG rate (defence, sign-flipped so + = better).",
+    "cG RAPM CI": "95% bootstrap interval for cG RAPM (net). ● = clears zero; ⚠ = collinearity-flagged.",
+    "cG RAPM-A CI": "95% bootstrap interval for cG RAPM Attack. ● = clears zero.",
+    "cG RAPM-S CI": "95% bootstrap interval for cG RAPM Suppress. ● = clears zero.",
+    "PrimP": "Primary Points — goals + primary (first) assists, all situations.",
     # Player Ratings (EV 5v5)
     "Elite Rating": "Player Rating — EV 5v5 quality, 0–100 index (~50 = position-group "
               "average). Forwards: 40% ice time + 30% individual xG/60 + 30% "
@@ -3187,7 +3236,7 @@ def _player_season_ranks(pid: int, same_pos: bool = False, team=None) -> dict:
         prow = nfi[nfi["player_id"] == pid]
         if len(prow):
             name = prow["player_name"].iloc[0]
-            for m in ("OZI", "DZI", "NZI", "TZI"):
+            for m in ():   # OZI/DZI/NZI/TZI retired from player rankings
                 if m not in z.columns:
                     continue
                 d = {}
@@ -3364,7 +3413,9 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
         return pd.DataFrame(), trend, []
     share_cols = ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%"]
     rate_cols = ["NFI-A/60", "NFI-S/60"]
-    zone_cols = ["DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI"]
+    # OZI/DZI/NZI/TZI retired from player rankings (replaced by ITI on the main
+    # table); faceoff-start shares kept as context.
+    zone_cols = ["DZ Start%", "NZ Start%", "OZ Start%"]
     # Grouped raw+rel so the table above the charts mirrors the paired bars:
     # each Quality-Games metric sits next to its relative (on/off) counterpart.
     qg_cols = ["NFI-QG%", "RelNFI-QG%", "NFI-QG-A%", "RelNFI-QG-A%",
@@ -3531,7 +3582,7 @@ _QG_PAIR_PANELS = {
 # single-player drill-in's paired panels.
 _QG_BAR_ORDER_NFI = [m for _c, raw, rel in _QG_PAIR_PANELS["NFI"] for m in (raw, rel)]
 _QG_BAR_ORDER_XG = [m for _c, raw, rel in _QG_PAIR_PANELS["xG"] for m in (raw, rel)]
-_ZONE_BAR_METRICS_ORDER = ["OZI", "DZI", "NZI", "TZI", "EZI"]
+_ZONE_BAR_METRICS_ORDER = ["EZI"]   # OZI/DZI/NZI/TZI retired from player rankings
 _BRAND_DEEP = "#0A1A2F"          # "Hockey" — deeper than the chart navy
 _BRAND_ROI = PALETTE["orange"]   # "ROI" — brand orange (#FF6B35)
 
@@ -3766,7 +3817,9 @@ def _player_ctx_xgf_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
 # read straight through with NO ×100 rescale. EZI joins them here too — it's
 # the same 0-100/50-avg scale, just EDGE-time-vs-starts instead of PBP-time
 # share, so it belongs alongside the others as a 5th lens.
-_ZONE_BAR_METRICS = ["OZI", "DZI", "NZI", "TZI", "EZI"]
+# OZI/DZI/NZI/TZI retired from player rankings; only EZI (EDGE Zone Impact, not a
+# PBP faceoff index) remains as a player zone-bar lens.
+_ZONE_BAR_METRICS = ["EZI"]
 
 
 def _player_zone_vals(pid: int, trend: pd.DataFrame, label: str) -> dict:
@@ -4387,7 +4440,7 @@ def _zone_line_chart_compare(players: dict) -> None:
     charts, one panel per player. players: {name: trend}. Mirrors the QG line
     comparison."""
     import altair as alt
-    zcols = ["OZI", "DZI", "NZI", "TZI"]
+    zcols = []   # OZI/DZI/NZI/TZI retired from player rankings (no per-player zone line)
     parts = []
     for name, tr in players.items():
         cols = [c for c in zcols if c in tr.columns and tr[c].notna().any()]
@@ -5012,9 +5065,8 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
             ("Net Front Impact", lambda: _chart(
                    "RelNFI family (RelNFI%, RelNFI-A%, RelNFI-S%)",
                    ["RelNFI%", "RelNFI-A%", "RelNFI-S%"])),
-            ("Zone Impact", lambda: _chart(
-                   "Zone Impact index 0–100 (OZI, DZI, NZI, TZI) — 50 = average",
-                   ["OZI", "DZI", "NZI", "TZI"], ydomain=[30, 70])),
+            # OZI/DZI/NZI/TZI year-over-year chart retired (replaced by ITI on the
+            # main rankings table; ITI is 3-season pooled, not a per-season line).
             ("Zone Impact", lambda: _chart(
                    "D/O Zone Start% (faceoff-started 5v5 shifts)",
                    ["OZ Start%", "DZ Start%"])),
@@ -5529,6 +5581,20 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
     _box = _box_score_scope(key, playoffs=False)
     if not _box.empty and not base.empty:
         base = base.merge(_box, on="player_id", how="left")
+    # RAPM (3-season pooled 2023-26, 5v5) — a static per-player attribute keyed by
+    # player_id, shown identically in every non-playoff scope. Raw net/A/S + CI +
+    # clears-zero + collinearity columns; the display strings are built in
+    # render_players. See rapm/output/README.md.
+    _rapm = load_rapm_5v5()
+    if not _rapm.empty and not base.empty:
+        _rcols = ["player_id"]
+        for _b in ("nfi_rapm", "iti", "cg_rapm"):
+            for _suf in ("", "_a", "_s"):
+                _rcols += [f"{_b}{_suf}", f"{_b}{_suf}_lo", f"{_b}{_suf}_hi",
+                           f"{_b}{_suf}_clears_zero"]
+        _rcols += ["collinearity_flag", "top_linemate", "share_with_top_linemate"]
+        base = base.merge(_rapm[[c for c in _rcols if c in _rapm.columns]],
+                          on="player_id", how="left")
     # Show traded players on their CURRENT team (single-season scopes); no-op for
     # pooled. The leaderboard later re-labels the display team as "OLD / NEW", but
     # charts read this single-team column, so it must be the current team.
@@ -5538,7 +5604,7 @@ def _build_players_frame(season_label: str, playoffs: bool = False) -> tuple[pd.
 
 # Box-score display columns (a metric family on the Player List, not a tab).
 # Defined here so PLAYER_FAMILY_COLS below can reference it.
-BOX_FAMILY_COLS = ["G", "A1", "A2", "A", "Pts", "PPP", "SHP",
+BOX_FAMILY_COLS = ["G", "A1", "A2", "A", "Pts", "PrimP", "PPP", "SHP",
                    "PPG Share%", "PPA Share%", "Shots", "Shot%", "GWG",
                    "Reb Created", "TK", "GV", "Hits", "Hits Taken", "Blocks",
                    "Min Pen", "Maj Pen", "PIM", "Pen Drawn",
@@ -5567,16 +5633,24 @@ PLAYER_FAMILY_COLS = {
     # xG core — situation-driven (they follow the Situation filter). PDOxG stays
     # here (it's an xG-adjusted luck metric).
     "xG": ["xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDOxG"],
-    # CCG (Chaos Created Goals) — its own family: count, per-60, and both
-    # team-relative forms (count vs teammates, and per-60 vs teammates).
-    "CCG": ["CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"],
+    # CCG (Chaos Created Goals) — count, per-60, both team-relative forms, plus
+    # cG RAPM (3-season-pooled on-ice chaos-goal effect, net/A/S).
+    "CCG": ["CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60",
+            "cG RAPM", "cG RAPM CI", "cG RAPM-A", "cG RAPM-A CI",
+            "cG RAPM-S", "cG RAPM-S CI"],
     # Advanced Stats — PDO plus the possession/individual suite (the tail of the
     # old xG family).
     "Advanced Stats": (["PDO"] + _SIT_PLAIN),
-    "Net Front Impact": ["RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
+    # Net Front Impact — relative + raw NFI, plus NFI RAPM (3-season-pooled on-ice
+    # NFI-zone effect, net/A/S).
+    "Net Front Impact": ["NFI RAPM", "NFI RAPM CI", "NFI RAPM-A", "NFI RAPM-A CI",
+                         "NFI RAPM-S", "NFI RAPM-S CI",
+                         "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%",
                          "NFI-A/60", "NFI-S/60"],
-    "Zone Impact": ["DZ Start%", "NZ Start%", "OZ Start%",
-                    "OZI", "DZI", "NZI", "TZI"],
+    # Ice Tilt — ITI (3-season-pooled zone-time RAPM, net/A/S) replaces the retired
+    # OZI/DZI/NZI/TZI player indices. Faceoff-start shares kept as context.
+    "Zone Impact": ["ITI", "ITI CI", "ITI-A", "ITI-A CI", "ITI-S", "ITI-S CI",
+                    "DZ Start%", "NZ Start%", "OZ Start%"],
     # NHL EDGE tracking — a separate basis than NZI/DZI/OZI (player-position,
     # all-situations/EV tracking vs strict 5v5 faceoff-started PBP). See
     # edge/README.md. D/N/O Start% is NOT EDGE data (it's my own PBP faceoff
@@ -6075,6 +6149,11 @@ def _box_score_scope(scope_key: str, playoffs: bool = False) -> pd.DataFrame:
     if {"PPP", "ppGoals", "A"}.issubset(agg.columns):
         _ppa = agg["PPP"] - agg["ppGoals"]
         agg["PPA Share%"] = np.where(agg["A"] > 0, _ppa / agg["A"] * 100, np.nan)
+    # Primary Points = goals + primary assists (all situations), matching the box
+    # table's scope. A1 (primary assists) comes from the PBP goal events
+    # (build_box_score_pbp.py). Blank where A1 is absent (2020-21, 2021-22, 2026-27).
+    if {"G", "A1"}.issubset(agg.columns):
+        agg["PrimP"] = agg["G"] + agg["A1"]
     keep = ["player_id"] + [c for c in BOX_FAMILY_COLS if c in agg.columns]
     return agg[keep]
 
@@ -6400,6 +6479,33 @@ def render_players() -> None:
         df["TOI/GP"] = np.where(_gp > 0,
                                 pd.to_numeric(df["TOI"], errors="coerce") / _gp, np.nan)
 
+    # RAPM display columns (3-season pooled 2023-26). Net/A/S stay NUMERIC so the
+    # table sorts by them; each gets an adjacent "… CI" string with the 95%
+    # interval and markers: ● = interval clears zero, ⚠ = collinearity-flagged
+    # (shares >=65% of 5v5 ice with one teammate — less certain, not lower).
+    if "nfi_rapm" in df.columns:
+        _collin = (df["collinearity_flag"].fillna(False).to_numpy()
+                   if "collinearity_flag" in df.columns else np.zeros(len(df), bool))
+
+        def _rapm_ci(lo, hi, clears, fmt, flag):
+            if pd.isna(lo) or pd.isna(hi):
+                return ""
+            s = f"{'● ' if bool(clears) else ''}{lo:{fmt}}–{hi:{fmt}}"
+            return s + (" ⚠" if flag else "")
+
+        for _net, _a, _s, _raw in RAPM_FAMILIES:
+            if _raw not in df.columns:
+                continue
+            _fmt = ".1f" if _raw == "iti" else ".2f"
+            for _disp, _rc, _markflag in ((_net, _raw, True), (_a, f"{_raw}_a", False),
+                                          (_s, f"{_raw}_s", False)):
+                df[_disp] = pd.to_numeric(df[_rc], errors="coerce").round(2)
+                _lo, _hi = df[f"{_rc}_lo"].to_numpy(), df[f"{_rc}_hi"].to_numpy()
+                _cz = df[f"{_rc}_clears_zero"].to_numpy()
+                df[f"{_disp} CI"] = [
+                    _rapm_ci(l, h, c, _fmt, bool(fl) and _markflag)
+                    for l, h, c, fl in zip(_lo, _hi, _cz, _collin)]
+
     # Always show the full column set (Compact view removed; Qual GP dropped).
     # NFI-A/60 / NFI-S/60 are RAW per-60 rates; RelNFI-A% / RelNFI-S% are the
     # relative (vs own-team) versions — both coexist, placed side by side.
@@ -6412,9 +6518,15 @@ def render_players() -> None:
             "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG", "Mid ixG", "Easy ixG",
             "PP Rating", "PP Tier", "PK Rating", "PK Flag",
             "xGF/60", "xGA/60", "xG%", "RelxG%", "RelxG-F%", "RelxG-A%", "PDOxG",
-            "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60", "PDO",
+            "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60",
+            "cG RAPM", "cG RAPM CI", "cG RAPM-A", "cG RAPM-A CI", "cG RAPM-S", "cG RAPM-S CI",
+            "PDO",
+            "NFI RAPM", "NFI RAPM CI", "NFI RAPM-A", "NFI RAPM-A CI",
+            "NFI RAPM-S", "NFI RAPM-S CI",
             "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI%", "NFI-A/60", "NFI-S/60",
-            "DZ Start%", "NZ Start%", "OZ Start%", "OZI", "DZI", "NZI", "TZI",
+            # ITI (3-season pooled) replaces the retired OZI/DZI/NZI/TZI player indices.
+            "ITI", "ITI CI", "ITI-A", "ITI-A CI", "ITI-S", "ITI-S CI",
+            "DZ Start%", "NZ Start%", "OZ Start%",
             *_EDGE_VALUE_DISP, *_SIT_PLAIN, *BOX_FAMILY_COLS]
     # Zone now populates for single seasons too (per-season files), so it is no
     # longer stripped; the in-frame filter below drops it only if truly absent.
@@ -6452,6 +6564,17 @@ def render_players() -> None:
         fmt["PDO"] = lambda x: "—" if pd.isna(x) else f"{x:.1f}"
     if "PDOxG" in disp.columns:
         fmt["PDOxG"] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
+    # RAPM net/A/S — signed (positive = better). ITI in whole-ish numbers (1 dp),
+    # NFI/cG RAPM per-60 rates (2 dp). The adjacent "… CI" columns are strings.
+    for _c in ("NFI RAPM", "NFI RAPM-A", "NFI RAPM-S",
+               "cG RAPM", "cG RAPM-A", "cG RAPM-S"):
+        if _c in disp.columns:
+            fmt[_c] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
+    for _c in ("ITI", "ITI-A", "ITI-S"):
+        if _c in disp.columns:
+            fmt[_c] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
+    if "PrimP" in disp.columns:
+        fmt["PrimP"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     if "CCG" in disp.columns:
         fmt["CCG"] = lambda x: "—" if pd.isna(x) else f"{x:,.0f}"
     if "CCG/60" in disp.columns:
@@ -6582,21 +6705,27 @@ def render_players() -> None:
                       key=f"players_tbl_{_gen}")
 
     if playoffs:
-        zone_note = " · OZI/DZI/NZI/TZI (0–100, 50 = avg) pooled across playoffs"
+        start_note = " · D/N/O Start% pooled across playoffs"
     elif SEASON_KEY.get(season_label) == "pooled_2yr":
-        zone_note = (" · OZI/DZI/NZI/TZI (0–100, 50 = avg) and D/N/O Start% "
-                     "pooled 2024-25 + 2025-26")
+        start_note = " · D/N/O Start% pooled 2024-25 + 2025-26"
     elif is_pooled:
-        zone_note = (" · OZI/DZI/NZI/TZI (0–100, 50 = avg) and D/N/O Start% "
-                     "pooled across all seasons")
+        start_note = " · D/N/O Start% pooled across all seasons"
     else:
-        zone_note = (" · OZI/DZI/NZI/TZI (0–100, 50 = avg) and D/N/O Start% "
-                     "for this season")
+        start_note = " · D/N/O Start% for this season"
+    # RAPM legend (NFI RAPM / ITI / cG RAPM are the same 3-season-pooled values in
+    # every scope). ● = interval clears zero; ⚠ = collinearity-flagged.
+    rapm_note = (" · **NFI RAPM / ITI / cG RAPM** are 3-season pooled (2023-24 to "
+                 "2025-26), net = Attack + Suppress, + = better; **●** in the CI = "
+                 "95% interval clears zero; **⚠** = collinearity-flagged (≥ 65% of "
+                 "5v5 ice with one teammate — estimate less certain, not lower). ITI "
+                 "replaces the retired OZI/DZI/NZI/TZI player indices (now a Teams-tab "
+                 "/ faceoff diagnostic only).")
     st.caption(
         f"{len(disp):,} players (≥ {min_toi:,} ES min, ≥ {min_gp} GP) · {scope_label} · "
         f"sorted by RelNFI% descending · ranked at ≥ {min_toi:,} ES min / ≥ {min_gp} GP "
-        f"(else UR){zone_note} · the Min GP / Min ES TOI sliders set the ranking floor "
+        f"(else UR){start_note} · the Min GP / Min ES TOI sliders set the ranking floor "
         "directly — lower them to rank more players, raise them to tighten the cohort"
+        f"{rapm_note}"
     )
 
     import altair as alt
