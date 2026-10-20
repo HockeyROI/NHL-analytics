@@ -4790,7 +4790,10 @@ def load_game_meta() -> pd.DataFrame:
 # per-game log) and shot charts aren't a per-game table.
 _GAME_FAMILY_COLS = {
     "Quality Games": ["NFI-QG", "xG-QG"],   # per-game quality flag (✓/✗/—)
-    "Player Ratings": ["ixG", "ixG/60"],    # the per-game ixG ingredient of the rating
+    # The Elite Rating's per-game ingredients: EV TOI (always shown), ixG/60 and
+    # primary points/60. (The 0-100 rating itself is a season-cohort percentile,
+    # so it can't be a single-game number; these are its inputs at the game level.)
+    "Player Ratings": ["ixG", "ixG/60", "P", "Prim Pts/60"],
     "xG": ["xGF", "xGA", "xG%", "xGF/60", "xGA/60"],
     "CCG": ["CCG", "CCG/60"],
     "Advanced Stats": ["CF%", "CF", "CA", "CF/60", "CA/60", "iCF", "iG"],
@@ -4856,7 +4859,8 @@ _GAME_COL_FMT = {"TOI": "{:.1f}", "CF%": "{:.1f}", "CF": "{:.0f}", "CA": "{:.0f}
                  "NFI%": "{:.1f}", "NFI±": "{:+.0f}", "NFI-A/60": "{:.1f}", "NFI-S/60": "{:.1f}",
                  "G": "{:.0f}", "A": "{:.0f}", "P": "{:.0f}", "SOG": "{:.0f}",
                  "CCG": "{:.0f}", "CCG/60": "{:.2f}",
-                 "ixG": "{:.2f}", "ixG/60": "{:.2f}", "iCF": "{:.0f}", "iG": "{:.0f}",
+                 "ixG": "{:.2f}", "ixG/60": "{:.2f}", "Prim Pts/60": "{:.2f}",
+                 "iCF": "{:.0f}", "iG": "{:.0f}",
                  "OZ Start%": "{:.1f}", "DZ Start%": "{:.1f}", "NZ Start%": "{:.1f}"}
 
 
@@ -4949,6 +4953,10 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     gp["xGA/60"] = gp["xG_ag"] * _p60
     gp["CCG/60"] = gp["CCG"] * _p60
     gp["ixG/60"] = gp["ixG"] * _p60
+    # Primary points per 60 — the scoring ingredient of the Elite Rating (its other
+    # ingredients, EV TOI and ixG/60, are already shown). P here is 5v5 primary
+    # points (goals + primary assists) from _per_game_scoring.
+    gp["Prim Pts/60"] = gp["P"] * _p60
     # Per-game Quality-Game flags: a game is quality on a metric if its 5v5 game%
     # clears the position median — same definition as QG%, just not yet aggregated.
     # Games below the QG floor (TOI < 8 min OR < 5 attempts) can't qualify → "—".
