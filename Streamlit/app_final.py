@@ -4790,10 +4790,10 @@ def load_game_meta() -> pd.DataFrame:
 # per-game log) and shot charts aren't a per-game table.
 _GAME_FAMILY_COLS = {
     "Quality Games": ["NFI-QG", "xG-QG"],   # per-game quality flag (✓/✗/—)
-    # The Elite Rating's per-game ingredients: EV TOI (always shown), ixG/60 and
-    # primary points/60. (The 0-100 rating itself is a season-cohort percentile,
-    # so it can't be a single-game number; these are its inputs at the game level.)
-    "Player Ratings": ["ixG", "ixG/60", "P", "Prim Pts/60"],
+    # The Elite Rating's per-game ingredients (all 5v5): EV TOI (always shown),
+    # ixG/60 and primary points/60. (The 0-100 rating itself is a season-cohort
+    # percentile, so it has no single-game form; these are its inputs per game.)
+    "Player Ratings": ["ixG", "ixG/60", "Prim Pts/60"],
     "xG": ["xGF", "xGA", "xG%", "xGF/60", "xGA/60"],
     "CCG": ["CCG", "CCG/60"],
     "Advanced Stats": ["CF%", "CF", "CA", "CF/60", "CA/60", "iCF", "iG"],
@@ -4801,7 +4801,9 @@ _GAME_FAMILY_COLS = {
     # Zone: only the raw per-game faceoff-start shares (the recentered OZI/DZI/
     # NZI/TZI indices are season cohort constructs, so they stay season-only).
     "Zone Impact": ["OZ Start%", "DZ Start%", "NZ Start%"],
-    "Box Score": ["G", "A", "P", "SOG"],    # 5v5 goals + primary assists + shots
+    # Box Score — ALL-SITUATIONS per-game counting stats (real box score).
+    "Box Score": ["G", "A1", "A2", "A", "P", "PrimP", "SOG",
+                  "Hits", "Blocks", "TK", "GV", "PIM"],
 }
 
 
@@ -4811,6 +4813,17 @@ def load_zone_start_per_game() -> pd.DataFrame:
     → zone_start_per_game.csv)."""
     fp = ZONES / "output" / "zone_start_per_game.csv"
     return pd.read_csv(fp) if fp.exists() else pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_box_pbp_per_game(season: int) -> pd.DataFrame:
+    """Per-(player, game) ALL-SITUATIONS box counting stats from the PBP
+    (build_box_pbp_per_game.py): G, A1, A2, SOG, Hits, Blocks, TK, GV, PIM.
+    The per-game counterpart of the season box score (box_score_pbp.csv)."""
+    fp = REPO_ROOT / "Data" / "box_pbp_by_game" / f"{season}.parquet"
+    if not fp.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(fp)
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -4858,6 +4871,8 @@ _GAME_COL_FMT = {"TOI": "{:.1f}", "CF%": "{:.1f}", "CF": "{:.0f}", "CA": "{:.0f}
                  "xGF/60": "{:.2f}", "xGA/60": "{:.2f}",
                  "NFI%": "{:.1f}", "NFI±": "{:+.0f}", "NFI-A/60": "{:.1f}", "NFI-S/60": "{:.1f}",
                  "G": "{:.0f}", "A": "{:.0f}", "P": "{:.0f}", "SOG": "{:.0f}",
+                 "A1": "{:.0f}", "A2": "{:.0f}", "PrimP": "{:.0f}", "Hits": "{:.0f}",
+                 "Blocks": "{:.0f}", "TK": "{:.0f}", "GV": "{:.0f}", "PIM": "{:.0f}",
                  "CCG": "{:.0f}", "CCG/60": "{:.2f}",
                  "ixG": "{:.2f}", "ixG/60": "{:.2f}", "Prim Pts/60": "{:.2f}",
                  "iCF": "{:.0f}", "iG": "{:.0f}",
@@ -4927,19 +4942,33 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     gp["xG%"] = 100 * gp["xG_for"] / (gp["xG_for"] + gp["xG_ag"]).replace(0, np.nan)
     gp["NFI±"] = gp["NFI_for"] - gp["NFI_ag"]
     gp["NFI%"] = 100 * gp["NFI_for"] / (gp["NFI_for"] + gp["NFI_ag"]).replace(0, np.nan)
-    # Box score (5v5 G/A/P) + CCG + individual (iCF/SOG/iG/ixG) per game.
-    gp = gp.merge(_per_game_scoring(pid, season), on="game_id", how="left")
+    # Box Score family = ALL-SITUATIONS per-game counting stats
+    # (build_box_pbp_per_game.py): G, A1, A2, SOG, Hits, Blocks, TK, GV, PIM, with
+    # A = A1+A2, Pts = G+A, PrimP = G+A1. The Elite-Rating scoring ingredient
+    # (5v5 primary points, for Prim Pts/60) comes from _per_game_scoring; CCG and
+    # 5v5 individual (iCF/iG/ixG) from their own sources.
+    _p5 = _per_game_scoring(pid, season)[["game_id", "P"]].rename(columns={"P": "_P5"})
+    gp = gp.merge(_p5, on="game_id", how="left")
+    _bx = load_box_pbp_per_game(season)
+    if not _bx.empty:
+        _bx = _bx[(_bx["player_id"] == pid) & (_bx["game_type"] == "regular")]
+        gp = gp.merge(_bx[["game_id", "G", "A1", "A2", "SOG", "Hits", "Blocks",
+                           "TK", "GV", "PIM"]], on="game_id", how="left")
     gp = gp.merge(_per_game_ccg(pid, season), on="game_id", how="left")
     _ind = load_per_game_individual(season)
-    gp = gp.merge(_ind[_ind["player_id"] == pid][["game_id", "ixG", "iCF", "SOG", "iG"]],
+    gp = gp.merge(_ind[_ind["player_id"] == pid][["game_id", "ixG", "iCF", "iG"]],
                   on="game_id", how="left")
     _zs = load_zone_start_per_game()
     if not _zs.empty:
         _zs = _zs[(_zs["player_id"] == pid) & (_zs["season"] == season)]
         gp = gp.merge(_zs[["game_id", "OZ Start%", "DZ Start%", "NZ Start%"]],
                       on="game_id", how="left")
-    for c in ("G", "A", "P", "CCG", "iCF", "SOG", "iG"):
+    for c in ("G", "A1", "A2", "SOG", "Hits", "Blocks", "TK", "GV", "PIM",
+              "CCG", "iCF", "iG", "_P5"):
         gp[c] = gp[c].fillna(0) if c in gp.columns else 0
+    gp["A"] = gp["A1"] + gp["A2"]
+    gp["P"] = gp["G"] + gp["A"]
+    gp["PrimP"] = gp["G"] + gp["A1"]
     for c in ("ixG", "OZ Start%", "DZ Start%", "NZ Start%"):
         if c not in gp.columns:
             gp[c] = np.nan
@@ -4954,9 +4983,9 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     gp["CCG/60"] = gp["CCG"] * _p60
     gp["ixG/60"] = gp["ixG"] * _p60
     # Primary points per 60 — the scoring ingredient of the Elite Rating (its other
-    # ingredients, EV TOI and ixG/60, are already shown). P here is 5v5 primary
-    # points (goals + primary assists) from _per_game_scoring.
-    gp["Prim Pts/60"] = gp["P"] * _p60
+    # ingredients, EV TOI and ixG/60, are already shown). _P5 is 5v5 primary
+    # points (goals + primary assists, 5v5) from _per_game_scoring.
+    gp["Prim Pts/60"] = gp["_P5"] * _p60
     # Per-game Quality-Game flags: a game is quality on a metric if its 5v5 game%
     # clears the position median — same definition as QG%, just not yet aggregated.
     # Games below the QG floor (TOI < 8 min OR < 5 attempts) can't qualify → "—".
@@ -4990,8 +5019,10 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     gp["Date"] = gp["game_date"].astype(str)
     cols = ["Date", "Game", "TOI"] + _metric_cols
     st.markdown(f"**{name} — game log, {_lbl}**  ·  {len(gp)} GP · {gp['TOI'].sum():.0f} ES min")
-    _cap = ("One row per game, newest first — per-game 5v5 stats for the selected metric "
-            "family (tap families above to change the columns). G/A/P are 5v5.")
+    _cap = ("One row per game, newest first — per-game stats for the selected metric "
+            "family (tap families above to change the columns). On-ice rates (xG%, "
+            "CF%, NFI%, …) are 5v5; the **Box Score** family (G, A1, A2, Pts, "
+            "Hits, Blocks, TK, GV, PIM) is **all situations**, like a real box score.")
     if _no_pg:
         _cap += (f"  ·  No per-game breakdown for: {', '.join(_no_pg)} "
                  "(EDGE is published by the NHL as season totals only — no per-game log).")
