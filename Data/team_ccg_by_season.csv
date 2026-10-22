@@ -215,8 +215,8 @@ team_id,team,season,game_type,situation,ccg
 4,PHI,20252026,regular,5v6,3
 4,PHI,20252026,regular,6v5,4
 4,PHI,20252026,regular,other,8
-4,PHI,20262027,regular,5v4,4
-4,PHI,20262027,regular,5v5,2
+4,PHI,20262027,regular,5v4,5
+4,PHI,20262027,regular,5v5,3
 5,PIT,20202021,playoff,5v5,5
 5,PIT,20202021,regular,3v3,2
 5,PIT,20202021,regular,5v4,23
@@ -376,7 +376,7 @@ team_id,team,season,game_type,situation,ccg
 7,BUF,20252026,regular,6v5,1
 7,BUF,20252026,regular,other,8
 7,BUF,20262027,regular,3v3,3
-7,BUF,20262027,regular,5v4,1
+7,BUF,20262027,regular,5v4,2
 7,BUF,20262027,regular,5v5,11
 8,MTL,20202021,playoff,5v4,5
 8,MTL,20202021,playoff,5v5,16
@@ -486,8 +486,8 @@ team_id,team,season,game_type,situation,ccg
 9,OTT,20252026,regular,5v6,1
 9,OTT,20252026,regular,6v5,1
 9,OTT,20252026,regular,other,1
-9,OTT,20262027,regular,5v4,2
-9,OTT,20262027,regular,5v5,6
+9,OTT,20262027,regular,5v4,3
+9,OTT,20262027,regular,5v5,7
 9,OTT,20262027,regular,other,2
 10,TOR,20202021,playoff,5v4,1
 10,TOR,20202021,playoff,5v5,6
