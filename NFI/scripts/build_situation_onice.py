@@ -247,7 +247,7 @@ def main() -> int:
     iev = _ds.load_shot_events(
         usecols=["game_id", "event_id", "event_type", "is_goal",
                  "situation_code", "shooting_team_id", "home_team_id",
-                 "shooter_player_id"],
+                 "shooter_player_id", "shooting_team_abbrev"],
         dtype={"situation_code": str})
     iev = iev[iev["event_type"].isin(CORSI)].dropna(subset=["shooter_player_id", "situation_code"])
     iev = iev.merge(xg, on=["game_id", "event_id"], how="left")
@@ -277,7 +277,9 @@ def main() -> int:
     ind_game = (iev[iev["season"] >= GAME_SEASONS_FROM]
                 .groupby(["shooter_player_id", "game_id", "situation"])
                 .agg(iCF=("event_type", "size"), iFF=("_fen", "sum"),
-                     ixG=("_ixg", "sum"), iG=("_ig", "sum")).reset_index()
+                     ixG=("_ixg", "sum"), iG=("_ig", "sum"),
+                     _team=("shooting_team_abbrev", "first"),
+                     _gt=("game_type", "first")).reset_index()
                 .rename(columns={"shooter_player_id": "player_id"}))
     ind_game["player_id"] = ind_game["player_id"].astype(int)
 
@@ -302,7 +304,9 @@ def main() -> int:
     gcols = ["player_id", "game_id", "game_type", "team", "situation"] + FIELDS
     for season, rws in sorted(game_rows.items()):
         gdf = pd.DataFrame(rws, columns=gcols).drop(columns=["iCF", "iFF", "ixG", "iG"])
-        ind = ind_game[ind_game["game_id"].isin(set(gdf["game_id"]))]
+        # every game with an individual shot counts, even one whose shifts are
+        # missing (no on-ice row) — the season totals include those shots too
+        ind = ind_game[ind_game["game_id"].astype(str).str[:4] == season[:4]]
         gdf = gdf.merge(ind, on=["player_id", "game_id", "situation"], how="outer")
         # individual-only rows (a shot in a situation with no on-ice row) keep the
         # game's team/type from the player's other rows
@@ -310,6 +314,9 @@ def main() -> int:
                  [["player_id", "game_id", "team", "game_type"]])
         gdf = gdf.drop(columns=["team", "game_type"]).merge(
             _meta, on=["player_id", "game_id"], how="left")
+        gdf["team"] = gdf["team"].fillna(gdf["_team"])
+        gdf["game_type"] = gdf["game_type"].fillna(gdf["_gt"])
+        gdf = gdf.drop(columns=["_team", "_gt"])
         for f in FIELDS:
             gdf[f] = gdf[f].fillna(0.0)
             gdf[f] = (gdf[f].round(4) if f in ("toi_min", "xGF", "xGA", "xGFs", "xGAs", "ixG")

@@ -25,7 +25,9 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path("/Users/ashgarg/Documents/HockeyROI")
-SHOT_CSV = ROOT / "Data" / "nhl_shot_events.v2.csv"
+# The canonical shot file (the .v2 copy is a frozen snapshot with no live season).
+# Completed-season rows are kept append-only frozen at the app's read path.
+SHOT_CSV = ROOT / "Data" / "nhl_shot_events.csv"
 TLM_CSV = ROOT / "NFI" / "output" / "team_level_all_metrics.csv"
 # Write to the Streamlit app's read path (NFI/output/), not the legacy
 # top-level Output/ dir, so the Teams tab picks up all seasons directly.
@@ -74,7 +76,7 @@ tlm = pd.read_csv(TLM_CSV, dtype={"season":str})
 # identical to the prior single-season output; the prior three seasons are
 # added. `m` / `fen` are left holding the last (2025-26) season for the
 # verification reporting block that follows.
-SEASONS = ["20222023", "20232024", "20242025", "20252026"]
+SEASONS = ["20222023", "20232024", "20242025", "20252026", "20262027"]
 all_m = []
 m = None
 fen = None
@@ -177,6 +179,8 @@ for season in SEASONS:
 
 # Combine all seasons → single file at the app's read path.
 combined = pd.concat(all_m, ignore_index=True)
+# The audit report below compares against the 2025-26 pre-audit snapshot.
+m = all_m[SEASONS.index("20252026")]
 OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
 combined.to_csv(OUT_CSV, index=False)
 print(f"\nWrote {len(combined)} rows ({len(SEASONS)} seasons) → {OUT_CSV}")

@@ -51,6 +51,7 @@ WINDOWS = {
     "2023-24": {"scope": "2023-24", "seasons": ["20232024"]},
     "2024-25": {"scope": "2024-25", "seasons": ["20242025"]},
     "2025-26": {"scope": "2025-26", "seasons": ["20252026"]},
+    "2026-27": {"scope": "2026-27", "seasons": ["20262027"]},   # live season
 }
 
 
@@ -91,7 +92,7 @@ def build_window(window, cfg):
     comp["composite"] = comp[COMPOSITE_METRICS].mean(axis=1)
     comp = comp.reset_index()
     for col in METRICS + ["composite"]:
-        comp[f"{col}_rank"] = comp[col].rank(ascending=False, method="min").astype(int)
+        comp[f"{col}_rank"] = comp[col].rank(ascending=False, method="min").astype("Int64")
     comp.insert(0, "window", window)
     return comp
 

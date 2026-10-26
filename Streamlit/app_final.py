@@ -837,6 +837,7 @@ def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=(), second_cohort=No
         qmask = qualified.reindex(disp.index).fillna(False).astype(bool)
         _trk = (team_rank_idx or {}).get(col, {})
         suffix = {}
+        realval = {}        # perturbed key -> true value (format the true value)
         # A column that happens to be all-whole-number with no NaNs in the
         # filtered set (e.g. a Team filter shrinking the sample) can infer as
         # int64, which can't hold the epsilon-perturbed float below — force
@@ -847,6 +848,7 @@ def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=(), second_cohort=No
                 continue
             px = x + i * 1e-9
             perturbed.iloc[i] = px
+            realval[px] = x
             if qmask.iloc[i]:
                 r = vmap.get(x)
                 if team_rank_idx is not None:
@@ -863,13 +865,13 @@ def _apply_ranks(disp, fmt, cohort, rank_cols, lower_better=(), second_cohort=No
                 suffix[px] = " (UR)" if mark_unranked else ""
         disp[col] = perturbed
 
-        def _mk_row(base_f, sfx):
+        def _mk_row(base_f, sfx, rv):
             def f(x):
                 if pd.isna(x):
                     return base_f(x)
-                return f"{base_f(x)}{sfx.get(x, '')}"
+                return f"{base_f(rv.get(x, x))}{sfx.get(x, '')}"
             return f
-        fmt[col] = _mk_row(fmt[col], suffix)
+        fmt[col] = _mk_row(fmt[col], suffix, realval)
     return fmt
 
 
@@ -2962,6 +2964,11 @@ _PLAYER_RANK_COLS = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
                      "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
                      "xG-QG-F%", "xG-QG-A%", "NFI-QG-A%", "NFI-QG-S%",
                      "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"]
+# Every column the leaderboard annotates with a rank (box included).
+def _lb_ranked_cols() -> list[str]:
+    return _PLAYER_RANK_COLS + list(_EDGE_VALUE_DISP) + list(BOX_FAMILY_COLS)
+
+
 _PLAYER_LOWER = {"NFI-S/60", "xGA/60", "RelxG-A%",
                  "GV", "Hits Taken", "Min Pen", "Maj Pen", "PIM", "FO L"}
 
@@ -3046,11 +3053,11 @@ def _frame_season_ranks(pid: int, same_pos: bool = False, own_team: bool = False
         if own_team:
             coh = coh[coh["Team"] == me["Team"]]
         if not (coh["player_id"] == pid).any():
-            for c in _PLAYER_RANK_COLS + _EDGE_VALUE_DISP:
+            for c in _lb_ranked_cols():
                 if c in f.columns:
                     out.setdefault(c, {})[ssn] = None
             continue
-        for c in _PLAYER_RANK_COLS + _EDGE_VALUE_DISP:
+        for c in _lb_ranked_cols():
             if c not in coh.columns:
                 continue
             s = pd.to_numeric(coh[c], errors="coerce")
@@ -3754,21 +3761,10 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     # Leaderboard-ranked columns take the leaderboard's own ranks (same frame,
     # same default floor), so the drill-in's (league / team) brackets match it.
     ranks.update(_frame_season_ranks(pid, same_pos=same_pos))
-    # RAPM net/A/S: rank among every skater with a pooled estimate (position
-    # group when same_pos) — the same rank in every season row.
-    _rp = load_rapm_5v5()
-    if not _rp.empty and (_rp["player_id"] == int(pid)).any():
-        _rpd = _add_rapm_display(_rp)
-        _mine = _rpd[_rpd["player_id"] == int(pid)].iloc[0]
-        _coh = _rpd[_rpd["position"] == _mine["position"]] if same_pos else _rpd
-        for _n, _a, _s, _raw in RAPM_FAMILIES:
-            for _c in (_n, _a, _s):
-                if pd.notna(_mine[_c]):
-                    _rk = int((pd.to_numeric(_coh[_c], errors="coerce") > _mine[_c]).sum()) + 1
-                    ranks[_c] = {ssn: _rk for ssn in PROFILE_SEASONS}
     if team == "__own__":
         team_ranks.update(_frame_season_ranks(pid, same_pos=same_pos, own_team=True))
     _b = _drill_formats()
+    _lb_ranked = set(_lb_ranked_cols())
     has_team = "Team" in trend.columns
     has_gp = "GP" in trend.columns
     rows = []
@@ -3783,10 +3779,8 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
             v = r[c]
             if pd.isna(v):
                 row[c] = "—"
-            elif c in ("Elite Rating Tier", "PP Tier", "PK Rating", "PK Flag") \
-                    or c in _BOX_FAMILY_SET:
-                # string labels + PK (asymmetric) + box counting stats — value only,
-                # no (rank) annotation
+            elif c not in _lb_ranked:
+                # the leaderboard shows these unranked (labels, PK, PDO, RAPM, …)
                 row[c] = _b.get(c, lambda v: f"{v}")(v)
             else:
                 txt = _b.get(c, lambda v: f"{v}")(v)
@@ -3832,6 +3826,9 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
                 r2[c] = "—"
                 continue
             txt = _b.get(c, lambda v: f"{v}")(v)
+            if c not in _lb_ranked:
+                r2[c] = txt
+                continue
 
             def _rk(fr, _v=v, _c=c, _sc=sc):
                 s = pd.to_numeric(fr[_sc], errors="coerce")
@@ -5309,6 +5306,8 @@ def _game_log_frame(pid: int, season: int, bucket: str) -> pd.DataFrame:
     out = pd.concat(frames, axis=1)
     out.index.name = "game_id"
     out = out.reset_index()
+    # regular-season games only (some per-game files also carry playoff games)
+    out = out[out["game_id"].astype(str).str[4:6] == "02"].copy()
     # Box columns: 0 for games the box source has processed (the player simply had
     # none), blank for games it hasn't reached yet.
     out["_team"] = out["game_id"].map(team_of)
@@ -6629,6 +6628,33 @@ def load_box_score() -> pd.DataFrame:
             _new = _old.merge(_a, on=["player_id", "season", "game_type"], how="outer")
             p = pd.concat([p[p["season"] != _live], _new], ignore_index=True)
         d = d.merge(p, on=["player_id", "season", "game_type"], how="left")
+    # The NHL Stats API merge leaves some player-seasons with blank report fields
+    # (e.g. a missing summary row → goals/assists/shots blank while hits are
+    # present), which summed to 0 on the leaderboard. Fill any blank count from
+    # the play-by-play per-game box (same events, all situations).
+    _pq = sorted((REPO_ROOT / "Data" / "box_pbp_by_game").glob("[0-9]" * 8 + ".parquet"))
+    if _pq:
+        b = pd.concat([pd.read_parquet(f) for f in _pq], ignore_index=True)
+        b["season"] = b["season"].astype(str)
+        k = ["player_id", "season", "game_type"]
+        agg = b.groupby(k).sum(numeric_only=True).drop(columns=["game_id"], errors="ignore")
+        agg["_gp"] = b.groupby(k)["game_id"].nunique()
+        fill = {"GP": agg["_gp"], "goals": agg["G"], "assists": agg["A1"] + agg["A2"],
+                "points": agg["G"] + agg["A1"] + agg["A2"], "shots": agg["SOG"],
+                "hits": agg["Hits"], "blockedShots": agg["Blocks"],
+                "takeaways": agg["TK"], "giveaways": agg["GV"],
+                "penaltyMinutes": agg["PIM"]}
+        for col, src in (("ppGoals", ["PPG"]), ("ppPoints", ["PPG", "PPA"]),
+                         ("shPoints", ["SHG", "SHA"]), ("gameWinningGoals", ["GWG"]),
+                         ("minorPenalties", ["MinPen"]), ("majorPenalties", ["MajPen"]),
+                         ("penaltiesDrawn", ["PenDrawn"]), ("shootoutGoals", ["SOG_SO"]),
+                         ("shootoutShots", ["SOA"])):
+            if all(c in agg.columns for c in src):
+                fill[col] = agg[src].sum(axis=1)
+        idx = pd.MultiIndex.from_frame(d[k].astype({"season": str}))
+        for col, ser in fill.items():
+            if col in d.columns:
+                d[col] = d[col].fillna(pd.Series(ser.reindex(idx).to_numpy(), index=d.index))
     return d
 
 
@@ -7706,7 +7732,7 @@ def _render_teams_playoffs(season_label: str) -> None:
 
 
 TEAM_RAPM_COLS = ["NFI RAPM", "NFI RAPM-A", "NFI RAPM-S", "ITI", "ITI-A", "ITI-S",
-                  "cG RAPM", "cG RAPM-A", "cG RAPM-S", "RAPM TOI Cov%"]
+                  "cG RAPM", "cG RAPM-A", "cG RAPM-S"]
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -7715,8 +7741,7 @@ def _team_rapm_frame(key: str) -> pd.DataFrame:
     the five skaters on the ice: 5 x the 5v5-TOI-weighted mean of each skater's
     pooled (2023-26) estimate, weighting by the minutes he played FOR THIS TEAM in
     the scope. Skaters without an estimate (< 500 pooled min, e.g. rookies) count
-    as 0 = league average — the same shrink-to-zero the ridge model applies.
-    RAPM TOI Cov% = share of the team's skater 5v5 TOI that has an estimate."""
+    as 0 = league average — the same shrink-to-zero the ridge model applies."""
     g = load_per_player_game()
     rp = load_rapm_5v5()
     if g.empty or rp.empty:
@@ -7730,7 +7755,6 @@ def _team_rapm_frame(key: str) -> pd.DataFrame:
            .rename("toi").reset_index())
     raws = [f"{r}{suf}" for _n, _a, _s, r in RAPM_FAMILIES for suf in ("", "_a", "_s")]
     toi = toi.merge(rp[["player_id"] + raws], on="player_id", how="left")
-    toi["_cov"] = toi[raws[0]].notna().astype(float)
     toi[raws] = toi[raws].fillna(0.0)
     disp = [c for _n, _a, _s, _r in RAPM_FAMILIES for c in (_n, _a, _s)]
     rows = []
@@ -7738,7 +7762,7 @@ def _team_rapm_frame(key: str) -> pd.DataFrame:
         w = d["toi"].to_numpy(float)
         if w.sum() <= 0:
             continue
-        row = {"team": t, "RAPM TOI Cov%": 100.0 * float((w * d["_cov"]).sum() / w.sum())}
+        row = {"team": t}
         for dc, rc in zip(disp, raws):
             row[dc] = 5.0 * float((w * d[rc].to_numpy(float)).sum() / w.sum())
         rows.append(row)
@@ -7910,11 +7934,11 @@ def render_teams() -> None:
         "xG": ["CF%", "xGF%", "GF%", "CF/60", "CA/60", "xGF/60",
                             "xGA/60", "GF/60", "GA/60", "PDOxG", "Situation TOI"],
         "CCG": ["CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60",
-                "cG RAPM", "cG RAPM-A", "cG RAPM-S", "RAPM TOI Cov%"],
+                "cG RAPM", "cG RAPM-A", "cG RAPM-S"],
         "Advanced Stats": ["PDO"],
-        "Net Front Impact": ["NFI RAPM", "NFI RAPM-A", "NFI RAPM-S", "RAPM TOI Cov%",
+        "Net Front Impact": ["NFI RAPM", "NFI RAPM-A", "NFI RAPM-S",
                              "NFI%", "Attack events", "Suppress events"],
-        "Zone Impact": ["ITI", "ITI-A", "ITI-S", "RAPM TOI Cov%"] + list(zcols),
+        "Zone Impact": ["ITI", "ITI-A", "ITI-S"] + list(zcols),
         "EDGE": list(TEAM_EDGE_COLS),
         # Special teams folded into Box Score; Box Score kept last.
         "Box Score": list(TEAM_BOX_COUNT_COLS) + list(TEAM_ST_COLS),
@@ -7989,8 +8013,6 @@ def render_teams() -> None:
     for c in ("ITI", "ITI-A", "ITI-S"):
         if c in disp:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
-    if "RAPM TOI Cov%" in disp:
-        fmt["RAPM TOI Cov%"] = lambda x: "—" if pd.isna(x) else f"{x:.0f}%"
 
     _sit_ranked = [_TEAM_SIT_DISP[c] for c in TEAM_SIT_COLS
                    if _TEAM_SIT_DISP[c] in disp.columns and c != "Sit TOI"]
@@ -7998,7 +8020,7 @@ def render_teams() -> None:
                   + ["xG-QG%", "NFI-QG%"] + _sit_ranked
                   + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS + TEAM_EDGE_COLS)
                      if c in disp.columns]
-                  + [c for c in TEAM_RAPM_COLS if c in disp.columns and c != "RAPM TOI Cov%"])
+                  + [c for c in TEAM_RAPM_COLS if c in disp.columns])
     # against-rates rank lowest-first (fewer allowed = better). For the box/ST
     # suite: giveaways, PP goals allowed, times shorthanded, SH goals allowed,
     # and the SH-against share are all "less = better". EDGE DZ%: less D-zone
@@ -8034,8 +8056,7 @@ def render_teams() -> None:
                 "player estimates summed over the 5 skaters on the ice (5 × the "
                 "5v5-TOI-weighted mean, using each skater's minutes for this team in "
                 "the selected season(s)); skaters without an estimate count as league "
-                "average (0). RAPM TOI Cov% = share of the team's skater minutes that "
-                "have an estimate.")
+                "average (0).")
     st.caption(cap)
 
     # League scatter landscape (includes the TZI vs xG% team scatter, above EDGE).
