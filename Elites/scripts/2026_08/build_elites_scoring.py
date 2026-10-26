@@ -87,6 +87,8 @@ def main():
         print("[elites_scoring] no new games to add.", flush=True)
         return
     for season, rows in new_by_season.items():
+        if not rows:            # games parsed but no 5v5 goals to add
+            continue
         pq = os.path.join(OUT_DIR, f"{season}.parquet")
         df_new = pd.DataFrame(rows)
         if os.path.exists(pq):
