@@ -5009,6 +5009,15 @@ def load_zone_start_per_game() -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def load_zone_index_by_game(season: int) -> pd.DataFrame:
+    """Per-(player, game) OZI / DZI / NZI / TZI on that season's 0-100 scale
+    (build_zone_index_per_game.py) — same method + season average as the season
+    index, from one game's faceoff-started shifts (small samples per game)."""
+    fp = ZONES / "output" / "zone_index_by_game" / f"{season}.parquet"
+    return pd.read_parquet(fp) if fp.exists() else pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_box_pbp_per_game(season: int) -> pd.DataFrame:
     """Per-(player, game) ALL-SITUATIONS box counting stats from the PBP
     (build_box_pbp_per_game.py) — the per-game counterpart of the season box."""
@@ -5294,6 +5303,13 @@ def _game_log_frame(pid: int, season: int, bucket: str) -> pd.DataFrame:
             b["FO%"] = (100 * b["FO W"] / fo).where(fo > 0)
             frames.append(b)
 
+    # ---- zone indices per game (season scale) ----
+    zi = load_zone_index_by_game(season)
+    if not zi.empty:
+        zg = zi[zi["player_id"] == pid].set_index("game_id")
+        if not zg.empty:
+            frames.append(zg[["OZI", "DZI", "NZI", "TZI"]])
+
     # ---- faceoff-start shares ----
     zs = load_zone_start_per_game()
     if not zs.empty:
@@ -5326,7 +5342,7 @@ def _game_log_frame(pid: int, season: int, bucket: str) -> pd.DataFrame:
 # Columns that only exist as a season / pooled construct — shown on the game
 # log's Season row (exact season value), "—" on the game rows.
 _SEASON_ONLY_COLS = (["Elite Rating", "Elite Rating Tier", "PP Rating", "PP Tier",
-                      "PK Rating", "PK Flag", "OZI", "DZI", "NZI", "TZI"]
+                      "PK Rating", "PK Flag"]
                      + _RAPM_DISP_COLS + list(_EDGE_VALUE_DISP))
 _QG_GAME_COLS = ["xG-QG%", "xG-QG-F%", "xG-QG-A%", "RelxG-QG%", "RelxG-QG-F%",
                  "RelxG-QG-A%", "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%", "RelNFI-QG%",
@@ -5364,7 +5380,9 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     gp = gp.sort_values(["game_date", "game_id"], ascending=False).reset_index(drop=True)
 
     # Columns = the season table's, family by family (all families if none picked).
-    _fams = list(families) if families else list(PLAYER_FAMILY_COLS)
+    # Like the season table: no family picked → just the schedule (Date, Game);
+    # picking families fills in their per-game columns.
+    _fams = list(families) if families else []
     _fam_of = {}
     for fam, fcols in PLAYER_FAMILY_COLS.items():
         for col in fcols:
@@ -5407,7 +5425,8 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
             else:
                 d[c] = fmt(c, r[c])
         rows.append(d)
-    out = pd.DataFrame(rows, columns=["Date", "Game", "TOI"] + metric_cols)
+    _lead = ["Date", "Game"] + (["TOI"] if metric_cols else [])
+    out = pd.DataFrame(rows, columns=_lead + metric_cols)
 
     _sit_txt = "5v5" if bucket == "5v5" else bucket
     st.markdown(f"**{name} — game log, {_lbl}**  ·  {len(gp)} GP")
@@ -5418,8 +5437,10 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
             f"quality game, ✗ = not, ½ = tie, — = below the 8-min / 5-attempt floor) "
             f"and Elite Exposure are 5v5; the Box Score is all situations. Per game, "
             f"RelNFI / RelxG are raw on-ice minus team-without-player rates (the "
-            f"season values are zone-adjusted / season-pooled). Ratings, OZI–TZI, "
-            f"NFI RAPM / ITI / cG RAPM and EDGE are season or multi-season "
+            f"season values are zone-adjusted / season-pooled). OZI–TZI per game use "
+            f"that game's faceoff-started shifts on the season's 0-100 scale (50 = "
+            f"season average; only a handful of shifts per game, so they swing). "
+            f"Ratings, NFI RAPM / ITI / cG RAPM and EDGE are season or multi-season "
             f"constructs with no single-game value — they show on the Season row.")
     if str(season) == "20262027":
         _gd = dict(zip(meta["game_id"], meta["game_date"])) if not meta.empty else {}
@@ -5431,6 +5452,10 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
             _cap += (f"  ·  **Data freshness:** box score through {_t_bx}; on-ice "
                      f"stats through {_t_on} — newer games show “—” there until the "
                      "next on-ice refresh.")
+    if not metric_cols:
+        _cap = ("One row per game, newest first. Pick a **metric family** above to "
+                "fill in that family's per-game stats (the same columns as the season "
+                "table).")
     st.caption(_cap)
     _show_df(out, width="stretch", hide_index=True)
 
