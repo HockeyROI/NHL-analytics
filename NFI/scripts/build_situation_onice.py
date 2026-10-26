@@ -50,6 +50,11 @@ GAMES = ROOT / "Data" / "game_ids.csv"
 POSITIONS = ROOT / "NFI" / "output" / "player_positions.csv"
 
 OUT_CSV = Path(os.environ.get("SITUATION_ONICE_OUT", ROOT / "Data" / "player_situation_onice.csv"))
+# Per-game companion (the app's game log): one row per (player, game, situation),
+# same FIELDS, one parquet per season from 2022-23 on.
+OUT_GAME_DIR = Path(os.environ.get("SITUATION_ONICE_GAME_DIR",
+                                   ROOT / "Data" / "situation_onice_by_game"))
+GAME_SEASONS_FROM = "20222023"
 
 REQUIRED_SHIFT_COLS = ["game_id", "player_id", "period", "team_abbrev",
                        "abs_start_secs", "abs_end_secs"]
@@ -131,12 +136,15 @@ def main() -> int:
     games_played: dict = defaultdict(set)   # (pid, season, gtype) -> {gid}
     IDX = {f: i for i, f in enumerate(FIELDS)}
 
+    game_rows: dict = defaultdict(list)     # season -> per-game rows
     n_games = 0
     for gid, ge in ev_by_game.items():
         season, gtype = g_season.get(gid), g_type.get(gid)
         if season is None or gtype is None or gid not in shifts_by_game:
             continue
         n_games += 1
+        gacc: dict = defaultdict(lambda: np.zeros(len(FIELDS), dtype=np.float64))
+        gteam: dict = {}
         if n_games % 1000 == 0:
             print(f"[situation_onice]   processed {n_games:,} games")
         gs = shifts_by_game[gid]
@@ -179,7 +187,8 @@ def main() -> int:
                 if ovl <= 0:
                     continue
                 own, opp = (seg_h_a[j], seg_a_a[j]) if sh_home[i] else (seg_a_a[j], seg_h_a[j])
-                acc[(pid, season, gtype, situation_label(int(own), int(opp)))][IDX["toi_min"]] += ovl / 60.0
+                gacc[(pid, situation_label(int(own), int(opp)))][IDX["toi_min"]] += ovl / 60.0
+                gteam[pid] = home_ab if sh_home[i] else away_ab
 
         # ---------- event attribution ----------
         for row in ge.itertuples(index=False):
@@ -206,20 +215,27 @@ def main() -> int:
             for k in on_idx:
                 pid = int(sh_pid[k])
                 p_home = bool(sh_home[k])
+                gteam.setdefault(pid, home_ab if p_home else away_ab)
                 if p_home == shoot_home:
-                    a = acc[(pid, season, gtype, for_lab)]
+                    a = gacc[(pid, for_lab)]
                     a[IDX["CF"]] += 1
                     if is_sog:
                         a[IDX["SOGF"]] += 1; a[IDX["xGFs"]] += xgv
                     if is_fen:
                         a[IDX["FF"]] += 1; a[IDX["xGF"]] += xgv; a[IDX["GF"]] += gl
                 else:
-                    a = acc[(pid, season, gtype, ag_lab)]
+                    a = gacc[(pid, ag_lab)]
                     a[IDX["CA"]] += 1
                     if is_sog:
                         a[IDX["SOGA"]] += 1; a[IDX["xGAs"]] += xgv
                     if is_fen:
                         a[IDX["FA"]] += 1; a[IDX["xGA"]] += xgv; a[IDX["GA"]] += gl
+
+        # fold this game into the season totals + keep its per-game rows
+        for (pid, sit), vec in gacc.items():
+            acc[(pid, season, gtype, sit)] += vec
+            if season >= GAME_SEASONS_FROM:
+                game_rows[season].append((pid, int(gid), gtype, gteam.get(pid, ""), sit, *vec))
 
     print(f"[situation_onice]   processed {n_games:,} games")
 
@@ -254,6 +270,16 @@ def main() -> int:
         a[IDX["iCF"]] += 1
         if r.is_fen:
             a[IDX["iFF"]] += 1; a[IDX["ixG"]] += float(r.xg); a[IDX["iG"]] += int(r.is_goal_i)
+    # per-game individual counts (same events, grouped by game too)
+    iev["_fen"] = iev["is_fen"].astype(int)
+    iev["_ixg"] = np.where(iev["is_fen"], iev["xg"], 0.0)
+    iev["_ig"] = np.where(iev["is_fen"], iev["is_goal_i"], 0)
+    ind_game = (iev[iev["season"] >= GAME_SEASONS_FROM]
+                .groupby(["shooter_player_id", "game_id", "situation"])
+                .agg(iCF=("event_type", "size"), iFF=("_fen", "sum"),
+                     ixG=("_ixg", "sum"), iG=("_ig", "sum")).reset_index()
+                .rename(columns={"shooter_player_id": "player_id"}))
+    ind_game["player_id"] = ind_game["player_id"].astype(int)
 
     # ---------- assemble ----------
     rows = []
@@ -270,6 +296,28 @@ def main() -> int:
         ["season", "game_type", "player_id", "situation"]).reset_index(drop=True)
 
     print(f"\n[situation_onice] rows: {len(out):,}  players: {out['player_id'].nunique():,}")
+
+    # ---------- per-game parquets ----------
+    OUT_GAME_DIR.mkdir(parents=True, exist_ok=True)
+    gcols = ["player_id", "game_id", "game_type", "team", "situation"] + FIELDS
+    for season, rws in sorted(game_rows.items()):
+        gdf = pd.DataFrame(rws, columns=gcols).drop(columns=["iCF", "iFF", "ixG", "iG"])
+        ind = ind_game[ind_game["game_id"].isin(set(gdf["game_id"]))]
+        gdf = gdf.merge(ind, on=["player_id", "game_id", "situation"], how="outer")
+        # individual-only rows (a shot in a situation with no on-ice row) keep the
+        # game's team/type from the player's other rows
+        _meta = (gdf.dropna(subset=["team"]).drop_duplicates(["player_id", "game_id"])
+                 [["player_id", "game_id", "team", "game_type"]])
+        gdf = gdf.drop(columns=["team", "game_type"]).merge(
+            _meta, on=["player_id", "game_id"], how="left")
+        for f in FIELDS:
+            gdf[f] = gdf[f].fillna(0.0)
+            gdf[f] = (gdf[f].round(4) if f in ("toi_min", "xGF", "xGA", "xGFs", "xGAs", "ixG")
+                      else gdf[f].round().astype(int))
+        gdf["season"] = season
+        gdf = gdf.sort_values(["game_id", "player_id", "situation"]).reset_index(drop=True)
+        gdf.to_parquet(OUT_GAME_DIR / f"{season}.parquet", index=False)
+        print(f"[situation_onice] per-game {season}: {len(gdf):,} rows")
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(OUT_CSV, index=False)
     print(f"[situation_onice] wrote {OUT_CSV}  ({len(out):,} rows)")

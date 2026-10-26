@@ -58,6 +58,8 @@ jobs:
       - name: Per-situation TOI
         run: python NFI/scripts/build_situation_toi.py
 
+      # Also writes the per-game rows the app's game log reads
+      # (Data/situation_onice_by_game/{season}.parquet).
       - name: Per-situation on-ice (players)
         run: python NFI/scripts/build_situation_onice.py
 
@@ -131,6 +133,8 @@ jobs:
           git add -A Data/team_ccg_by_season.csv 2>/dev/null || true
           git add -A Data/elites_scoring_by_season/ 2>/dev/null || true
           git add -A Data/box_pbp_by_game/ 2>/dev/null || true
+          git add -A Data/situation_onice_by_game/ 2>/dev/null || true
+          git add -A Elites/Output/elite_context_by_game/ 2>/dev/null || true
           git add -A Elites/Output/player_ratings/ 2>/dev/null || true
           git add -A Elites/Output/elite_context/ 2>/dev/null || true
           git add -A Elites/Output/pp_pk_ratings/ 2>/dev/null || true

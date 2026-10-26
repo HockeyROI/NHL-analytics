@@ -57,6 +57,10 @@ SHOT_DIR = os.path.join(DATA, "shot_events_by_season")
 XG_CSV = os.path.join(PROJECT, "xG", "output", "shot_xg_per_event.csv")
 OUTDIR = os.path.join(OUTBASE, "elite_context")
 os.makedirs(OUTDIR, exist_ok=True)
+# Per-game companion for the app's game log: one row per (player, game) with the
+# same exposure / support / tier-xGF / tier-ixG ingredients, one parquet per season.
+GAME_OUTDIR = os.path.join(OUTBASE, "elite_context_by_game")
+os.makedirs(GAME_OUTDIR, exist_ok=True)
 
 FEN = {"shot-on-goal", "missed-shot", "goal"}
 SEASONS = ["20222023", "20232024", "20242025", "20252026", "20262027"]
@@ -134,7 +138,8 @@ def main():
     df = pd.read_csv(EV_SHIFTS, dtype={"season": str})
     df = df[df["season"].isin(SEASONS)]
     for gid, g in df.groupby("game_id", sort=False):
-        sg = shots.get(int(gid)); s_abs = sg["abs"] if sg is not None else None
+        gk = int(gid)
+        sg = shots.get(gk); s_abs = sg["abs"] if sg is not None else None
         for season, start, end, hsk, ask in zip(g["season"], g["start_time"], g["end_time"],
                                                  g["home_skaters"], g["away_skaters"]):
             home = [int(x) for x in hsk.split(";")]; away = [int(x) for x in ask.split(";")]
@@ -166,12 +171,12 @@ def main():
                     for _xg, _hm, _sid in zip(xs, hs, sg["shooter"][lo:hi]):
                         if _sid < 0:
                             continue
-                        _ikey = (int(_sid), season); _cls = h_cls if _hm else a_cls
+                        _ikey = (int(_sid), season, gk); _cls = h_cls if _hm else a_cls
                         if _cls == "e": ixg_e[_ikey] += _xg
                         elif _cls == "m": ixg_m[_ikey] += _xg
                         else: ixg_x[_ikey] += _xg
             for k, p in enumerate(home):
-                key = (p, season); ev[key] += dur
+                key = (p, season, gk); ev[key] += dur
                 if h_full:
                     fse[key] += dur; fxgf[key] += hxg; fxga[key] += axg
                 elif h_easy:
@@ -183,7 +188,7 @@ def main():
                 if n_elite_home - (hlab[k] == "Elite") > 0:   # >=1 elite OTHER teammate
                     sup[key] += dur
             for k, p in enumerate(away):
-                key = (p, season); ev[key] += dur
+                key = (p, season, gk); ev[key] += dur
                 if a_full:
                     fse[key] += dur; fxgf[key] += axg; fxga[key] += hxg
                 elif a_easy:
@@ -196,6 +201,32 @@ def main():
                     sup[key] += dur
 
     print("[3/3] pooling per scope + writing ...", flush=True)
+    # Every accumulator is keyed (pid, season, game). Write the per-game rows, then
+    # collapse to (pid, season) for the season scopes below (identical totals).
+    _acc = {"ev": ev, "fse": fse, "fse_f": fse_f, "fse_d": fse_d, "sup": sup,
+            "fxgf": fxgf, "fxga": fxga, "mse": mse, "mxgf": mxgf, "mxga": mxga,
+            "ese": ese, "exgf": exgf, "exga": exga,
+            "ixg_e": ixg_e, "ixg_m": ixg_m, "ixg_x": ixg_x}
+    pg = pd.DataFrame({"key": list(ev.keys())})
+    pg["player_id"] = [k[0] for k in pg["key"]]
+    pg["season"] = [k[1] for k in pg["key"]]
+    pg["game_id"] = [k[2] for k in pg["key"]]
+    for name, d in _acc.items():
+        pg[name] = [d.get(k, 0.0) for k in pg["key"]]
+    pg = pg.drop(columns=["key"])
+    for season, sub in pg.groupby("season"):
+        sub = sub.sort_values(["game_id", "player_id"]).reset_index(drop=True)
+        sub.to_parquet(os.path.join(GAME_OUTDIR, f"{season}.parquet"), index=False)
+    ps = pg.groupby(["player_id", "season"])[list(_acc)].sum()
+    ev, fse, fse_f, fse_d, sup = (ps["ev"].to_dict(), ps["fse"].to_dict(),
+                                  ps["fse_f"].to_dict(), ps["fse_d"].to_dict(),
+                                  ps["sup"].to_dict())
+    fxgf, fxga, mse, mxgf, mxga = (ps["fxgf"].to_dict(), ps["fxga"].to_dict(),
+                                   ps["mse"].to_dict(), ps["mxgf"].to_dict(),
+                                   ps["mxga"].to_dict())
+    ese, exgf, exga = ps["ese"].to_dict(), ps["exgf"].to_dict(), ps["exga"].to_dict()
+    ixg_e, ixg_m, ixg_x = (ps["ixg_e"].to_dict(), ps["ixg_m"].to_dict(),
+                           ps["ixg_x"].to_dict())
     rows = []
     for (pid, season), evsec in ev.items():
         if (pid, season) not in meta.index:
