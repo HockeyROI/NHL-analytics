@@ -83,6 +83,12 @@ jobs:
       - name: Elites 5v5 scoring parquet (append new games)
         run: python Elites/scripts/2026_08/build_elites_scoring.py
 
+      # Per-game all-situations box (G/A1/A2/SOG/Hits/Blocks/TK/GV/PIM) for the
+      # game log — and the source of the live season's A1/A2 (Primary Points).
+      # Incremental from the PBP update_current_season just fetched, like CCG.
+      - name: Per-game box score parquet (append new games)
+        run: python NFI/scripts/build_box_pbp_per_game.py
+
       # ev_shifts.csv (~280MB) is rebuilt on the runner from the committed shift
       # parquets and is NOT committed — only the small ratings/context CSVs are.
       - name: Elites — rebuild EV shift intervals (runner-only)
@@ -124,6 +130,7 @@ jobs:
           git add -A Data/player_ccg_by_season.csv 2>/dev/null || true
           git add -A Data/team_ccg_by_season.csv 2>/dev/null || true
           git add -A Data/elites_scoring_by_season/ 2>/dev/null || true
+          git add -A Data/box_pbp_by_game/ 2>/dev/null || true
           git add -A Elites/Output/player_ratings/ 2>/dev/null || true
           git add -A Elites/Output/elite_context/ 2>/dev/null || true
           git add -A Elites/Output/pp_pk_ratings/ 2>/dev/null || true

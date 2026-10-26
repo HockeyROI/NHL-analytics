@@ -70,9 +70,14 @@ def main() -> int:
         if gt is None or gid in existing.get(season, set()):
             continue
         try:
-            plays = json.load(open(fp)).get("plays", [])
+            _j = json.load(open(fp))
         except Exception:
             continue
+        # Only finished games: an in-progress / pre-game snapshot would be
+        # appended once and never revisited (the build is incremental).
+        if _j.get("gameState") not in ("OFF", "FINAL"):
+            continue
+        plays = _j.get("plays", [])
         seen_games.add((gid, season, gt))
         added += 1
 

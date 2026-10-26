@@ -2937,6 +2937,129 @@ def _ccg_season_rel() -> pd.DataFrame:
     return m[["player_id", "season", "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"]]
 
 
+# Leaderboard storage → display names (shared by render_players and the drill-in
+# parity pass). RelNFI_F (attack / for) displays as "RelNFI-A%", RelNFI_A
+# (suppress / against) as "RelNFI-S%" — labels only, no sign flip.
+_PLAYER_DISP_REN = {
+    "player_name": "Player", "position": "Pos", "team": "Team", "toi_min": "TOI",
+    "NFI_pct": "NFI%", "RelNFI_pct": "RelNFI%",
+    "RelNFI_F_pct": "RelNFI-A%", "RelNFI_A_pct": "RelNFI-S%",
+    "NFI_A_rate": "NFI-A/60", "NFI_S_rate": "NFI-S/60",
+    "xG_QG_pct": "xG-QG%", "NFI_QG_pct": "NFI-QG%",
+    "RelNFI_QG_pct": "RelNFI-QG%", "RelxG_QG_pct": "RelxG-QG%",
+    "RelxG_pct": "RelxG%", "RelxG_F_pct": "RelxG-F%", "RelxG_A_pct": "RelxG-A%",
+}
+
+# Leaderboard columns that rank (#1 = best) and the ones where lower = better.
+# Shared by the leaderboard and the drill-in so both rank the same way.
+_PLAYER_RANK_COLS = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
+                     "NFI-S/60", "OZI", "DZI", "NZI", "TZI", "Elite Rating", "PP Rating",
+                     "Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%",
+                     "Elite Support%", "Elite xGF%", "Mid xGF%", "Easy xGF%",
+                     "Elite ixG", "Mid ixG", "Easy ixG",
+                     "DZ Start%", "NZ Start%", "OZ Start%",
+                     "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
+                     "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
+                     "xG-QG-F%", "xG-QG-A%", "NFI-QG-A%", "NFI-QG-S%",
+                     "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"]
+_PLAYER_LOWER = {"NFI-S/60", "xGA/60", "RelxG-A%",
+                 "GV", "Hits Taken", "Min Pen", "Maj Pen", "PIM", "FO L"}
+
+# RAPM display columns (net/A/S + the adjacent "… CI" strings) — one pooled value.
+_RAPM_DISP_COLS = [c for _n, _a, _s, _raw in RAPM_FAMILIES
+                   for c in (_n, f"{_n} CI", _a, f"{_a} CI", _s, f"{_s} CI")]
+
+
+def _add_rapm_display(df: pd.DataFrame) -> pd.DataFrame:
+    """Add the RAPM display columns to a frame carrying the raw rapm export
+    columns: numeric net/A/S (2 dp) + an adjacent '… CI' string with the 95%
+    interval and markers (● = interval clears zero, ⚠ = collinearity-flagged —
+    shares >=65% of 5v5 ice with one teammate; less certain, not lower)."""
+    if "nfi_rapm" not in df.columns:
+        return df
+    df = df.copy()
+    _collin = (df["collinearity_flag"].fillna(False).to_numpy()
+               if "collinearity_flag" in df.columns else np.zeros(len(df), bool))
+
+    def _rapm_ci(lo, hi, clears, fmt, flag):
+        if pd.isna(lo) or pd.isna(hi):
+            return ""
+        s = f"{'● ' if bool(clears) else ''}{lo:{fmt}}–{hi:{fmt}}"
+        return s + (" ⚠" if flag else "")
+
+    for _net, _a, _s, _raw in RAPM_FAMILIES:
+        if _raw not in df.columns:
+            continue
+        _fmt = ".1f" if _raw == "iti" else ".2f"
+        for _disp, _rc, _markflag in ((_net, _raw, True), (_a, f"{_raw}_a", False),
+                                      (_s, f"{_raw}_s", False)):
+            df[_disp] = pd.to_numeric(df[_rc], errors="coerce").round(2)
+            _lo, _hi = df[f"{_rc}_lo"].to_numpy(), df[f"{_rc}_hi"].to_numpy()
+            _cz = df[f"{_rc}_clears_zero"].to_numpy()
+            df[f"{_disp} CI"] = [
+                _rapm_ci(l, h, c, _fmt, bool(fl) and _markflag)
+                for l, h, c, fl in zip(_lo, _hi, _cz, _collin)]
+    return df
+
+
+# Per-run memo of the leaderboard frame (display-named) by season + the toggles
+# it reads from session state. Module globals reset on every Streamlit rerun, so
+# this only dedupes the several per-season builds the drill-in does in one run.
+_PFD_MEMO: dict = {}
+
+
+def _players_frame_disp(season_label: str) -> pd.DataFrame:
+    """The leaderboard's own per-player frame for a single-season scope, renamed
+    to display names — the source of truth the drill-in mirrors."""
+    _k = (season_label, _situation_toggle_state(), _pdo_toggle_state(),
+          _edge_toggle_state())
+    if _k not in _PFD_MEMO:
+        f, _ = _build_players_frame(season_label)
+        _PFD_MEMO[_k] = f.rename(columns={**_PLAYER_DISP_REN, **_EDGE_REN}) if not f.empty else f
+    return _PFD_MEMO[_k]
+
+
+def _lb_rank_floor(season_key: str) -> tuple[int, int]:
+    """Default leaderboard ranking floor (Min ES TOI, Min GP) for a single season —
+    the same defaults the Player List sliders start at."""
+    return (10, 1) if season_key == "20262027" else (500, 25)
+
+
+def _frame_season_ranks(pid: int, same_pos: bool = False, own_team: bool = False) -> dict:
+    """Per-season ranks computed exactly like the leaderboard: over the season's
+    leaderboard frame, cohort = skaters clearing the default Min TOI / Min GP floor
+    (optionally the player's position group, or his own team). A player below the
+    floor gets no rank (→ "(UR)"). Returns {col: {season: rank}}."""
+    pid = int(pid)
+    out: dict = {}
+    for ssn in PROFILE_SEASONS:
+        f = _players_frame_disp(SEASON_DISPLAY.get(ssn, ssn))
+        if f.empty or not (f["player_id"] == pid).any():
+            continue
+        me = f[f["player_id"] == pid].iloc[0]
+        f = f[f["Pos"].isin(["F", "D"])]
+        _toi, _gp = _lb_rank_floor(ssn)
+        coh = f[(pd.to_numeric(f["TOI"], errors="coerce").fillna(0) >= _toi)
+                & (pd.to_numeric(f["GP"], errors="coerce").fillna(0) >= _gp)]
+        if same_pos:
+            coh = coh[coh["Pos"] == me["Pos"]]
+        if own_team:
+            coh = coh[coh["Team"] == me["Team"]]
+        if not (coh["player_id"] == pid).any():
+            for c in _PLAYER_RANK_COLS + _EDGE_VALUE_DISP:
+                if c in f.columns:
+                    out.setdefault(c, {})[ssn] = None
+            continue
+        for c in _PLAYER_RANK_COLS + _EDGE_VALUE_DISP:
+            if c not in coh.columns:
+                continue
+            s = pd.to_numeric(coh[c], errors="coerce")
+            r = s.rank(ascending=(c in _PLAYER_LOWER), method="min")
+            rv = r[coh["player_id"] == pid]
+            out.setdefault(c, {})[ssn] = int(rv.iloc[0]) if len(rv) and pd.notna(rv.iloc[0]) else None
+    return out
+
+
 def _player_trend(pid: int) -> pd.DataFrame:
     """Per-season (2022-23..2025-26, excl 2021-22) metric trend for one
     player_id. CRITICAL: every source's season is normalized to an 8-digit
@@ -3015,7 +3138,7 @@ def _player_trend(pid: int) -> pd.DataFrame:
     # Situation toggle just like the leaderboard; underlying data is cached (~0.1s).
     _sit_rows = []
     for _sk in PROFILE_SEASONS:
-        _bf, _ = _build_players_frame(SEASON_DISPLAY.get(_sk, _sk))
+        _bf = _players_frame_disp(SEASON_DISPLAY.get(_sk, _sk))
         if _bf.empty:
             continue
         _r = _bf[_bf["player_id"] == pid]
@@ -3183,6 +3306,36 @@ def _player_trend(pid: int) -> pd.DataFrame:
                 _bg["PrimP"] = _bg["G"] + _bg["A1"]
             _bkeep = ["season"] + [c for c in BOX_FAMILY_COLS if c in _bg.columns]
             trend = trend.merge(_bg[_bkeep], on="season", how="outer")
+
+    # Leaderboard parity: the per-family sources above can differ from what the
+    # leaderboard shows (situation-aware xG/CCG vs 5v5-only per-game sums, EDGE
+    # rates/EZI only built there, …). Each season's row is overwritten with that
+    # season's LEADERBOARD values for every family column the leaderboard frame
+    # carries, so clicking a player shows exactly the numbers in the list. RAPM
+    # columns are excluded — they're one pooled value, shown in their own table.
+    _lb_rows = []
+    for _sk in PROFILE_SEASONS:
+        _bf = _players_frame_disp(SEASON_DISPLAY.get(_sk, _sk))
+        if _bf.empty or not (_bf["player_id"] == pid).any():
+            continue
+        _r = _bf[_bf["player_id"] == pid].iloc[0]
+        _row = {"season": _sk}
+        for _c in _LB_PARITY_COLS:
+            if _c in _bf.columns:
+                _row[_c] = _r[_c]
+        _lb_rows.append(_row)
+    if _lb_rows:
+        _lb = pd.DataFrame(_lb_rows).set_index("season")
+        trend = trend.set_index("season")
+        trend = trend.reindex(trend.index.union(_lb.index))
+        for _c in _lb.columns:
+            if _c not in trend.columns:
+                trend[_c] = np.nan
+            if not (pd.api.types.is_numeric_dtype(_lb[_c])
+                    and pd.api.types.is_numeric_dtype(trend[_c])):
+                trend[_c] = trend[_c].astype(object)
+            trend.loc[_lb.index, _c] = _lb[_c]
+        trend = trend.rename_axis("season").reset_index()
 
     # Always show every season 2022-23 → 2025-26 as a row, even ones before the
     # player debuted (blank cells), so the trend table has a consistent shape.
@@ -3506,6 +3659,11 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     # given, also compute the within-team rank → cells read "(league / team)".
     ranks = _player_season_ranks(pid, same_pos=same_pos)
     team_ranks = _player_season_ranks(pid, same_pos=same_pos, team=team) if team else {}
+    # Leaderboard-ranked columns take the leaderboard's own ranks (same frame,
+    # same default floor), so the drill-in's (league / team) brackets match it.
+    ranks.update(_frame_season_ranks(pid, same_pos=same_pos))
+    if team == "__own__":
+        team_ranks.update(_frame_season_ranks(pid, same_pos=same_pos, own_team=True))
     _b = {}
     for c in ("NFI%", "NFI-QG%", "xG-QG%", "RelNFI-QG%", "RelxG-QG%",
               "xG-QG-F%", "xG-QG-A%", "NFI-QG-A%", "NFI-QG-S%",
@@ -3537,6 +3695,18 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
     _b["CCG/60"] = lambda v: f"{v:.2f}"
     _b["Rel-CCG"] = lambda v: f"{v:+.1f}"
     _b["Rel-CCG/60"] = lambda v: f"{v:+.2f}"
+    # Advanced Stats (situation suite) + EDGE extras — same formats as the leaderboard.
+    for c in ("CF/60", "CA/60", "FF/60", "FA/60", "GF/60", "GA/60", "iCF/60", "iG/60"):
+        _b[c] = lambda v: f"{v:.1f}"
+    for c in ("ixG/60", "ixG"):
+        _b[c] = lambda v: f"{v:.2f}"
+    for c in ("CF%", "FF%", "GF%"):
+        _b[c] = lambda v: f"{v:.1f}%"
+    for c in ("RelCF%", "RelxGF%"):
+        _b[c] = lambda v: f"{v:+.1f}"
+    _b["iG"] = lambda v: f"{v:.0f}"
+    _b["EZI"] = lambda v: f"{v:.1f}"
+    _b["EDGE Bursts/60"] = lambda v: f"{v:.2f}"
     for c in ("EDGE OZ%", "EDGE OZ% (EV)", "EDGE NZ%", "EDGE DZ%"):
         _b[c] = lambda v: f"{v * 100:.1f}%"
     _b["EDGE Top Speed"] = lambda v: f"{v:.1f} mph"
@@ -3574,7 +3744,10 @@ def _player_profile_table(pid: int, same_pos: bool = False, families=None,
             else:
                 txt = _b.get(c, lambda v: f"{v}")(v)
                 rk = ranks.get(c, {}).get(ssn)
-                if rk is None:
+                if c not in ranks:
+                    # Not a ranked metric (the leaderboard shows it unranked too).
+                    row[c] = txt
+                elif rk is None:
                     # Below that metric's OWN qualifying floor that season (not a
                     # missing value) — mark it explicitly rather than showing a
                     # bare number with no indication it's unranked.
@@ -4896,17 +5069,47 @@ def _per_game_scoring(pid: int, season: int) -> pd.DataFrame:
     return out
 
 
-def _per_game_ccg(pid: int, season: int) -> pd.DataFrame:
-    """Per-game CCG (chaos created goals) for one player, from the CCG-events
-    parquet (game_id, shooter, situation — 5v5 to match the rest)."""
+@st.cache_data(show_spinner=False, ttl=3600)
+def _per_game_ccg_season(season: int) -> pd.DataFrame:
+    """Per-(player, game) 5v5 CCG for one season, computed from the CCG event
+    parquet with the SAME rule as build_ccg_by_season.py: a shot (SOG / miss /
+    block) followed by a TEAMMATE's goal within 0-30s, never crossing a whistle.
+    (The parquet is the raw event stream — every shot, faceoff, stoppage — so it
+    can't just be counted by shooter.)"""
     fp = REPO_ROOT / "Data" / "ccg_events_by_season" / f"{season}.parquet"
+    cols = ["player_id", "game_id", "CCG"]
     if not fp.exists():
-        return pd.DataFrame(columns=["game_id", "CCG"])
-    c = pd.read_parquet(fp)
-    c = c[c["shooter"] == pid]
-    if "situation" in c.columns:
-        c = c[c["situation"].astype(str) == "5v5"]
-    return c.groupby("game_id").size().rename("CCG").reset_index()
+        return pd.DataFrame(columns=cols)
+    ev = pd.read_parquet(fp, columns=["game_id", "abs", "sort", "type", "team_id",
+                                      "shooter", "situation", "game_type"])
+    ev = ev[ev["game_type"] == "regular"].sort_values(["game_id", "abs", "sort"])
+    shots = {"shot-on-goal", "missed-shot", "blocked-shot"}
+    stop = {"faceoff", "stoppage", "period-start", "period-end", "game-end",
+            "penalty", "delayed-penalty"}
+    out = {}
+    for gid, g in ev.groupby("game_id", sort=False):
+        types, absl = g["type"].to_numpy(), g["abs"].to_numpy()
+        team, shooter, sitc = g["team_id"].to_numpy(), g["shooter"].to_numpy(), g["situation"].to_numpy()
+        n = len(g)
+        for i in range(n):
+            if (types[i] not in shots or sitc[i] != "5v5"
+                    or pd.isna(team[i]) or pd.isna(shooter[i])):
+                continue
+            j = i + 1
+            while j < n and types[j] not in stop and absl[j] - absl[i] <= 30:
+                if types[j] == "goal":
+                    if team[j] == team[i] and shooter[j] != shooter[i]:
+                        k = (int(shooter[i]), int(gid))
+                        out[k] = out.get(k, 0) + 1
+                    break
+                j += 1
+    return pd.DataFrame([(p, g, c) for (p, g), c in out.items()], columns=cols)
+
+
+def _per_game_ccg(pid: int, season: int) -> pd.DataFrame:
+    """Per-game 5v5 CCG (chaos created goals) for one player."""
+    c = _per_game_ccg_season(season)
+    return c[c["player_id"] == pid][["game_id", "CCG"]]
 
 
 def _render_game_log(pid: int, name: str, season_label: str, families=None) -> None:
@@ -4914,26 +5117,61 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     5v5 on-ice stats for whichever metric families are selected above — TOI
     always shown. No minutes floor, so it works from game 1 (the live season)."""
     g = load_per_player_game()
-    if g.empty:
-        st.info("Per-game data not available."); return
-    gp = g[g["player_id"] == pid].copy()
-    if gp.empty:
-        st.info(f"No per-game data for {name}."); return
+    gp = g[g["player_id"] == pid].copy() if not g.empty else pd.DataFrame()
     # Single-season view: the global single-season pick, else the player's most
     # recent season with games (pooled / 2yr / 4yr picks).
     _key = SEASON_KEY.get(season_label)
-    season = int(_key) if (_key and str(_key).isdigit()) else int(gp["season"].max())
-    gp = gp[gp["season"] == season].copy()
+    if _key and str(_key).isdigit():
+        season = int(_key)
+    elif not gp.empty:
+        season = int(gp["season"].max())
+    else:
+        st.info(f"No per-game data for {name}."); return
     _lbl = SEASON_DISPLAY.get(str(season), str(season))
-    if gp.empty:
+    gp = gp[gp["season"] == season].copy() if not gp.empty else gp
+    # The sources refresh on different schedules (box / CCG / scoring daily in CI;
+    # the 5v5 on-ice + individual shot files with the local pipeline), so the game
+    # list is the UNION of every game the player shows up in. A game a source hasn't
+    # processed yet shows "—" for that source's columns — never a fake 0.
+    _bx_all = load_box_pbp_per_game(season)
+    _bx_all = (_bx_all[_bx_all["game_type"] == "regular"] if not _bx_all.empty
+               else pd.DataFrame(columns=["player_id", "game_id"]))
+    _bx = _bx_all[_bx_all["player_id"] == pid]
+    _games = sorted((set(gp["game_id"]) if not gp.empty else set()) | set(_bx["game_id"]))
+    if not _games:
         st.info(f"No per-game data for {name} in {_lbl}."); return
+    _base = pd.DataFrame({"game_id": _games})
+    gp = _base.merge(gp, on="game_id", how="left") if not gp.empty else _base
+    for c in ("season", "team_abbrev", "position", "TOI_on_sec", "attempts_for",
+              "attempts_ag", "xG_for", "xG_ag", "NFI_for", "NFI_ag"):
+        if c not in gp.columns:
+            gp[c] = np.nan
     meta = load_game_meta()
     if not meta.empty:
         gp = gp.merge(meta, on="game_id", how="left")
     else:
         gp["game_date"] = gp["game_id"]; gp["home_abbrev"] = ""; gp["away_abbrev"] = ""
+    # Team for games only the box source has: the player's latest known team.
+    _nfi = load_nfi_player()
+    _tm_known = gp.dropna(subset=["team_abbrev"]).sort_values("game_id")["team_abbrev"]
+    if len(_tm_known):
+        _last_tm = _tm_known.iloc[-1]
+    else:
+        _nr = _nfi[(_nfi["player_id"] == pid)] if not _nfi.empty else _nfi
+        _last_tm = str(_nr.sort_values("season")["team"].iloc[-1]) if len(_nr) else None
+    gp["team_abbrev"] = gp["team_abbrev"].fillna(_last_tm)
     gp["home"] = gp["team_abbrev"] == gp["home_abbrev"]
     gp["opp"] = np.where(gp["home"], gp["away_abbrev"], gp["home_abbrev"])
+
+    def _fill_covered(df, cols, covered):
+        """0 for games the source has processed (player simply had none), NaN
+        for games it hasn't reached yet."""
+        _cov = df["game_id"].isin(covered)
+        for c in cols:
+            if c not in df.columns:
+                df[c] = np.nan
+            df[c] = df[c].where(df[c].notna() | ~_cov, 0)
+        return df
 
     gp["TOI"] = gp["TOI_on_sec"] / 60.0
     gp["CF"], gp["CA"] = gp["attempts_for"], gp["attempts_ag"]
@@ -4947,31 +5185,44 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     # A = A1+A2, Pts = G+A, PrimP = G+A1. The Elite-Rating scoring ingredient
     # (5v5 primary points, for Prim Pts/60) comes from _per_game_scoring; CCG and
     # 5v5 individual (iCF/iG/ixG) from their own sources.
+    _sc_fp = REPO_ROOT / "Data" / "elites_scoring_by_season" / f"{season}.parquet"
+    _sc_games = (set(pd.read_parquet(_sc_fp, columns=["game_id"])["game_id"])
+                 if _sc_fp.exists() else set())
     _p5 = _per_game_scoring(pid, season)[["game_id", "P"]].rename(columns={"P": "_P5"})
-    gp = gp.merge(_p5, on="game_id", how="left")
-    _bx = load_box_pbp_per_game(season)
-    if not _bx.empty:
-        _bx = _bx[(_bx["player_id"] == pid) & (_bx["game_type"] == "regular")]
-        gp = gp.merge(_bx[["game_id", "G", "A1", "A2", "SOG", "Hits", "Blocks",
-                           "TK", "GV", "PIM"]], on="game_id", how="left")
-    gp = gp.merge(_per_game_ccg(pid, season), on="game_id", how="left")
+    gp = _fill_covered(gp.merge(_p5, on="game_id", how="left"), ["_P5"], _sc_games)
+    _bx_cols = ["G", "A1", "A2", "SOG", "Hits", "Blocks", "TK", "GV", "PIM"]
+    gp = gp.merge(_bx[["game_id"] + _bx_cols], on="game_id", how="left")
+    gp = _fill_covered(gp, _bx_cols, set(_bx_all["game_id"]))
+    _cc_fp = REPO_ROOT / "Data" / "ccg_events_by_season" / f"{season}.parquet"
+    _cc_games = (set(pd.read_parquet(_cc_fp, columns=["game_id"])["game_id"])
+                 if _cc_fp.exists() else set())
+    gp = _fill_covered(gp.merge(_per_game_ccg(pid, season), on="game_id", how="left"),
+                       ["CCG"], _cc_games)
     _ind = load_per_game_individual(season)
     gp = gp.merge(_ind[_ind["player_id"] == pid][["game_id", "ixG", "iCF", "iG"]],
                   on="game_id", how="left")
+    # Individual 5v5 shots: covered = games with on-ice data (same shot source).
+    gp = _fill_covered(gp, ["iCF", "iG"], set(gp.loc[gp["TOI"].notna(), "game_id"]))
+    gp["ixG"] = gp["ixG"].where(gp["ixG"].notna() | gp["TOI"].isna(), 0)
     _zs = load_zone_start_per_game()
     if not _zs.empty:
         _zs = _zs[(_zs["player_id"] == pid) & (_zs["season"] == season)]
         gp = gp.merge(_zs[["game_id", "OZ Start%", "DZ Start%", "NZ Start%"]],
                       on="game_id", how="left")
-    for c in ("G", "A1", "A2", "SOG", "Hits", "Blocks", "TK", "GV", "PIM",
-              "CCG", "iCF", "iG", "_P5"):
-        gp[c] = gp[c].fillna(0) if c in gp.columns else 0
     gp["A"] = gp["A1"] + gp["A2"]
     gp["P"] = gp["G"] + gp["A"]
     gp["PrimP"] = gp["G"] + gp["A1"]
     for c in ("ixG", "OZ Start%", "DZ Start%", "NZ Start%"):
         if c not in gp.columns:
             gp[c] = np.nan
+    # "Processed through" date per source, for the caption.
+    _gd = dict(zip(meta["game_id"], meta["game_date"])) if not meta.empty else {}
+
+    def _thru(games):
+        ds = [_gd.get(x) for x in games if str(x)[:4] == str(season)[:4] and _gd.get(x)]
+        return max(ds) if ds else None
+    _thru_onice = _thru(set(g.loc[g["season"] == season, "game_id"])) if not g.empty else None
+    _thru_box = _thru(set(_bx_all["game_id"]))
     # Per-game /60 rates (value per 60 min of ES TOI).
     _p60 = (60.0 / gp["TOI"].replace(0, np.nan))
     gp["NFI-A/60"] = gp["NFI_for"] * _p60
@@ -4990,7 +5241,8 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     # clears the position median — same definition as QG%, just not yet aggregated.
     # Games below the QG floor (TOI < 8 min OR < 5 attempts) can't qualify → "—".
     _med = load_qg_position_medians()
-    _pos = str(gp["position"].iloc[0]) if "position" in gp.columns and len(gp) else "F"
+    _pk = gp["position"].dropna()
+    _pos = str(_pk.iloc[0]) if len(_pk) else "F"
     _qualn = (gp["TOI_on_sec"] >= 480) & ((gp["attempts_for"] + gp["attempts_ag"]) >= 5)
 
     def _qg_flag(metric_pct, key):
@@ -5018,7 +5270,34 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     gp["Game"] = np.where(gp["home"], "vs ", "@ ") + gp["opp"].astype(str)
     gp["Date"] = gp["game_date"].astype(str)
     cols = ["Date", "Game", "TOI"] + _metric_cols
-    st.markdown(f"**{name} — game log, {_lbl}**  ·  {len(gp)} GP · {gp['TOI'].sum():.0f} ES min")
+    # Season-to-date total row on top: counts summed, rates as ratio-of-sums over
+    # the games that have them — so the log reconciles with the season numbers.
+    _tot = {"Date": "Season", "Game": f"{len(gp)} GP", "TOI": gp["TOI"].sum(min_count=1)}
+    _t60 = 60.0 / _tot["TOI"] if pd.notna(_tot["TOI"]) and _tot["TOI"] > 0 else np.nan
+    _on = gp["TOI"].notna()
+    _sum = lambda c: gp[c].sum(min_count=1)
+    _onsum = lambda c: gp.loc[_on, c].sum(min_count=1)
+    def _pct(a, b):
+        a, b = _sum(a), _sum(b)
+        return 100 * a / (a + b) if pd.notna(a) and pd.notna(b) and (a + b) > 0 else np.nan
+    for c in ("CF", "CA", "xGF", "xGA", "NFI±", "iCF", "iG", "ixG", "CCG",
+              "G", "A1", "A2", "A", "P", "PrimP", "SOG", "Hits", "Blocks", "TK", "GV", "PIM"):
+        _tot[c] = _sum(c)
+    _tot["CF%"] = _pct("attempts_for", "attempts_ag")
+    _tot["xG%"] = _pct("xG_for", "xG_ag")
+    _tot["NFI%"] = _pct("NFI_for", "NFI_ag")
+    for c, src in (("CF/60", "attempts_for"), ("CA/60", "attempts_ag"), ("xGF/60", "xG_for"),
+                   ("xGA/60", "xG_ag"), ("NFI-A/60", "NFI_for"), ("NFI-S/60", "NFI_ag"),
+                   ("ixG/60", "ixG"), ("CCG/60", "CCG"), ("Prim Pts/60", "_P5")):
+        _tot[c] = _onsum(src) * _t60
+    for c in ("NFI-QG", "xG-QG"):
+        _q = gp[c].isin(["✓", "✗"])
+        _tot[c] = f"{(gp[c] == '✓').sum()}/{int(_q.sum())}" if _q.any() else "—"
+    for c in ("OZ Start%", "DZ Start%", "NZ Start%"):
+        _tot[c] = np.nan          # per-game shares don't sum; see season table
+    gp = pd.concat([pd.DataFrame([_tot]), gp], ignore_index=True)
+    st.markdown(f"**{name} — game log, {_lbl}**  ·  {len(gp) - 1} GP · "
+                f"{gp['TOI'].iloc[0] if pd.notna(gp['TOI'].iloc[0]) else 0:.0f} 5v5 min")
     _cap = ("One row per game, newest first — per-game stats for the selected metric "
             "family (tap families above to change the columns). On-ice rates (xG%, "
             "CF%, NFI%, …) are 5v5; the **Box Score** family (G, A1, A2, Pts, "
@@ -5026,10 +5305,57 @@ def _render_game_log(pid: int, name: str, season_label: str, families=None) -> N
     if _no_pg:
         _cap += (f"  ·  No per-game breakdown for: {', '.join(_no_pg)} "
                  "(EDGE is published by the NHL as season totals only — no per-game log).")
+    if set(_fams) & {"Net Front Impact", "CCG", "Zone Impact"}:
+        _cap += ("  ·  NFI RAPM / cG RAPM / ITI are 3-season pooled model estimates — "
+                 "they have no single-game form (see the season view).")
+    if str(season) == "20262027" and _thru_onice and _thru_box and _thru_onice < _thru_box:
+        _cap += (f"  ·  **Data freshness:** box score through {_thru_box}; 5v5 on-ice "
+                 f"and individual-shot stats through {_thru_onice} — newer games show "
+                 "“—” in those columns until the next on-ice refresh.")
     st.caption(_cap)
     out = gp[cols]
-    _show_df(out.style.format({k: v for k, v in _GAME_COL_FMT.items() if k in cols}),
+    _show_df(out.style.format({k: v for k, v in _GAME_COL_FMT.items() if k in cols},
+                              na_rep="—"),
              width="stretch", hide_index=True)
+
+
+def _render_player_rapm_block(pid: int, show_fams: set, same_pos: bool = False) -> None:
+    """The pooled RAPM numbers (NFI RAPM / ITI / cG RAPM) for one player — the
+    exact values + CI strings the leaderboard shows. They're a single 3-season
+    pooled estimate (not per season), so they get their own small table rather
+    than repeating the same value on every season row. Shown for whichever of
+    their families (Net Front Impact / Zone Impact / CCG) is selected."""
+    _fam_for = {"nfi_rapm": "Net Front Impact", "iti": "Zone Impact", "cg_rapm": "CCG"}
+    fams = [f for f in RAPM_FAMILIES if _fam_for[f[3]] in show_fams]
+    rp = load_rapm_5v5()
+    if not fams or rp.empty:
+        return
+    rp = _add_rapm_display(rp)
+    me = rp[rp["player_id"] == pid]
+    if me.empty:
+        st.caption(f"**RAPM / ITI** ({RAPM_SEASONS_LABEL}): no estimate — fewer than "
+                   "500 pooled 5v5 minutes over 2023-26.")
+        return
+    me = me.iloc[0]
+    coh = rp[rp["position"] == me["position"]] if same_pos else rp
+    rows = []
+    for _net, _a, _s, _raw in fams:
+        row = {"Metric": _net}
+        for _lbl, _c in (("Net", _net), ("Attack", _a), ("Suppress", _s)):
+            v = me[_c]
+            _f = "+.1f" if _raw == "iti" else "+.2f"
+            if pd.isna(v):
+                row[_lbl] = "—"
+            else:
+                rk = int((pd.to_numeric(coh[_c], errors="coerce") > v).sum()) + 1
+                row[_lbl] = f"{v:{_f}} ({rk})"
+            row[f"{_lbl} 95% CI"] = me[f"{_c} CI"] or "—"
+        rows.append(row)
+    st.caption(f"**RAPM / ITI — {RAPM_SEASONS_LABEL}, 5v5** · the same pooled values "
+               f"as the leaderboard · (rank) among {len(coh):,} "
+               f"{'same-position ' if same_pos else ''}skaters with an estimate · "
+               "**●** = 95% interval clears zero · **⚠** = collinearity-flagged.")
+    _show_df(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 
 def _render_player_profile(pid: int, same_pos: bool = False, families=None,
@@ -5067,6 +5393,7 @@ def _render_player_profile(pid: int, same_pos: bool = False, families=None,
                    "season. NFI-S/60 (shots against): lowest = #1.")
     _ev = _show_df(disp, width="stretch", hide_index=True, on_select="rerun",
                    selection_mode="single-row", key=f"pl_detail_{int(pid)}")
+    _render_player_rapm_block(int(pid), _show_fams, same_pos=same_pos)
     _sel = getattr(getattr(_ev, "selection", None), "rows", None)
     _seasons = disp["Season"].astype(str).tolist()
     if _sel and 0 <= _sel[0] < len(_seasons):
@@ -5780,6 +6107,11 @@ PLAYER_FAMILY_COLS = {
     # column machinery adds nothing for it.
     "Shot Charts": [],
 }
+# Columns the drill-in copies from the leaderboard frame each season (every
+# family column except the pooled RAPM block, plus GP).
+_LB_PARITY_COLS = ["GP"] + [c for c in dict.fromkeys(
+    col for cols in PLAYER_FAMILY_COLS.values() for col in cols)
+    if c not in _RAPM_DISP_COLS]
 
 
 def _team_scatter_frame(season_label: str, team: str = None) -> pd.DataFrame:
@@ -6206,6 +6538,19 @@ def load_box_score() -> pd.DataFrame:
     pbp_fp = REPO_ROOT / "Data" / "box_score_pbp.csv"
     if pbp_fp.exists():
         p = pd.read_csv(pbp_fp, dtype={"season": str})
+        # Live season: A1/A2 come from the per-game PBP parquet, which the daily CI
+        # appends to (box_score_pbp.csv is a local build and lags, which left
+        # A1 + A2 short of the API's assist total and PrimP understated). Completed
+        # seasons are identical in both sources, so they keep the frozen CSV.
+        _live = "20262027"
+        _pq = REPO_ROOT / "Data" / "box_pbp_by_game" / f"{_live}.parquet"
+        if _pq.exists():
+            _a = (pd.read_parquet(_pq, columns=["player_id", "game_type", "A1", "A2"])
+                  .groupby(["player_id", "game_type"])[["A1", "A2"]].sum().reset_index())
+            _a["season"] = _live
+            _old = p[p["season"] == _live].drop(columns=["A1", "A2"])
+            _new = _old.merge(_a, on=["player_id", "season", "game_type"], how="outer")
+            p = pd.concat([p[p["season"] != _live], _new], ignore_index=True)
         d = d.merge(p, on=["player_id", "season", "game_type"], how="left")
     return d
 
@@ -6572,16 +6917,7 @@ def render_players() -> None:
     # Storage → display: RelNFI_F (attack / for) shows as "RelNFI-A%",
     # RelNFI_A (suppress / against) shows as "RelNFI-S%". Do NOT sign-flip — the
     # underlying _F/_A columns are unchanged; only the display labels swap A/S.
-    _ren = {
-        "player_name": "Player", "position": "Pos", "team": "Team", "toi_min": "TOI",
-        "NFI_pct": "NFI%", "RelNFI_pct": "RelNFI%",
-        "RelNFI_F_pct": "RelNFI-A%", "RelNFI_A_pct": "RelNFI-S%",
-        "NFI_A_rate": "NFI-A/60", "NFI_S_rate": "NFI-S/60",
-        "xG_QG_pct": "xG-QG%", "NFI_QG_pct": "NFI-QG%",
-        "RelNFI_QG_pct": "RelNFI-QG%", "RelxG_QG_pct": "RelxG-QG%",
-        "RelxG_pct": "RelxG%", "RelxG_F_pct": "RelxG-F%", "RelxG_A_pct": "RelxG-A%",
-        **_EDGE_REN,
-    }
+    _ren = {**_PLAYER_DISP_REN, **_EDGE_REN}
     df = df.rename(columns=_ren)
     rank_cohort = rank_cohort.rename(columns=_ren)
 
@@ -6596,28 +6932,7 @@ def render_players() -> None:
     # table sorts by them; each gets an adjacent "… CI" string with the 95%
     # interval and markers: ● = interval clears zero, ⚠ = collinearity-flagged
     # (shares >=65% of 5v5 ice with one teammate — less certain, not lower).
-    if "nfi_rapm" in df.columns:
-        _collin = (df["collinearity_flag"].fillna(False).to_numpy()
-                   if "collinearity_flag" in df.columns else np.zeros(len(df), bool))
-
-        def _rapm_ci(lo, hi, clears, fmt, flag):
-            if pd.isna(lo) or pd.isna(hi):
-                return ""
-            s = f"{'● ' if bool(clears) else ''}{lo:{fmt}}–{hi:{fmt}}"
-            return s + (" ⚠" if flag else "")
-
-        for _net, _a, _s, _raw in RAPM_FAMILIES:
-            if _raw not in df.columns:
-                continue
-            _fmt = ".1f" if _raw == "iti" else ".2f"
-            for _disp, _rc, _markflag in ((_net, _raw, True), (_a, f"{_raw}_a", False),
-                                          (_s, f"{_raw}_s", False)):
-                df[_disp] = pd.to_numeric(df[_rc], errors="coerce").round(2)
-                _lo, _hi = df[f"{_rc}_lo"].to_numpy(), df[f"{_rc}_hi"].to_numpy()
-                _cz = df[f"{_rc}_clears_zero"].to_numpy()
-                df[f"{_disp} CI"] = [
-                    _rapm_ci(l, h, c, _fmt, bool(fl) and _markflag)
-                    for l, h, c, fl in zip(_lo, _hi, _cz, _collin)]
+    df = _add_rapm_display(df)
 
     # Always show the full column set (Compact view removed; Qual GP dropped).
     # NFI-A/60 / NFI-S/60 are RAW per-60 rates; RelNFI-A% / RelNFI-S% are the
@@ -6760,20 +7075,8 @@ def render_players() -> None:
         if c in disp.columns:
             fmt[c] = lambda x: "—" if pd.isna(x) else f"{int(x):,}"
 
-    _player_rank = ["NFI%", "RelNFI%", "RelNFI-A%", "RelNFI-S%", "NFI-A/60",
-                    "NFI-S/60", "OZI", "DZI", "NZI", "TZI", "Elite Rating", "PP Rating",
-                    "Elite Exposure F%", "Elite Exposure D%", "Elite Exposure%", "Elite Support%",
-                    "Elite xGF%", "Mid xGF%", "Easy xGF%", "Elite ixG", "Mid ixG", "Easy ixG",
-                    "DZ Start%", "NZ Start%", "OZ Start%",
-                    "RelNFI-QG%", "NFI-QG%", "RelxG%", "RelxG-QG%", "xG-QG%",
-                    "xGF/60", "xGA/60", "RelxG-F%", "RelxG-A%",
-                    "xG-QG-F%", "xG-QG-A%", "NFI-QG-A%", "NFI-QG-S%",
-                    "CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60",
-                    *_EDGE_VALUE_DISP, *BOX_FAMILY_COLS]
-    # lower value = better (rank ascending): shots/xG against, and the box-score
-    # stats where less is better — giveaways, getting hit, penalties, FO losses.
-    _lower = {"NFI-S/60", "xGA/60", "RelxG-A%",
-              "GV", "Hits Taken", "Min Pen", "Maj Pen", "PIM", "FO L"}
+    _player_rank = _PLAYER_RANK_COLS + [*_EDGE_VALUE_DISP, *BOX_FAMILY_COLS]
+    _lower = _PLAYER_LOWER
     # Second bracket number = within-team rank. With a team selected, rank within
     # that team; otherwise within each player's own (most-recent) team. Computed
     # per-row over the qualified cohort and keyed to the displayed rows by id.
@@ -7325,6 +7628,46 @@ def _render_teams_playoffs(season_label: str) -> None:
     )
 
 
+TEAM_RAPM_COLS = ["NFI RAPM", "NFI RAPM-A", "NFI RAPM-S", "ITI", "ITI-A", "ITI-S",
+                  "cG RAPM", "cG RAPM-A", "cG RAPM-S", "RAPM TOI Cov%"]
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _team_rapm_frame(key: str) -> pd.DataFrame:
+    """Team-level RAPM / ITI = the roster's isolated on-ice impacts summed over
+    the five skaters on the ice: 5 x the 5v5-TOI-weighted mean of each skater's
+    pooled (2023-26) estimate, weighting by the minutes he played FOR THIS TEAM in
+    the scope. Skaters without an estimate (< 500 pooled min, e.g. rookies) count
+    as 0 = league average — the same shrink-to-zero the ridge model applies.
+    RAPM TOI Cov% = share of the team's skater 5v5 TOI that has an estimate."""
+    g = load_per_player_game()
+    rp = load_rapm_5v5()
+    if g.empty or rp.empty:
+        return pd.DataFrame()
+    seasons = (POOLED_2YR_SEASONS if key == "pooled_2yr"
+               else POOLED_SEASONS if key == "pooled" else [key])
+    g = g[g["season"].astype(str).isin(seasons) & g["position"].isin(["F", "D"])]
+    if g.empty:
+        return pd.DataFrame()
+    toi = (g.groupby(["team_abbrev", "player_id"])["TOI_on_sec"].sum()
+           .rename("toi").reset_index())
+    raws = [f"{r}{suf}" for _n, _a, _s, r in RAPM_FAMILIES for suf in ("", "_a", "_s")]
+    toi = toi.merge(rp[["player_id"] + raws], on="player_id", how="left")
+    toi["_cov"] = toi[raws[0]].notna().astype(float)
+    toi[raws] = toi[raws].fillna(0.0)
+    disp = [c for _n, _a, _s, _r in RAPM_FAMILIES for c in (_n, _a, _s)]
+    rows = []
+    for t, d in toi.groupby("team_abbrev"):
+        w = d["toi"].to_numpy(float)
+        if w.sum() <= 0:
+            continue
+        row = {"team": t, "RAPM TOI Cov%": 100.0 * float((w * d["_cov"]).sum() / w.sum())}
+        for dc, rc in zip(disp, raws):
+            row[dc] = 5.0 * float((w * d[rc].to_numpy(float)).sum() / w.sum())
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def render_teams() -> None:
     st.markdown(
         f"<h2 style='color:{PALETTE['text']}; margin-bottom:0.2rem;'>Teams</h2>",
@@ -7458,6 +7801,11 @@ def render_teams() -> None:
         team = team.merge(tedge.drop(columns=["logo"]).rename(columns={"Team": "team"}),
                           on="team", how="left")
 
+    # Roster RAPM / ITI (team version of the player RAPM families).
+    trapm = _team_rapm_frame(key)
+    if not trapm.empty:
+        team = team.merge(trapm, on="team", how="left")
+
     _fa_disp = list(_TEAM_QG_FA.values())   # xG-QG-F%, xG-QG-A%, NFI-QG-A%, NFI-QG-S%
     for c in ["TOI", "xG-QG%", "NFI-QG%", "Attack events",
               "Suppress events"] + zcols + _fa_disp:
@@ -7471,7 +7819,8 @@ def render_teams() -> None:
                        "NFI-QG%", "NFI-QG-A%", "NFI-QG-S%"]
             + [c for c in TEAM_SIT_COLS if c in team.columns]
             + [c for c in TEAM_EDGE_COLS if c in team.columns]
-            + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS) if c in team.columns])
+            + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS) if c in team.columns]
+            + [c for c in TEAM_RAPM_COLS if c in team.columns])
     disp = team[[c for c in cols if c in team.columns]].copy()
     # Drop the internal "Sit " prefix for display (plain metric names).
     disp = disp.rename(columns=_TEAM_SIT_DISP)
@@ -7483,10 +7832,12 @@ def render_teams() -> None:
                           "NFI-QG-A%", "NFI-QG-S%"],
         "xG": ["CF%", "xGF%", "GF%", "CF/60", "CA/60", "xGF/60",
                             "xGA/60", "GF/60", "GA/60", "PDOxG", "Situation TOI"],
-        "CCG": ["CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60"],
+        "CCG": ["CCG", "CCG/60", "Rel-CCG", "Rel-CCG/60",
+                "cG RAPM", "cG RAPM-A", "cG RAPM-S", "RAPM TOI Cov%"],
         "Advanced Stats": ["PDO"],
-        "Net Front Impact": ["NFI%", "Attack events", "Suppress events"],
-        "Zone Impact": list(zcols),
+        "Net Front Impact": ["NFI RAPM", "NFI RAPM-A", "NFI RAPM-S", "RAPM TOI Cov%",
+                             "NFI%", "Attack events", "Suppress events"],
+        "Zone Impact": ["ITI", "ITI-A", "ITI-S", "RAPM TOI Cov%"] + list(zcols),
         "EDGE": list(TEAM_EDGE_COLS),
         # Special teams folded into Box Score; Box Score kept last.
         "Box Score": list(TEAM_BOX_COUNT_COLS) + list(TEAM_ST_COLS),
@@ -7555,12 +7906,22 @@ def render_teams() -> None:
     if "EDGE Bursts/60" in disp:
         fmt["EDGE Bursts/60"] = lambda x: "—" if pd.isna(x) else f"{x:.2f}"
 
+    for c in ("NFI RAPM", "NFI RAPM-A", "NFI RAPM-S", "cG RAPM", "cG RAPM-A", "cG RAPM-S"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.2f}"
+    for c in ("ITI", "ITI-A", "ITI-S"):
+        if c in disp:
+            fmt[c] = lambda x: "—" if pd.isna(x) else f"{x:+.1f}"
+    if "RAPM TOI Cov%" in disp:
+        fmt["RAPM TOI Cov%"] = lambda x: "—" if pd.isna(x) else f"{x:.0f}%"
+
     _sit_ranked = [_TEAM_SIT_DISP[c] for c in TEAM_SIT_COLS
                    if _TEAM_SIT_DISP[c] in disp.columns and c != "Sit TOI"]
     _team_rank = (["NFI%", "Attack events", "Suppress events"] + zcols
                   + ["xG-QG%", "NFI-QG%"] + _sit_ranked
                   + [c for c in (TEAM_BOX_COUNT_COLS + TEAM_ST_COLS + TEAM_EDGE_COLS)
-                     if c in disp.columns])
+                     if c in disp.columns]
+                  + [c for c in TEAM_RAPM_COLS if c in disp.columns and c != "RAPM TOI Cov%"])
     # against-rates rank lowest-first (fewer allowed = better). For the box/ST
     # suite: giveaways, PP goals allowed, times shorthanded, SH goals allowed,
     # and the SH-against share are all "less = better". EDGE DZ%: less D-zone
@@ -7591,6 +7952,13 @@ def render_teams() -> None:
     cap = (f"{len(disp)} teams · {season_label} · sorted by NFI% (CNFI+MNFI share) "
            f"descending · Zone Impact (OZI/DZI/NZI/TZI, 0–100 index where 50 = the "
            f"average team) is TOI-weighted, shown for {zwin_label}{_zextra}.")
+    if set(_tsel) & {"Net Front Impact", "Zone Impact", "CCG"}:
+        cap += (" · **NFI RAPM / ITI / cG RAPM (team)** = the roster's pooled 2023-26 "
+                "player estimates summed over the 5 skaters on the ice (5 × the "
+                "5v5-TOI-weighted mean, using each skater's minutes for this team in "
+                "the selected season(s)); skaters without an estimate count as league "
+                "average (0). RAPM TOI Cov% = share of the team's skater minutes that "
+                "have an estimate.")
     st.caption(cap)
 
     # League scatter landscape (includes the TZI vs xG% team scatter, above EDGE).
