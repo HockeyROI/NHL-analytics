@@ -109,6 +109,25 @@ def main() -> int:
                               "timeOnIcePerGame": "toi_per_game_sec",
                               "totalFaceoffWins": "faceoffs_won",
                               "totalFaceoffLosses": "faceoffs_lost"})
+    # The Stats API intermittently omits a report row for some players, which
+    # blanked previously-good cells (and a re-run fills others back in). Never
+    # lose a value we already had: fill blanks — and restore whole rows the API
+    # dropped — from the existing file. Fresh non-blank values always win.
+    if OUT.exists():
+        prev = pd.read_csv(OUT)
+        k = ["player_id", "season", "game_type"]
+        for _d in (out, prev):          # same key types on both sides
+            _d["player_id"] = _d["player_id"].astype(int)
+            _d["season"] = _d["season"].astype(int)
+            _d["game_type"] = _d["game_type"].astype(str)
+        out = out.drop_duplicates(k, keep="first").set_index(k)
+        prev = prev.drop_duplicates(k, keep="first").set_index(k)
+        common = [c for c in out.columns if c in prev.columns]
+        out[common] = out[common].fillna(prev[common].reindex(out.index))
+        missing = prev.index.difference(out.index)
+        if len(missing):
+            out = pd.concat([out, prev.loc[missing, common]])
+        out = out.reset_index()
     OUT.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(OUT, index=False)
     print(f"\nwrote {OUT}: {len(out):,} player-season-type rows, "
