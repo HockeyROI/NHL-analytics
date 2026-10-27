@@ -46,7 +46,7 @@ OUT_DIR = f"{ROOT}/Quality_Games/output"
 
 MIN_TOI_SEC = 480
 MIN_ATTEMPTS = 5
-TEAM_GP_FLOOR = 20
+TEAM_GP_FLOOR = 1     # everyone kept; the app's Min GP slider is the display floor
 
 SCOPE = os.environ.get("QG_SCOPE", "regular")
 _IS_PLAYOFF = SCOPE == "playoff"

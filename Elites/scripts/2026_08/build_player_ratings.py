@@ -141,11 +141,20 @@ def main():
         if scope == "2026-27" and _blended_live:
             agg = agg[agg["player_id"].astype(int).isin(_live_participants)].copy()
         agg["ev_min"] = agg["ev_toi_sec"] / 60.0
+        # Everyone who played is rated, but the percentile scale is set by the
+        # QUALIFIED group only (>= min_min) — a below-floor player is scored
+        # against that same group, so adding them moves no one else's Rating/Tier.
+        agg_all = agg[agg["ev_min"] >= 1].copy()
         agg = agg[agg["ev_min"] >= min_min].copy()          # qualify
         agg["ev_toi_gp"] = agg["ev_min"] / agg["gp"]
         agg["ixg60"] = agg["ixg"] / agg["ev_min"] * 60.0
         agg["prim_pts60"] = (agg["g5v5"] + agg["a1_5v5"]) / agg["ev_min"] * 60.0
         agg["GP"] = agg["gp"].astype(int)
+        for _a in (agg_all,):
+            _a["ev_toi_gp"] = _a["ev_min"] / _a["gp"]
+            _a["ixg60"] = _a["ixg"] / _a["ev_min"] * 60.0
+            _a["prim_pts60"] = (_a["g5v5"] + _a["a1_5v5"]) / _a["ev_min"] * 60.0
+            _a["GP"] = _a["gp"].astype(int)
         # Blended live scope: show CURRENT-season GP (not the pooled 2-season sum).
         # The Rating/ev_toi_gp still use the pooled window; only the display GP
         # is reset so "2026-27" never shows more than its games-so-far.
@@ -165,6 +174,29 @@ def main():
             q["Dep"] = (pt * 100).round(1)
             q["Prod"] = (pp * 100).round(1)
             q["Shot"] = (pi * 100).round(1) if posg == "F" else np.nan
+            # below-floor players, scored against the qualified group q
+            x = agg_all[(agg_all["pos_group"] == posg)
+                        & ~agg_all["player_id"].isin(q["player_id"])].copy()
+            if len(x):
+                def _vs_q(col):
+                    ref = np.sort(q[col].dropna().to_numpy())
+                    n = len(ref)
+                    lo_ = np.searchsorted(ref, x[col].to_numpy(), side="left")
+                    hi_ = np.searchsorted(ref, x[col].to_numpy(), side="right")
+                    # average rank of the value within q + itself, as a percentile
+                    return pd.Series((lo_ + (hi_ - lo_ + 2) / 2.0) / (n + 1), index=x.index)
+                xt, xi, xp = _vs_q("ev_toi_gp"), _vs_q("ixg60"), _vs_q("prim_pts60")
+                x["Rating"] = (position_score(posg, xt, xi, xp) * 100).round(1)
+                _hi = q["Rating"].quantile(1 - 0.15)
+                _lo = q["Rating"].quantile(0.30)
+                x["Tier"] = np.where(x["Rating"] >= _hi, "Elite",
+                                     np.where(x["Rating"] <= _lo, "Poor", "Middle"))
+                x["Dep"] = (xt * 100).round(1)
+                x["Prod"] = (xp * 100).round(1)
+                x["Shot"] = (xi * 100).round(1) if posg == "F" else np.nan
+                if scope == "2026-27" and _blended_live:
+                    x["GP"] = x["player_id"].map(_live_gp_map).fillna(0).astype(int)
+                q = pd.concat([q, x], ignore_index=True)
             out = q[["player_name", "team", "pos", "GP",
                      "Rating", "Tier", "Dep", "Shot", "Prod", "player_id"]] \
                 .sort_values("Rating", ascending=False).reset_index(drop=True)

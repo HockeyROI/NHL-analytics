@@ -63,7 +63,7 @@ OUT_DIR = f"{QG_DIR}/output"
 
 MIN_TOI_SEC = 480     # 8 min
 MIN_ATTEMPTS = 5      # for + against, both included
-TEAM_GP_FLOOR = 20    # 20+ GP with that team in that season
+TEAM_GP_FLOOR = 1     # everyone kept; the app's Min GP slider is the display floor
 
 # Playoff scope — mirror of script 01's QG_SCOPE. Reads per_player_game_playoffs,
 # writes *_playoffs outputs (per playoff season + an `all_playoffs` pooled row),

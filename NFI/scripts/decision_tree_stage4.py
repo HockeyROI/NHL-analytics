@@ -74,10 +74,11 @@ FACTOR_EFFECTIVE = {
     "Corsi":     0.0580,
 }
 TRADITIONAL_FACTOR = 0.035  # 3.5 pct-pts, applied to all metrics in traditional variant
-MIN_TOI_MIN = 200           # minimum ES TOI to include a player in a season
-# Live (in-progress) season uses a much lower floor so early-season players
-# appear from game 1 — completed seasons keep the 200-min floor, so their
-# published numbers are unchanged.
+# Everyone who played is kept (1 ES minute) — the app's Min TOI / Min GP sliders
+# decide who is shown and ranked by default, so a low-minute player can still be
+# searched and drilled into. (Was 200 for completed seasons, which silently
+# dropped e.g. a 13-game, 120-minute season from the app entirely.)
+MIN_TOI_MIN = 1             # minimum ES TOI to include a player in a season
 LIVE_SEASON = "20262027"
 LIVE_MIN_TOI = 10
 

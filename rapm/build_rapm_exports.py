@@ -3,8 +3,11 @@
 Reads the final RAPM study outputs READ-ONLY from Zones/2026-09/ and writes a
 single CI-portable export the Streamlit app loads:
 
-  rapm/output/player_rapm_5v5.csv   one row per qualified skater (>= 500 pooled
-                                    5v5 min), 2023-24..2025-26 pooled.
+  rapm/output/player_rapm_5v5.csv   one row per skater in the fit (everyone who
+                                    played 5v5 in 2023-24..2025-26; low-minute
+                                    players are shrunk toward 0 by the ridge
+                                    prior and carry wide intervals). The app's
+                                    sliders decide who is shown and ranked.
 
 Three published families (special-teams RAPM is NOT published -- see README):
   NFI RAPM  <- Zones/2026-09/rapm/doorstep   (NFI zone = CNFI u MNFI Fenwick)
@@ -111,7 +114,8 @@ def main():
     # --- the three families -------------------------------------------------
     nfi = _rapm_family(os.path.join(STUDY, "doorstep"), "nfi_rapm", players)
     cg = _rapm_family(os.path.join(STUDY, "cg"), "cg_rapm", players)
-    iti = pd.read_csv(os.path.join(ITI, "player_iti.csv"))   # already net/A/S + CIs
+    iti = (pd.read_csv(os.path.join(ITI, "player_iti_all.csv"))   # every skater, net/A/S + CIs
+           .drop(columns=["anchor", "source", "unit"], errors="ignore"))
     print(f"[rapm] NFI/cG families computed for {n}; ITI rows (>=500 min): {len(iti)}")
 
     # --- pooled 5v5 TOI + seasons (from the doorstep all-players table) ------
@@ -137,8 +141,8 @@ def main():
           .merge(flags, on="player_id", how="left"))
     df["collinearity_flag"] = df["collinearity_flag"].fillna(False).astype(bool)
 
-    # qualified skaters only (>= 500 pooled 5v5 min)
-    q = df[df["toi_5v5_min"] >= QUALIFY_MIN].copy()
+    # every skater in the fit (was >= 500 pooled 5v5 min)
+    q = df.copy()
     q = q.sort_values("nfi_rapm", ascending=False).reset_index(drop=True)
 
     col_order = ["player_id", "name", "position", "team", "toi_5v5_min", "seasons"]

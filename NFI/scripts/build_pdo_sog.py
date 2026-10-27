@@ -40,7 +40,7 @@ OUT_CSV_ALLSIT = f"{ROOT}/NFI/output/player_pdo_allsit_per_season.csv"
 SHOT_XG_CSV = f"{ROOT}/xG/output/shot_xg_per_event.csv"  # per-event xG (xG/build_xg.py, v2)
 
 SEASONS = {"20212022", "20222023", "20232024", "20242025", "20252026", "20262027"}
-TOI_FLOOR_MIN = 200.0
+TOI_FLOOR_MIN = 1.0     # everyone kept; the app's sliders are the display floor
 LIVE_SEASON = "20262027"       # in-progress: drop the TOI floor so players show early
 LIVE_TOI_FLOOR_MIN = 10.0
 

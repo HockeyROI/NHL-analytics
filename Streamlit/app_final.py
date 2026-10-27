@@ -70,7 +70,8 @@ def load_rapm_5v5() -> pd.DataFrame:
     """Published RAPM export (rapm/output/player_rapm_5v5.csv): NFI RAPM, ITI and
     cG RAPM, each net/A/S with bootstrap 95% intervals + clears-zero, plus the
     collinearity flag. 3-season pooled 5v5; one row per qualified skater
-    (>= 500 pooled 5v5 min), keyed by player_id. Positive = better."""
+    (every skater in the fit — low-minute players are shrunk toward 0 with wide
+    intervals), keyed by player_id. Positive = better."""
     fp = REPO_ROOT / "rapm" / "output" / "player_rapm_5v5.csv"
     if not fp.exists():
         return pd.DataFrame()
@@ -7767,7 +7768,7 @@ def _team_rapm_frame(key: str) -> pd.DataFrame:
     """Team-level RAPM / ITI = the roster's isolated on-ice impacts summed over
     the five skaters on the ice: 5 x the 5v5-TOI-weighted mean of each skater's
     pooled (2023-26) estimate, weighting by the minutes he played FOR THIS TEAM in
-    the scope. Skaters without an estimate (< 500 pooled min, e.g. rookies) count
+    the scope. Skaters without an estimate (no 5v5 time in 2023-26, e.g. rookies) count
     as 0 = league average — the same shrink-to-zero the ridge model applies."""
     g = load_per_player_game()
     rp = load_rapm_5v5()

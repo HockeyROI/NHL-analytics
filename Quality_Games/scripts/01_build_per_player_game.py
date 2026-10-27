@@ -415,6 +415,10 @@ for (pid, gid) in all_keys:
         n_missing_team += 1
         continue
     position = pos_by_ps.get((pid, hr_sn), '')
+    if position == '' and pos_filter.get(pid) in ('F', 'D'):
+        # not in the NFI season file (e.g. a short season) — fall back to the
+        # master position list so the player-season still gets QG rows
+        position = pos_filter[pid]
     if position == '':
         n_missing_pos += 1
     rows.append({

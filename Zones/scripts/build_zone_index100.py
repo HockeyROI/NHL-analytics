@@ -71,16 +71,55 @@ def build_index(bundle, player_meta, min_gp=None):
                 meta_of[pid] = (meta, pos, data["gp"])
     # 2) recentre each (grp, metric) on its own average -> 0-100 index
     out = {g: {} for g in ("forwards", "defense")}
+    avgs = {}
     for grp in ("forwards", "defense"):
         for disp, _ in METRICS:
             pv = raw[grp][disp]
             if not pv:
                 continue
             avg = sum(pv.values()) / len(pv)
+            avgs[(grp, disp)] = avg
             for pid, rp in pv.items():
                 rec = out[grp].setdefault(pid, {})
                 rec[disp] = round(max(0.0, min(100.0, 50.0 + (rp - avg))), 1)
+    # 3) everyone else who played (below the GP / per-metric shift minimums) is
+    #    scored from whatever shifts they have against the SAME qualified average,
+    #    so they're in the data without moving anyone's published index. The
+    #    app's Min TOI / Min GP sliders decide who is shown and ranked.
+    for pid, data in bundle.items():
+        meta = player_meta.get(pid, {})
+        pos = (meta.get("position") or "").upper()
+        grp = ("forwards" if pos in zv.POS_FORWARD else
+               "defense" if pos in zv.POS_DEFENSE else None)
+        if grp is None or data["gp"] < 1:
+            continue
+        vb = data["versions"].get("V1", {})
+        rec = out[grp].setdefault(pid, {})
+        for disp, _ in METRICS:
+            if disp in rec or (grp, disp) not in avgs:
+                continue
+            rp = ungated_raw(vb, disp)
+            if rp is None:
+                continue
+            rec[disp] = round(max(0.0, min(100.0, 50.0 + (rp * 100.0 - avgs[(grp, disp)]))), 1)
+        if rec:
+            meta_of.setdefault(pid, (meta, pos, data["gp"]))
+        else:
+            out[grp].pop(pid, None)
     return out, meta_of
+
+
+def ungated_raw(vb, disp):
+    """Raw 0-1 share for one metric with no shift minimum (same definitions as
+    compute_metric): OZI/DZI/NZI = OZ time share after O/D/N-zone faceoffs; TZI =
+    (OZ - DZ) share after neutral-zone faceoffs."""
+    fz = {"OZI": "O", "DZI": "D", "NZI": "N", "TZI": "N"}[disp]
+    b = vb.get(fz)
+    if not b or b["total_sec"] <= 0:
+        return None
+    if disp == "TZI":
+        return (b["oz_sec"] - b["dz_sec"]) / b["total_sec"]
+    return b["oz_sec"] / b["total_sec"]
 
 
 def write_scope(scope_label, bundle, player_meta, min_gp=None):

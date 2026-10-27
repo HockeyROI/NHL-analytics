@@ -66,11 +66,13 @@ FEN = {"shot-on-goal", "missed-shot", "goal"}
 SEASONS = ["20222023", "20232024", "20242025", "20252026", "20262027"]
 SEASON_LABEL = {"20222023": "2022-23", "20232024": "2023-24",
                 "20242025": "2024-25", "20252026": "2025-26", "20262027": "2026-27"}
-SCOPES = {  # scope label -> (seasons, min EV min to qualify)
-    "2022-23": (["20222023"], 200), "2023-24": (["20232024"], 200),
-    "2024-25": (["20242025"], 200), "2025-26": (["20252026"], 200), "2026-27": (["20262027"], 10),
-    "2yr": (["20242025", "20252026"], 400),
-    "pooled": (SEASONS, 700),
+# Everyone is kept (1 EV min); the app's Min TOI / Min GP sliders are the display
+# floor. These are per-player ratios, so adding players changes no one else.
+SCOPES = {  # scope label -> (seasons, min EV min to include)
+    "2022-23": (["20222023"], 1), "2023-24": (["20232024"], 1),
+    "2024-25": (["20242025"], 1), "2025-26": (["20252026"], 1), "2026-27": (["20262027"], 1),
+    "2yr": (["20242025", "20252026"], 1),
+    "pooled": (SEASONS, 1),
 }
 
 
