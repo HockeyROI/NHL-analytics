@@ -4285,7 +4285,7 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
         _ency = alt.Y(f"{ycol}:Q", scale=alt.Scale(domain=_ydom, zero=False))
         # In a league view we don't label everyone (unreadable) — only the
         # highlighted player. In team/trade views label everyone, and if one is
-        # highlighted render just them bold + a ring, like the other scatters.
+        # highlighted render their label bold (no ring), like the other scatters.
         _rest = d[d["player_name"] != highlight_name] if _hl_on else d
         if _team_view or _trade_view:
             ch = ch + alt.Chart(_rest).mark_text(align="left", dx=6, dy=-6, fontSize=10,
@@ -4294,8 +4294,6 @@ def _ctx_scatter(season_label: str, pos_filter: str = "All", team: str = None,
         if _hl_on:
             _hl = d[d["player_name"] == highlight_name]
             ch = (ch
-                  + alt.Chart(_hl).mark_point(size=170, filled=False, strokeWidth=2.5,
-                                              color=PALETTE["orange"]).encode(x=_encx, y=_ency)
                   + alt.Chart(_hl).mark_text(align="left", dx=7, dy=-7, fontSize=13,
                                              fontWeight="bold", color=PALETTE["orange"]).encode(
                         x=_encx, y=_ency, text="_label:N"))
