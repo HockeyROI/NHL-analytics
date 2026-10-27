@@ -5329,6 +5329,10 @@ def _game_log_frame(pid: int, season: int, bucket: str) -> pd.DataFrame:
     out["_team"] = out["game_id"].map(team_of)
     if "_team5" in out.columns:
         out["_team"] = out["_team"].fillna(out["_team5"])
+    # games only the box source has reached yet: use the player's latest team
+    _known = out.dropna(subset=["_team"]).sort_values("game_id")["_team"]
+    if len(_known):
+        out["_team"] = out["_team"].fillna(_known.iloc[-1])
     out["_box_ok"] = out["game_id"].isin(box_games)
     for c in ("G", "A1", "A2", "A", "Pts", "PrimP", "PPP", "SHP", "Shots", "GWG",
               "Reb Created", "TK", "GV", "Hits", "Hits Taken", "Blocks", "Min Pen",
