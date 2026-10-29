@@ -59,7 +59,7 @@ team_id,team,season,game_type,situation,ccg
 1,NJD,20252026,regular,6v5,3
 1,NJD,20252026,regular,other,3
 1,NJD,20262027,regular,5v4,5
-1,NJD,20262027,regular,5v5,20
+1,NJD,20262027,regular,5v5,21
 1,NJD,20262027,regular,5v6,1
 2,NYI,20202021,playoff,5v4,2
 2,NYI,20202021,playoff,5v5,20
@@ -216,8 +216,8 @@ team_id,team,season,game_type,situation,ccg
 4,PHI,20252026,regular,5v6,3
 4,PHI,20252026,regular,6v5,4
 4,PHI,20252026,regular,other,8
-4,PHI,20262027,regular,5v4,6
-4,PHI,20262027,regular,5v5,6
+4,PHI,20262027,regular,5v4,7
+4,PHI,20262027,regular,5v5,7
 4,PHI,20262027,regular,6v5,2
 5,PIT,20202021,playoff,5v5,5
 5,PIT,20202021,regular,3v3,2
@@ -553,8 +553,10 @@ team_id,team,season,game_type,situation,ccg
 10,TOR,20252026,regular,5v5,83
 10,TOR,20252026,regular,5v6,2
 10,TOR,20262027,regular,3v3,2
+10,TOR,20262027,regular,4v4,1
 10,TOR,20262027,regular,5v4,5
 10,TOR,20262027,regular,5v5,7
+10,TOR,20262027,regular,6v5,1
 12,CAR,20202021,playoff,4v4,1
 12,CAR,20202021,playoff,5v4,6
 12,CAR,20202021,playoff,5v5,9
@@ -818,8 +820,8 @@ team_id,team,season,game_type,situation,ccg
 15,WSH,20252026,regular,5v6,1
 15,WSH,20252026,regular,6v5,6
 15,WSH,20252026,regular,other,2
-15,WSH,20262027,regular,5v4,2
-15,WSH,20262027,regular,5v5,6
+15,WSH,20262027,regular,5v4,3
+15,WSH,20262027,regular,5v5,9
 16,CHI,20202021,regular,3v3,1
 16,CHI,20202021,regular,4v5,1
 16,CHI,20202021,regular,5v4,23
@@ -1165,7 +1167,8 @@ team_id,team,season,game_type,situation,ccg
 21,COL,20252026,regular,6v5,1
 21,COL,20252026,regular,other,5
 21,COL,20262027,regular,5v3,1
-21,COL,20262027,regular,5v5,24
+21,COL,20262027,regular,5v4,2
+21,COL,20262027,regular,5v5,28
 21,COL,20262027,regular,other,1
 22,EDM,20202021,playoff,5v3,2
 22,EDM,20202021,playoff,5v4,2
@@ -1229,7 +1232,7 @@ team_id,team,season,game_type,situation,ccg
 22,EDM,20252026,regular,other,1
 22,EDM,20262027,regular,4v4,2
 22,EDM,20262027,regular,5v3,2
-22,EDM,20262027,regular,5v4,1
+22,EDM,20262027,regular,5v4,2
 22,EDM,20262027,regular,5v5,17
 22,EDM,20262027,regular,6v4,2
 22,EDM,20262027,regular,other,2
@@ -1801,8 +1804,8 @@ team_id,team,season,game_type,situation,ccg
 55,SEA,20252026,regular,6v5,3
 55,SEA,20252026,regular,other,4
 55,SEA,20262027,regular,5v3,1
-55,SEA,20262027,regular,5v4,3
-55,SEA,20262027,regular,5v5,13
+55,SEA,20262027,regular,5v4,4
+55,SEA,20262027,regular,5v5,14
 55,SEA,20262027,regular,other,5
 59,UTA,20242025,regular,3v3,3
 59,UTA,20242025,regular,4v3,3
