@@ -697,7 +697,7 @@ team_id,team,season,game_type,situation,ccg
 13,FLA,20252026,regular,6v5,12
 13,FLA,20252026,regular,other,6
 13,FLA,20262027,regular,5v4,13
-13,FLA,20262027,regular,5v5,20
+13,FLA,20262027,regular,5v5,23
 13,FLA,20262027,regular,6v5,2
 14,TBL,20202021,playoff,5v4,9
 14,TBL,20202021,playoff,5v5,18
@@ -1664,6 +1664,7 @@ team_id,team,season,game_type,situation,ccg
 52,WPG,20252026,regular,5v6,1
 52,WPG,20252026,regular,6v5,6
 52,WPG,20252026,regular,other,2
+52,WPG,20262027,regular,5v3,1
 52,WPG,20262027,regular,5v4,9
 52,WPG,20262027,regular,5v5,10
 53,ARI,20202021,regular,4v4,1
