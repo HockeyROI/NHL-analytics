@@ -8570,14 +8570,14 @@ def load_qg_tiered_playoffs(scope_suffix: str) -> pd.DataFrame:
 
 
 def _goalie_trend(gid: int, qg_scope_suffix: str = "", qg_starter: bool = True) -> pd.DataFrame:
-    """Per-season (2022-23..2025-26) NFI-GSAx/60, NFI SV%, QNFG%, QG%, and
+    """Per-season (2022-23..2026-27, live season included) NFI-GSAx/60, NFI SV%, QNFG%, QG%, and
     sQS% (per the shared toggle) for one goalie_id, outer-merged on
     season. Season normalized to INT before merging (all loaders cast to int)
     to avoid silent empty merges. The NFI-GSAx file includes a 2021-22 row;
     it's dropped here. The save%-based column is labeled "sQS%" (starter-tier
     baseline; the backup tier was retired)."""
     gid = int(gid)
-    seasons_int = [20222023, 20232024, 20242025, 20252026]
+    seasons_int = [20222023, 20232024, 20242025, 20252026, 20262027]
     qg_col = "QG_pct_s"
     qg_label = "sQS%"
     parts = []
@@ -8636,7 +8636,7 @@ def _goalie_season_ranks(gid: int, qg_scope_suffix: str = "", qg_starter: bool =
     (they show as unranked on the list too). Returns {display_col: {season: rank}}."""
     gid = int(gid)
     out = {}
-    seasons_int = [20222023, 20232024, 20242025, 20252026]
+    seasons_int = [20222023, 20232024, 20242025, 20252026, 20262027]
     qg_col = "QG_pct_s"
     qg_label = "sQS%"
     # per metric: (loader, value col, display col, fallback floor col, floor)
