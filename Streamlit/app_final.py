@@ -10438,7 +10438,7 @@ def render_scoped_filters(scope: str, show_situation: bool = False) -> tuple[str
     so when Playoffs is selected the Season box is locked to the 4-year pooled view,
     with the user's regular-season pick preserved for when they switch back."""
     st.session_state.setdefault("g_game_type", "Regular Season")
-    st.session_state.setdefault("g_season_pick", "2025-26")
+    st.session_state.setdefault("g_season_pick", "2026-27")   # live season is the default view
     _gt_key, _ss_key = f"g_gt_{scope}", f"g_ssn_{scope}"
     # Pre-seed this scope's widgets from the shared value (before instantiation).
     st.session_state[_gt_key] = st.session_state["g_game_type"]
