@@ -384,7 +384,7 @@ team_id,team,season,game_type,situation,ccg
 7,BUF,20252026,regular,other,8
 7,BUF,20262027,regular,3v3,3
 7,BUF,20262027,regular,5v4,4
-7,BUF,20262027,regular,5v5,15
+7,BUF,20262027,regular,5v5,19
 8,MTL,20202021,playoff,5v4,5
 8,MTL,20202021,playoff,5v5,16
 8,MTL,20202021,playoff,6v5,2
@@ -1113,7 +1113,7 @@ team_id,team,season,game_type,situation,ccg
 20,CGY,20252026,regular,6v5,2
 20,CGY,20252026,regular,other,11
 20,CGY,20262027,regular,5v4,3
-20,CGY,20262027,regular,5v5,6
+20,CGY,20262027,regular,5v5,9
 20,CGY,20262027,regular,5v6,1
 21,COL,20202021,playoff,5v4,3
 21,COL,20202021,playoff,5v5,5
@@ -1355,7 +1355,7 @@ team_id,team,season,game_type,situation,ccg
 24,ANA,20262027,regular,5v3,1
 24,ANA,20262027,regular,5v4,9
 24,ANA,20262027,regular,5v5,15
-24,ANA,20262027,regular,5v6,1
+24,ANA,20262027,regular,5v6,2
 24,ANA,20262027,regular,6v5,2
 25,DAL,20202021,regular,3v3,1
 25,DAL,20202021,regular,4v4,1
@@ -1621,8 +1621,9 @@ team_id,team,season,game_type,situation,ccg
 30,MIN,20252026,regular,6v4,3
 30,MIN,20252026,regular,6v5,3
 30,MIN,20252026,regular,other,7
-30,MIN,20262027,regular,5v4,5
-30,MIN,20262027,regular,5v5,13
+30,MIN,20262027,regular,5v3,1
+30,MIN,20262027,regular,5v4,6
+30,MIN,20262027,regular,5v5,14
 30,MIN,20262027,regular,5v6,3
 52,WPG,20202021,playoff,5v4,3
 52,WPG,20202021,playoff,5v5,7
