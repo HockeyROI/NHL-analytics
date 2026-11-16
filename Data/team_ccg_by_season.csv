@@ -219,7 +219,7 @@ team_id,team,season,game_type,situation,ccg
 4,PHI,20252026,regular,other,8
 4,PHI,20262027,regular,4v6,1
 4,PHI,20262027,regular,5v4,9
-4,PHI,20262027,regular,5v5,17
+4,PHI,20262027,regular,5v5,18
 4,PHI,20262027,regular,6v5,2
 5,PIT,20202021,playoff,5v5,5
 5,PIT,20202021,regular,3v3,2
@@ -708,7 +708,7 @@ team_id,team,season,game_type,situation,ccg
 13,FLA,20252026,regular,6v5,12
 13,FLA,20252026,regular,other,6
 13,FLA,20262027,regular,4v5,2
-13,FLA,20262027,regular,5v4,16
+13,FLA,20262027,regular,5v4,17
 13,FLA,20262027,regular,5v5,31
 13,FLA,20262027,regular,6v5,4
 14,TBL,20202021,playoff,5v4,9
@@ -1000,7 +1000,7 @@ team_id,team,season,game_type,situation,ccg
 18,NSH,20252026,regular,6v5,3
 18,NSH,20252026,regular,other,12
 18,NSH,20262027,regular,5v3,3
-18,NSH,20262027,regular,5v4,12
+18,NSH,20262027,regular,5v4,13
 18,NSH,20262027,regular,5v5,21
 18,NSH,20262027,regular,6v5,2
 18,NSH,20262027,regular,other,4
@@ -1306,8 +1306,8 @@ team_id,team,season,game_type,situation,ccg
 23,VAN,20252026,regular,6v5,5
 23,VAN,20252026,regular,other,16
 23,VAN,20262027,regular,4v5,1
-23,VAN,20262027,regular,5v4,12
-23,VAN,20262027,regular,5v5,17
+23,VAN,20262027,regular,5v4,13
+23,VAN,20262027,regular,5v5,18
 23,VAN,20262027,regular,6v5,1
 24,ANA,20202021,regular,4v4,1
 24,ANA,20202021,regular,4v5,1
@@ -1361,7 +1361,7 @@ team_id,team,season,game_type,situation,ccg
 24,ANA,20262027,regular,4v4,1
 24,ANA,20262027,regular,5v3,1
 24,ANA,20262027,regular,5v4,10
-24,ANA,20262027,regular,5v5,17
+24,ANA,20262027,regular,5v5,19
 24,ANA,20262027,regular,5v6,2
 24,ANA,20262027,regular,6v5,2
 25,DAL,20202021,regular,3v3,1
@@ -1419,10 +1419,11 @@ team_id,team,season,game_type,situation,ccg
 25,DAL,20252026,regular,5v6,3
 25,DAL,20252026,regular,6v5,9
 25,DAL,20252026,regular,other,7
+25,DAL,20262027,regular,3v3,1
 25,DAL,20262027,regular,4v3,1
 25,DAL,20262027,regular,4v4,1
 25,DAL,20262027,regular,5v4,4
-25,DAL,20262027,regular,5v5,19
+25,DAL,20262027,regular,5v5,21
 25,DAL,20262027,regular,6v5,1
 25,DAL,20262027,regular,other,1
 26,LAK,20202021,regular,4v4,2
@@ -1524,7 +1525,7 @@ team_id,team,season,game_type,situation,ccg
 28,SJS,20252026,regular,other,1
 28,SJS,20262027,regular,4v5,1
 28,SJS,20262027,regular,5v4,8
-28,SJS,20262027,regular,5v5,13
+28,SJS,20262027,regular,5v5,16
 28,SJS,20262027,regular,other,11
 29,CBJ,20202021,regular,3v3,4
 29,CBJ,20202021,regular,4v5,1
@@ -1789,7 +1790,7 @@ team_id,team,season,game_type,situation,ccg
 54,VGK,20252026,regular,6v5,7
 54,VGK,20252026,regular,other,2
 54,VGK,20262027,regular,5v4,8
-54,VGK,20262027,regular,5v5,25
+54,VGK,20262027,regular,5v5,27
 54,VGK,20262027,regular,other,4
 55,SEA,20212022,regular,4v5,1
 55,SEA,20212022,regular,5v3,5
