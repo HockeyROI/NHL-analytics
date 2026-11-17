@@ -441,7 +441,7 @@ team_id,team,season,game_type,situation,ccg
 8,MTL,20262027,regular,4v5,1
 8,MTL,20262027,regular,5v3,1
 8,MTL,20262027,regular,5v4,3
-8,MTL,20262027,regular,5v5,27
+8,MTL,20262027,regular,5v5,28
 8,MTL,20262027,regular,6v5,4
 8,MTL,20262027,regular,other,5
 9,OTT,20202021,regular,3v3,2
@@ -1306,7 +1306,7 @@ team_id,team,season,game_type,situation,ccg
 23,VAN,20252026,regular,6v5,5
 23,VAN,20252026,regular,other,16
 23,VAN,20262027,regular,4v5,1
-23,VAN,20262027,regular,5v4,13
+23,VAN,20262027,regular,5v4,14
 23,VAN,20262027,regular,5v5,18
 23,VAN,20262027,regular,6v5,1
 24,ANA,20202021,regular,4v4,1

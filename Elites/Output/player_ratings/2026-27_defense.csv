@@ -3,7 +3,7 @@ Zach Werenski,CBJ,D,9,98.0,Elite,99.6,,95.6,8478460
 Josh Morrissey,WPG,D,4,95.4,Elite,99.2,,89.6,8477504
 Quinn Hughes,MIN,D,13,95.2,Elite,100.0,,88.0,8480800
 Rasmus Dahlin,BUF,D,8,95.2,Elite,96.0,,94.0,8480839
-Lane Hutson,MTL,D,11,92.1,Elite,92.4,,91.6,8483457
+Lane Hutson,MTL,D,11,92.4,Elite,92.4,,92.4,8483457
 Matthew Schaefer,NYI,D,11,91.7,Elite,93.6,,88.8,8485366
 Jakob Chychrun,WSH,D,10,91.2,Elite,92.0,,90.0,8479345
 Evan Bouchard,EDM,D,11,91.1,Elite,87.6,,96.4,8480803
@@ -16,7 +16,7 @@ Thomas Harley,DAL,D,11,86.5,Elite,97.2,,70.4,8481581
 Luke Hughes,NJD,D,11,86.4,Elite,95.2,,73.2,8482684
 Adam Fox,NYR,D,13,86.1,Elite,88.0,,83.2,8479323
 Vladislav Gavrikov,NYR,D,13,85.5,Elite,98.8,,65.6,8478882
-Rasmus Andersson,CGY,D,13,85.3,Elite,80.8,,92.0,8478397
+Rasmus Andersson,CGY,D,13,85.1,Elite,80.8,,91.6,8478397
 K'Andre Miller,CAR,D,13,84.1,Elite,91.6,,72.8,8480817
 Jackson LaCombe,ANA,D,11,84.1,Elite,84.4,,83.6,8481605
 Bowen Byram,BUF,D,6,83.6,Elite,88.4,,76.4,8481524
@@ -56,7 +56,7 @@ Denton Mateychuk,CBJ,D,9,72.0,Middle,61.6,,87.6,8483485
 Miro Heiskanen,DAL,D,11,71.0,Middle,74.0,,66.4,8480036
 Jake McCabe,TOR,D,13,71.0,Middle,84.0,,51.6,8476931
 Ryan Shea,PIT,D,11,70.5,Middle,57.2,,90.4,8478854
-Sam Malinski,COL,D,11,70.1,Middle,55.2,,92.4,8484258
+Sam Malinski,COL,D,11,69.9,Middle,55.2,,92.0,8484258
 Devon Toews,COL,D,12,69.4,Middle,75.6,,60.0,8478038
 Colton Parayko,STL,D,11,69.2,Middle,94.0,,32.0,8476892
 Mikey Anderson,LAK,D,9,69.0,Middle,77.2,,56.8,8479998
@@ -107,9 +107,9 @@ Cam Fowler,STL,D,11,57.2,Middle,76.4,,28.4,8475764
 Seth Jones,FLA,D,12,57.1,Middle,58.4,,55.2,8477495
 Ryan Pulock,NYI,D,11,57.0,Middle,61.2,,50.8,8477506
 Adam Pelech,NYI,D,11,56.8,Middle,76.0,,28.0,8476917
+Marcus Pettersson,VAN,D,13,56.1,Middle,86.0,,11.2,8477969
 Niko Mikkola,FLA,D,12,55.7,Middle,68.0,,37.2,8478859
 Frederic Brunet,BOS,D,9,55.4,Middle,27.6,,97.2,8483017
-Marcus Pettersson,VAN,D,13,55.4,Middle,86.0,,9.6,8477969
 Jalen Chatfield,CAR,D,13,55.3,Middle,69.2,,34.4,8478970
 Troy Stecher,TOR,D,13,55.0,Middle,59.2,,48.8,8479442
 Rasmus Ristolainen,PHI,D,4,54.9,Middle,73.6,,26.8,8477499
@@ -143,8 +143,8 @@ Jonas Siegenthaler,NJD,D,11,46.6,Middle,71.6,,9.2,8478399
 Brian Dumoulin,LAK,D,9,46.4,Middle,50.4,,40.4,8475208
 William Wallinder,DET,D,6,46.0,Middle,10.0,,100.0,8482171
 Martin Fehérváry,WSH,D,10,45.6,Middle,53.6,,33.6,8480796
-Jaccob Slavin,CAR,D,13,44.9,Middle,67.6,,10.8,8476958
 Brett Kulak,EDM,D,12,44.8,Middle,64.8,,14.8,8476967
+Jaccob Slavin,CAR,D,13,44.7,Middle,67.6,,10.4,8476958
 Adam Jiricek,STL,D,11,44.6,Middle,22.4,,78.0,8484790
 Emil Andrae,PHI,D,5,44.6,Middle,27.2,,70.8,8482126
 Marshall Rifai,TOR,D,2,43.8,Middle,7.6,,98.0,8483546
@@ -195,7 +195,7 @@ Jeremy Lauzon,VGK,D,13,30.2,Poor,41.6,,13.2,8478468
 Ilya Solovyov,PIT,D,3,29.9,Poor,12.8,,55.6,8482470
 Ville Ottavainen,SEA,D,8,29.5,Poor,6.8,,63.6,8482866
 Dmitry Kulikov,FLA,D,12,29.3,Poor,39.2,,14.4,8475179
-Ryan Lindgren,SEA,D,4,28.9,Poor,41.2,,10.4,8479324
+Ryan Lindgren,SEA,D,4,28.7,Poor,41.2,,10.0,8479324
 Connor Clifton,PIT,D,6,28.6,Poor,36.0,,17.6,8477365
 Carson Soucy,NYR,D,7,28.4,Poor,31.6,,23.6,8477369
 Spencer Stastney,EDM,D,7,28.2,Poor,24.8,,33.2,8481056
@@ -222,15 +222,15 @@ Dakota Mermis,TOR,D,1,19.6,Poor,11.6,,31.6,8477541
 Nikolas Matinpalo,OTT,D,10,19.4,Poor,20.4,,18.0,8484321
 Carter Yakemchuk,OTT,D,12,19.1,Poor,21.2,,16.0,8484759
 Alberts Smits,NYR,D,13,19.0,Poor,29.2,,3.6,8485957
-Elias Pettersson,VAN,D,13,18.9,Poor,24.0,,11.2,8483678
 Jake Christiansen,CBJ,D,8,18.8,Poor,2.8,,42.8,8481161
+Elias Pettersson,VAN,D,13,18.7,Poor,24.0,,10.8,8483678
 Kyle Capobianco,DAL,D,4,18.2,Poor,6.4,,36.0,8478476
 Luca Cagnoni,SJS,D,8,17.5,Poor,26.8,,3.6,8484152
 Arber Xhekaj,MTL,D,11,17.4,Poor,4.4,,36.8,8482964
 Kevin Korchinski,CHI,D,2,16.7,Poor,14.8,,19.6,8483466
 Jack Ahcan,COL,D,3,14.9,Poor,3.2,,32.4,8482072
 Joshua Mahura,SEA,D,9,14.8,Poor,18.8,,8.8,8479372
-Michael Kesselring,BUF,D,12,14.8,Poor,18.0,,10.0,8480891
+Michael Kesselring,BUF,D,12,14.6,Poor,18.0,,9.6,8480891
 Luke Schenn,WPG,D,9,14.4,Poor,8.8,,22.8,8474568
 Noah Juulsen,PHI,D,8,14.1,Poor,9.6,,20.8,8478454
 Daemon Hunt,MIN,D,12,13.8,Poor,6.0,,25.6,8482094
