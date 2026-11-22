@@ -58,8 +58,8 @@ team_id,team,season,game_type,situation,ccg
 1,NJD,20252026,regular,5v6,1
 1,NJD,20252026,regular,6v5,3
 1,NJD,20252026,regular,other,3
-1,NJD,20262027,regular,5v4,7
-1,NJD,20262027,regular,5v5,29
+1,NJD,20262027,regular,5v4,8
+1,NJD,20262027,regular,5v5,34
 1,NJD,20262027,regular,5v6,1
 1,NJD,20262027,regular,other,1
 2,NYI,20202021,playoff,5v4,2
@@ -114,7 +114,7 @@ team_id,team,season,game_type,situation,ccg
 2,NYI,20252026,regular,6v5,8
 2,NYI,20252026,regular,other,8
 2,NYI,20262027,regular,5v4,8
-2,NYI,20262027,regular,5v5,21
+2,NYI,20262027,regular,5v5,22
 3,NYR,20202021,regular,4v4,1
 3,NYR,20202021,regular,5v3,3
 3,NYR,20202021,regular,5v4,20
@@ -220,7 +220,7 @@ team_id,team,season,game_type,situation,ccg
 4,PHI,20262027,regular,4v4,2
 4,PHI,20262027,regular,4v6,1
 4,PHI,20262027,regular,5v4,9
-4,PHI,20262027,regular,5v5,19
+4,PHI,20262027,regular,5v5,20
 4,PHI,20262027,regular,6v5,2
 5,PIT,20202021,playoff,5v5,5
 5,PIT,20202021,regular,3v3,2
@@ -273,7 +273,7 @@ team_id,team,season,game_type,situation,ccg
 5,PIT,20252026,regular,6v5,5
 5,PIT,20252026,regular,other,3
 5,PIT,20262027,regular,5v4,7
-5,PIT,20262027,regular,5v5,16
+5,PIT,20262027,regular,5v5,18
 5,PIT,20262027,regular,5v6,1
 5,PIT,20262027,regular,6v4,3
 5,PIT,20262027,regular,6v5,2
@@ -339,7 +339,7 @@ team_id,team,season,game_type,situation,ccg
 6,BOS,20252026,regular,other,9
 6,BOS,20262027,regular,5v3,1
 6,BOS,20262027,regular,5v4,6
-6,BOS,20262027,regular,5v5,28
+6,BOS,20262027,regular,5v5,29
 6,BOS,20262027,regular,6v5,3
 6,BOS,20262027,regular,other,2
 7,BUF,20202021,regular,5v4,22
@@ -388,7 +388,7 @@ team_id,team,season,game_type,situation,ccg
 7,BUF,20252026,regular,other,8
 7,BUF,20262027,regular,3v3,3
 7,BUF,20262027,regular,5v4,4
-7,BUF,20262027,regular,5v5,23
+7,BUF,20262027,regular,5v5,25
 7,BUF,20262027,regular,5v6,1
 8,MTL,20202021,playoff,5v4,5
 8,MTL,20202021,playoff,5v5,16
@@ -444,7 +444,7 @@ team_id,team,season,game_type,situation,ccg
 8,MTL,20262027,regular,4v5,1
 8,MTL,20262027,regular,5v3,1
 8,MTL,20262027,regular,5v4,3
-8,MTL,20262027,regular,5v5,28
+8,MTL,20262027,regular,5v5,29
 8,MTL,20262027,regular,6v5,4
 8,MTL,20262027,regular,other,5
 9,OTT,20202021,regular,3v3,2
@@ -503,7 +503,7 @@ team_id,team,season,game_type,situation,ccg
 9,OTT,20252026,regular,other,1
 9,OTT,20262027,regular,4v4,1
 9,OTT,20262027,regular,5v4,7
-9,OTT,20262027,regular,5v5,17
+9,OTT,20262027,regular,5v5,19
 9,OTT,20262027,regular,5v6,1
 9,OTT,20262027,regular,other,2
 10,TOR,20202021,playoff,5v4,1
@@ -567,7 +567,7 @@ team_id,team,season,game_type,situation,ccg
 10,TOR,20262027,regular,3v3,2
 10,TOR,20262027,regular,4v4,1
 10,TOR,20262027,regular,5v4,6
-10,TOR,20262027,regular,5v5,16
+10,TOR,20262027,regular,5v5,18
 10,TOR,20262027,regular,5v6,1
 10,TOR,20262027,regular,6v5,1
 12,CAR,20202021,playoff,4v4,1
@@ -639,9 +639,10 @@ team_id,team,season,game_type,situation,ccg
 12,CAR,20252026,regular,6v4,2
 12,CAR,20252026,regular,6v5,4
 12,CAR,20252026,regular,other,6
+12,CAR,20262027,regular,4v4,1
 12,CAR,20262027,regular,4v5,1
 12,CAR,20262027,regular,5v4,9
-12,CAR,20262027,regular,5v5,21
+12,CAR,20262027,regular,5v5,23
 13,FLA,20202021,playoff,5v4,3
 13,FLA,20202021,playoff,5v5,1
 13,FLA,20202021,regular,3v3,2
@@ -712,7 +713,7 @@ team_id,team,season,game_type,situation,ccg
 13,FLA,20252026,regular,other,6
 13,FLA,20262027,regular,4v5,2
 13,FLA,20262027,regular,5v4,17
-13,FLA,20262027,regular,5v5,32
+13,FLA,20262027,regular,5v5,35
 13,FLA,20262027,regular,6v5,4
 14,TBL,20202021,playoff,5v4,9
 14,TBL,20202021,playoff,5v5,18
@@ -836,7 +837,7 @@ team_id,team,season,game_type,situation,ccg
 15,WSH,20252026,regular,5v6,1
 15,WSH,20252026,regular,6v5,6
 15,WSH,20252026,regular,other,2
-15,WSH,20262027,regular,5v4,8
+15,WSH,20262027,regular,5v4,9
 15,WSH,20262027,regular,5v5,18
 16,CHI,20202021,regular,3v3,1
 16,CHI,20202021,regular,4v5,1
@@ -884,9 +885,12 @@ team_id,team,season,game_type,situation,ccg
 16,CHI,20252026,regular,5v5,66
 16,CHI,20252026,regular,5v6,1
 16,CHI,20252026,regular,other,5
+16,CHI,20262027,regular,4v3,1
+16,CHI,20262027,regular,4v4,1
 16,CHI,20262027,regular,5v3,1
 16,CHI,20262027,regular,5v4,7
-16,CHI,20262027,regular,5v5,12
+16,CHI,20262027,regular,5v5,13
+16,CHI,20262027,regular,6v5,1
 17,DET,20202021,regular,3v3,1
 17,DET,20202021,regular,5v3,2
 17,DET,20202021,regular,5v4,19
@@ -941,7 +945,7 @@ team_id,team,season,game_type,situation,ccg
 17,DET,20252026,regular,6v5,9
 17,DET,20252026,regular,other,3
 17,DET,20262027,regular,5v4,11
-17,DET,20262027,regular,5v5,12
+17,DET,20262027,regular,5v5,15
 17,DET,20262027,regular,6v4,1
 17,DET,20262027,regular,6v5,4
 17,DET,20262027,regular,other,2
@@ -1004,7 +1008,7 @@ team_id,team,season,game_type,situation,ccg
 18,NSH,20252026,regular,other,12
 18,NSH,20262027,regular,5v3,3
 18,NSH,20262027,regular,5v4,13
-18,NSH,20262027,regular,5v5,24
+18,NSH,20262027,regular,5v5,27
 18,NSH,20262027,regular,6v5,2
 18,NSH,20262027,regular,other,4
 19,STL,20202021,playoff,5v4,2
@@ -1060,7 +1064,7 @@ team_id,team,season,game_type,situation,ccg
 19,STL,20252026,regular,other,3
 19,STL,20262027,regular,4v5,1
 19,STL,20262027,regular,5v4,7
-19,STL,20262027,regular,5v5,23
+19,STL,20262027,regular,5v5,26
 19,STL,20262027,regular,6v5,2
 20,CGY,20202021,regular,3v3,1
 20,CGY,20202021,regular,5v3,1
@@ -1119,8 +1123,8 @@ team_id,team,season,game_type,situation,ccg
 20,CGY,20252026,regular,6v4,1
 20,CGY,20252026,regular,6v5,2
 20,CGY,20252026,regular,other,11
-20,CGY,20262027,regular,5v4,3
-20,CGY,20262027,regular,5v5,11
+20,CGY,20262027,regular,5v4,5
+20,CGY,20262027,regular,5v5,13
 20,CGY,20262027,regular,5v6,3
 21,COL,20202021,playoff,5v4,3
 21,COL,20202021,playoff,5v5,5
@@ -1311,7 +1315,8 @@ team_id,team,season,game_type,situation,ccg
 23,VAN,20262027,regular,4v5,1
 23,VAN,20262027,regular,5v4,16
 23,VAN,20262027,regular,5v5,18
-23,VAN,20262027,regular,6v5,1
+23,VAN,20262027,regular,6v5,2
+23,VAN,20262027,regular,other,1
 24,ANA,20202021,regular,4v4,1
 24,ANA,20202021,regular,4v5,1
 24,ANA,20202021,regular,5v3,2
@@ -1528,7 +1533,7 @@ team_id,team,season,game_type,situation,ccg
 28,SJS,20252026,regular,6v5,7
 28,SJS,20252026,regular,other,1
 28,SJS,20262027,regular,4v5,1
-28,SJS,20262027,regular,5v4,9
+28,SJS,20262027,regular,5v4,10
 28,SJS,20262027,regular,5v5,16
 28,SJS,20262027,regular,6v4,1
 28,SJS,20262027,regular,other,11
@@ -1575,7 +1580,7 @@ team_id,team,season,game_type,situation,ccg
 29,CBJ,20252026,regular,5v6,3
 29,CBJ,20252026,regular,6v5,1
 29,CBJ,20252026,regular,other,8
-29,CBJ,20262027,regular,5v4,5
+29,CBJ,20262027,regular,5v4,7
 29,CBJ,20262027,regular,5v5,12
 29,CBJ,20262027,regular,other,1
 30,MIN,20202021,playoff,5v4,2
@@ -1696,7 +1701,7 @@ team_id,team,season,game_type,situation,ccg
 52,WPG,20262027,regular,3v3,1
 52,WPG,20262027,regular,5v3,5
 52,WPG,20262027,regular,5v4,14
-52,WPG,20262027,regular,5v5,16
+52,WPG,20262027,regular,5v5,17
 52,WPG,20262027,regular,5v6,1
 52,WPG,20262027,regular,6v5,3
 53,ARI,20202021,regular,4v4,1
@@ -1795,8 +1800,8 @@ team_id,team,season,game_type,situation,ccg
 54,VGK,20252026,regular,6v5,7
 54,VGK,20252026,regular,other,2
 54,VGK,20262027,regular,5v4,9
-54,VGK,20262027,regular,5v5,29
-54,VGK,20262027,regular,other,4
+54,VGK,20262027,regular,5v5,30
+54,VGK,20262027,regular,other,5
 55,SEA,20212022,regular,4v5,1
 55,SEA,20212022,regular,5v3,5
 55,SEA,20212022,regular,5v4,26
@@ -1839,8 +1844,8 @@ team_id,team,season,game_type,situation,ccg
 55,SEA,20252026,regular,6v5,3
 55,SEA,20252026,regular,other,4
 55,SEA,20262027,regular,5v3,1
-55,SEA,20262027,regular,5v4,5
-55,SEA,20262027,regular,5v5,17
+55,SEA,20262027,regular,5v4,6
+55,SEA,20262027,regular,5v5,18
 55,SEA,20262027,regular,other,5
 59,UTA,20242025,regular,3v3,3
 59,UTA,20242025,regular,4v3,3
@@ -1858,7 +1863,8 @@ team_id,team,season,game_type,situation,ccg
 68,UTA,20262027,regular,3v3,2
 68,UTA,20262027,regular,4v5,1
 68,UTA,20262027,regular,5v4,13
-68,UTA,20262027,regular,5v5,23
+68,UTA,20262027,regular,5v5,26
+68,UTA,20262027,regular,5v6,1
 68,UTA,20262027,regular,6v4,1
 68,UTA,20262027,regular,6v5,3
 68,UTA,20262027,regular,other,5
