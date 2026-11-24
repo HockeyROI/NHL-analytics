@@ -114,7 +114,7 @@ team_id,team,season,game_type,situation,ccg
 2,NYI,20252026,regular,6v5,8
 2,NYI,20252026,regular,other,8
 2,NYI,20262027,regular,5v4,8
-2,NYI,20262027,regular,5v5,22
+2,NYI,20262027,regular,5v5,24
 3,NYR,20202021,regular,4v4,1
 3,NYR,20202021,regular,5v3,3
 3,NYR,20202021,regular,5v4,20
@@ -570,7 +570,7 @@ team_id,team,season,game_type,situation,ccg
 10,TOR,20262027,regular,5v4,6
 10,TOR,20262027,regular,5v5,18
 10,TOR,20262027,regular,5v6,1
-10,TOR,20262027,regular,6v5,1
+10,TOR,20262027,regular,6v5,3
 12,CAR,20202021,playoff,4v4,1
 12,CAR,20202021,playoff,5v4,6
 12,CAR,20202021,playoff,5v5,9
@@ -1125,7 +1125,7 @@ team_id,team,season,game_type,situation,ccg
 20,CGY,20252026,regular,6v4,1
 20,CGY,20252026,regular,6v5,2
 20,CGY,20252026,regular,other,11
-20,CGY,20262027,regular,5v4,5
+20,CGY,20262027,regular,5v4,6
 20,CGY,20262027,regular,5v5,13
 20,CGY,20262027,regular,5v6,3
 21,COL,20202021,playoff,5v4,3
@@ -1493,8 +1493,8 @@ team_id,team,season,game_type,situation,ccg
 26,LAK,20252026,regular,other,5
 26,LAK,20262027,regular,3v3,2
 26,LAK,20262027,regular,5v3,5
-26,LAK,20262027,regular,5v4,4
-26,LAK,20262027,regular,5v5,13
+26,LAK,20262027,regular,5v4,5
+26,LAK,20262027,regular,5v5,14
 26,LAK,20262027,regular,6v5,2
 28,SJS,20202021,regular,4v5,2
 28,SJS,20202021,regular,5v4,15
@@ -1535,7 +1535,7 @@ team_id,team,season,game_type,situation,ccg
 28,SJS,20252026,regular,6v5,7
 28,SJS,20252026,regular,other,1
 28,SJS,20262027,regular,4v5,1
-28,SJS,20262027,regular,5v4,10
+28,SJS,20262027,regular,5v4,11
 28,SJS,20262027,regular,5v5,16
 28,SJS,20262027,regular,6v4,1
 28,SJS,20262027,regular,other,11
@@ -1582,8 +1582,9 @@ team_id,team,season,game_type,situation,ccg
 29,CBJ,20252026,regular,5v6,3
 29,CBJ,20252026,regular,6v5,1
 29,CBJ,20252026,regular,other,8
+29,CBJ,20262027,regular,4v5,1
 29,CBJ,20262027,regular,5v4,7
-29,CBJ,20262027,regular,5v5,12
+29,CBJ,20262027,regular,5v5,13
 29,CBJ,20262027,regular,other,1
 30,MIN,20202021,playoff,5v4,2
 30,MIN,20202021,playoff,5v5,2
@@ -1703,7 +1704,7 @@ team_id,team,season,game_type,situation,ccg
 52,WPG,20262027,regular,3v3,1
 52,WPG,20262027,regular,5v3,5
 52,WPG,20262027,regular,5v4,14
-52,WPG,20262027,regular,5v5,17
+52,WPG,20262027,regular,5v5,18
 52,WPG,20262027,regular,5v6,1
 52,WPG,20262027,regular,6v5,3
 53,ARI,20202021,regular,4v4,1
@@ -1865,7 +1866,7 @@ team_id,team,season,game_type,situation,ccg
 68,UTA,20262027,regular,3v3,2
 68,UTA,20262027,regular,4v5,1
 68,UTA,20262027,regular,5v4,13
-68,UTA,20262027,regular,5v5,26
+68,UTA,20262027,regular,5v5,27
 68,UTA,20262027,regular,5v6,1
 68,UTA,20262027,regular,6v4,1
 68,UTA,20262027,regular,6v5,3
