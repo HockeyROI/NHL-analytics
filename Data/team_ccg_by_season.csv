@@ -1258,7 +1258,7 @@ team_id,team,season,game_type,situation,ccg
 22,EDM,20262027,regular,4v4,2
 22,EDM,20262027,regular,5v3,2
 22,EDM,20262027,regular,5v4,6
-22,EDM,20262027,regular,5v5,26
+22,EDM,20262027,regular,5v5,28
 22,EDM,20262027,regular,6v4,2
 22,EDM,20262027,regular,6v5,1
 22,EDM,20262027,regular,other,2
@@ -1802,8 +1802,8 @@ team_id,team,season,game_type,situation,ccg
 54,VGK,20252026,regular,5v6,2
 54,VGK,20252026,regular,6v5,7
 54,VGK,20252026,regular,other,2
-54,VGK,20262027,regular,5v4,9
-54,VGK,20262027,regular,5v5,30
+54,VGK,20262027,regular,5v4,10
+54,VGK,20262027,regular,5v5,32
 54,VGK,20262027,regular,other,5
 55,SEA,20212022,regular,4v5,1
 55,SEA,20212022,regular,5v3,5
